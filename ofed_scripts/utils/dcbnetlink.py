@@ -74,6 +74,7 @@ DCB_ATTR_IEEE_PEER_APP = 6
 DCB_ATTR_IEEE_MAXRATE = 7
 DCB_ATTR_IEEE_QCN = 8
 DCB_ATTR_IEEE_QCN_STATS = 9
+DCB_ATTR_IEEE_TRUST = 10
 
 class DcbnlHdr:
     def __init__(self, len, type):
@@ -233,6 +234,33 @@ class DcbController:
 		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		ieee_ets = StrAttr(DCB_ATTR_IEEE_ETS, ets)
 		ieee = Nested(DCB_ATTR_IEEE, [ieee_ets]);
+
+		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+				flags=NLM_F_REQUEST, attrs=[intf, ieee])
+		m.send(self.conn)
+		m = DcbNlMessage.recv(self.conn)
+		self.check_err(m, DCB_ATTR_IEEE)
+
+	def get_ieee_trust(self):
+		a = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
+		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_GET,
+				flags=NLM_F_REQUEST, attrs=[a])
+		m.send(self.conn)
+		m = DcbNlMessage.recv(self.conn)
+
+		ieee_nested = m.attrs[DCB_ATTR_IEEE]
+
+		ieee = m.attrs[DCB_ATTR_IEEE].nested()
+
+                dcb_trust = struct.unpack_from("B", ieee[DCB_ATTR_IEEE_TRUST].str(), 0);
+
+		return dcb_trust[0]
+
+	def set_ieee_trust(self, trust):
+		dcb_trust = struct.pack("B", trust)
+		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
+		ieee_maxrate = StrAttr(DCB_ATTR_IEEE_TRUST, dcb_trust)
+		ieee = Nested(DCB_ATTR_IEEE, [ieee_maxrate]);
 
 		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])

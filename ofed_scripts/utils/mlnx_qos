@@ -60,7 +60,18 @@ class MaxrateSysfs(Maxrate):
 	f.write(" ".join(str(r) for r in ratelimit))
 	f.close()
 
-def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en):
+def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust):
+	string = "Priority trust mode: "
+	if (trust == 1):
+		string = string + "pcp"
+	elif (trust == 2):
+		string = string + "dscp"
+	elif (trust == 3):
+		string = string + "both"
+	else:
+		string = string + "none"
+	print string
+
 	tc2up = defaultdict(list)
 
 	if (printall == True):
@@ -151,6 +162,8 @@ parser.add_option("-r", "--ratelimit", dest="ratelimit",
 parser.add_option("-d", "--dcbx", dest="dcbx",
                   help="get the dcbx mode(get) or set dcbx mode to firmware controlled(fw) or " +
 		  "os controlled(os)")
+parser.add_option("--trust", dest="trust",
+                  help="set priority trust mode to pcp or dscp")
 parser.add_option("-i", "--interface", dest="intf",
                   help="Interface name")
 
@@ -192,6 +205,23 @@ if (options.dcbx != None):
 		print ("DCBX mode: Firmware controlled")
 
 	sys.exit(1)
+
+try:
+	trust = ctrl.get_ieee_trust()
+
+	if options.trust:
+		if (options.trust == "pcp"):
+			trust = 1
+			ctrl.set_ieee_trust(trust)
+		elif (options.trust == "dscp"):
+			trust = 2
+			ctrl.set_ieee_trust(trust)
+except:
+	print "Priority trust mode is not supported on your system"
+	if options.trust:
+		sys.exit(1)
+	else:
+		trust = 0
 
 try:
 	ratelimit = []
@@ -306,4 +336,4 @@ if options.tsa or options.tc_bw or options.prio_tc:
         print e
         sys.exit(1)
 
-pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en)
+pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trust)
