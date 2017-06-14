@@ -1,0 +1,133 @@
+#!/usr/bin/python
+
+from optparse import OptionParser
+from subprocess import Popen, PIPE
+import sys
+import time
+import re
+import math
+from collections import defaultdict
+import glob
+import tempfile
+
+def thous(x, sep=',', dot='.'):
+	frac, num = math.modf(x)
+	num = str(int(num))
+	frac = int(frac * 100)
+	num = re.sub(r'(\d{3})(?=\d)', r'\1'+sep, num[::-1])[::-1]
+	if frac > 0:
+		num += dot + str(frac)
+	return num
+
+def get_stats(intf, keys = None):
+	with tempfile.NamedTemporaryFile(delete=True) as stdout_pipe:
+		process = Popen('ethtool -S %s'%intf,
+				shell=True, bufsize=0,
+				stdout=stdout_pipe)
+		rc = process.wait()
+		stdout_pipe.seek(0)
+		if (rc):
+			print "error running ethtool(%d):" % (process.returncode)
+			sys.exit(0)
+
+		map = {}
+		output = stdout_pipe.readlines()[1:]
+	for line in output:
+		key, val = line.strip().split(":")
+
+		if not keys == None:
+			keys += [key]
+
+		if val == "":
+			val = "0"
+
+		map[key] = int(val)
+	return map
+
+parser = OptionParser(usage="%prog -i <interface> [options]", version="%prog 1.0")
+
+parser.add_option("-i", "--interface", dest="intf", help="Interface name")
+parser.add_option("-t", "--interval", dest="interval", default=1,
+		help="Interval between measurements in seconds")
+parser.add_option("-c", "--count", dest="count", default=-1, type="int",
+		help="Exit counter - exit after counting number of intervals ( default is -1: do not exit) ")
+
+(options, args) = parser.parse_args()
+
+if (options.intf == None):
+	print "Interface name is required"
+	parser.print_usage()
+	sys.exit(1)
+
+print "Initializing mlnx_perf..."
+
+# keys must be ordered, so can't use 'for key in map'
+keys = []
+prev = get_stats(options.intf, keys)
+
+for key in keys:
+	m = re.match("tx(\d+)_bytes", key)
+	if m:
+		ring = int(m.groups()[0])
+
+count = int(options.count)
+
+if count < -1 or count == 0:
+	print "Error, please use positive value for \"count\" or \"-1\" for no exit "
+	sys.exit(1)
+
+print "Sampling started."
+
+while count != 0:
+	time.sleep(float(options.interval))
+	count -= 1
+
+	curr = get_stats(options.intf)
+
+	if (curr.has_key('timestamp') and prev.has_key('timestamp')):
+		secs = float(curr['timestamp'] - prev['timestamp']) / 1000
+	else:
+		secs = float(options.interval)
+
+	up_bw = defaultdict(int)
+	up_packets = defaultdict(int)
+	total_bw = 0
+	total_packets = 0
+	something_printed = False
+	for key in keys:
+		if key in ["timestamp"]:
+			continue
+
+		bw = (curr[key]-prev[key]) / secs
+		if (bw > 0):
+			if "bytes" in key:
+				# Calculate throughput rate in Mbps from the Bytes counter
+				print "%30s: %-20s = %-20s" % (key, thous(bw) + " Bps",
+					thous(bw * 8 / 1000000) + " Mbps")
+			else:
+				print "%30s: %s" % (key, thous(bw))
+				something_printed = True
+
+			m = re.match("tx_prio_?(\d+)_bytes", key)
+			if m:
+				up = int(m.groups()[0])
+				up_bw[up] += bw
+				total_bw += bw
+
+			m = re.match("tx_prio_?(\d+)_packets", key)
+			if m:
+				up = int(m.groups()[0])
+				up_packets[up] += bw
+				total_packets += bw
+
+	prev = curr
+	if something_printed:
+		for up in up_bw:
+			# Calculate throughput rate in Mbps from the Bytes counter
+			print "%30s: %-20s Mbps = %-2.2f%%" % ("UP " + str(up), thous(up_bw[up] *
+				8 / 1000000), 100.0 * up_bw[up] / total_bw)
+		for up in up_packets:
+			print "%30s: %-20s Tran/sec = %-2.2f%%" % ("UP " + str(up), thous(up_packets[up]), 100.0 * up_packets[up] / total_packets)
+
+		print "--------"
+		sys.stdout.flush()

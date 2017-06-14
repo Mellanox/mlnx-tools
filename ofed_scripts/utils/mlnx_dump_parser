@@ -1,0 +1,219 @@
+#!/usr/bin/python
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Library General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+#
+# See the COPYING file for license information.
+#
+# Copyright (c) 2011 Mellanox Technologies. All rights reserved
+# Add support for parsing driver diagnostic dump
+
+# Author: Parvi Kaustubhi <parvik@mellanox.com>
+
+import struct
+from optparse import OptionParser
+import os, sys
+
+MLX5_DIAG_DRV_VERSION = 0
+MLX5_DIAG_DEVICE_NAME = 1
+MLX5_DIAG_MST = 2
+MLX5_DIAG_SQ = 3
+MLX5_DIAG_RQ = 4
+MLX5_DIAG_CQ = 5
+MLX5_DIAG_EQ = 6
+
+MLX5_MCION_STATUS_PRESENT = 1
+MLX5_MCION_STATUS_RX_LOS = 2
+MLX5_MCION_STATUS_TX_FAULT = 4
+
+class mlx5_diag_wq:
+	def __init__(self):
+		wq_type = 0 #unsigned int
+		wqn = 0  # unsigned int
+		pi = 0 # short
+		ci = 0 # short
+		wqe_stride = 0 # char
+		rsvd = 0 #char
+		size = 0 # short
+		wqe_num = 0 # unsigned int
+		group_id = 0 # unsigned int
+
+class mlx5_diag_eq:
+	def __init__(self):
+		eq_type = 0# unsigned int
+		ci = 0 # unsigned int
+		size = 0 # int
+		irqn = 0 # unsigned int
+		eqn = 0 # char
+		nent = 0 # int
+		mask = 0 #long unsigned int
+		index = 0 # int
+		group_id = 0# unsigned int
+
+class mlx5_diag_blk:
+	def __init__(self):
+		blk_type = 0 # unsigned int
+		length = 0 # unsigned int
+		data = 0  #char [1024]
+
+class mlx5_diag_dump:
+	def __init__(self):
+		version = 0 # unsigned int
+		flag = 0 # unsigned int
+		num_blocks = 0 # unsigned int
+		total_length = 0 #unsigned int
+		dump = 0 #char [0]
+
+class header:
+	def __init__(self):
+		version = 0 # unsigned int
+		flag = 0 # unsigned int
+		num_blocks = 0 #unsigned int
+		total_length = 0 #unsigned int
+
+def bstr(n):
+	return ''.join([str(n >> x & 1) for x in (7, 6, 5, 4, 3, 2, 1, 0)])
+
+def read_binary(dump, mst_dump_file, ring_dump_file):
+	diag_blk = mlx5_diag_blk()
+	f = open(dump, 'rb')
+	ring = open(ring_dump_file, 'w')
+	version = struct.unpack('I', f.read(4))[0]
+
+	flag = struct.unpack('I', f.read(4))[0]
+
+	num_blocks = struct.unpack('I', f.read(4))[0]
+
+	length = struct.unpack('I', f.read(4))[0]
+	print 'Version: %s Flag: %s Number of blocks: %s Length %s' % (version, flag, num_blocks, length)
+
+	module_no = struct.unpack('I', f.read(4))[0]
+
+	module_status = struct.unpack('I', f.read(4))[0]
+
+	print "MCION module number:",
+	print module_no,
+	print "status:",
+
+	if (module_status & MLX5_MCION_STATUS_PRESENT):
+		print "| present |",
+	else:
+		print "| non-present |",
+
+	if (module_status & MLX5_MCION_STATUS_RX_LOS):
+		print "| rx los |",
+
+	if (module_status & MLX5_MCION_STATUS_TX_FAULT):
+		print "| tx fault |",
+
+	print ''
+
+	blk_type = struct.unpack('I', f.read(4))[0]
+	blk_len = struct.unpack('I', f.read(4))[0]
+	if (blk_type == 0):
+		drv_version = struct.unpack('64s', f.read(64))[0]
+		print 'DRIVER VERSION: %s' % drv_version
+	blk_type = struct.unpack('I', f.read(4))[0]
+	blk_len = struct.unpack('I', f.read(4))[0]
+	if (blk_type == 1):
+		dev_name = struct.unpack('64s', f.read(64))[0]
+		print 'DEVICE NAME %s' % dev_name
+
+	for x in xrange(0, num_blocks - 2):
+		diag_blk.blk_type = struct.unpack('I', f.read(4))[0]
+		diag_blk.length = struct.unpack('I', f.read(4))[0]
+		if (diag_blk.blk_type == MLX5_DIAG_MST):
+			mst = open(mst_dump_file, 'w')
+			for i in xrange(0, diag_blk.length, 8):
+				off = struct.unpack('I', f.read(4))[0]
+				data = struct.unpack('I', f.read(4))[0]
+				mst.write("0x%.8lx 0x%.8lx\n" %(off, data))
+			mst.close()
+		elif (diag_blk.blk_type == MLX5_DIAG_SQ):
+			diag_wq = mlx5_diag_wq()
+			diag_wq.wq_type = struct.unpack('I', f.read(4))[0]
+			diag_wq.wqn = struct.unpack('I', f.read(4))[0]
+			diag_wq.pi = struct.unpack('H', f.read(2))[0]
+			diag_wq.ci = struct.unpack('H', f.read(2))[0]
+			diag_wq.wqe_stride = struct.unpack('B', f.read(1))[0]
+			diag_wq.rsvd = struct.unpack('B', f.read(1))[0]
+			diag_wq.size = struct.unpack('H', f.read(2))[0]
+			diag_wq.wqe_num = struct.unpack('I', f.read(4))[0]
+			diag_wq.group_id = struct.unpack('I', f.read(4))[0]
+			ring.write('SQ TYPE: %d, WQN: %d, PI: %d, CI: %d, STRIDE: %d, SIZE: %d, WQE_NUM: %d, GROUP_IP: %d\n' %(diag_wq.wq_type, diag_wq.wqn, diag_wq.pi, diag_wq.ci, diag_wq.wqe_stride, diag_wq.size, diag_wq.wqe_num, diag_wq.group_id))
+
+		elif (diag_blk.blk_type == MLX5_DIAG_RQ):
+			diag_wq = mlx5_diag_wq()
+			diag_wq.wq_type = struct.unpack('I', f.read(4))[0]
+			diag_wq.wqn = struct.unpack('I', f.read(4))[0]
+			diag_wq.pi = struct.unpack('H', f.read(2))[0]
+			diag_wq.ci = struct.unpack('H', f.read(2))[0]
+			diag_wq.wqe_stride = struct.unpack('B', f.read(1))[0]
+			diag_wq.rsvd = struct.unpack('B', f.read(1))[0]
+			diag_wq.size = struct.unpack('H', f.read(2))[0]
+			diag_wq.wqe_num = struct.unpack('I', f.read(4))[0]
+			diag_wq.group_id = struct.unpack('I', f.read(4))[0]
+			ring.write('RQ TYPE: %d, WQN: %d, PI: %d, CI: %d, STRIDE: %d, SIZE: %d, WQE_NUM: %d, GROUP_IP: %d\n' %(diag_wq.wq_type, diag_wq.wqn, diag_wq.pi, diag_wq.ci, diag_wq.wqe_stride, diag_wq.size, diag_wq.wqe_num, diag_wq.group_id))
+
+		elif (diag_blk.blk_type == MLX5_DIAG_CQ):
+			diag_wq = mlx5_diag_wq()
+			diag_wq.wq_type = struct.unpack('I', f.read(4))[0]
+			diag_wq.wqn = struct.unpack('I', f.read(4))[0]
+			diag_wq.pi = struct.unpack('H', f.read(2))[0]
+			diag_wq.ci = struct.unpack('H', f.read(2))[0]
+			diag_wq.wqe_stride = struct.unpack('B', f.read(1))[0]
+			diag_wq.rsvd = struct.unpack('B', f.read(1))[0]
+			diag_wq.size = struct.unpack('H', f.read(2))[0]
+			diag_wq.wqe_num = struct.unpack('I', f.read(4))[0]
+			diag_wq.group_id = struct.unpack('I', f.read(4))[0]
+			ring.write('CQ TYPE: %d, WQN: %d, PI: %d, CI: %d, STRIDE: %d, SIZE: %d, WQE_NUM: %d, GROUP_IP: %d\n' %(diag_wq.wq_type, diag_wq.wqn, diag_wq.pi, diag_wq.ci, diag_wq.wqe_stride, diag_wq.size, diag_wq.wqe_num, diag_wq.group_id))
+
+		elif (diag_blk.blk_type == MLX5_DIAG_EQ):
+			diag_eq = mlx5_diag_eq()
+			diag_eq.eq_type = struct.unpack('I', f.read(4))[0]
+			diag_eq.ci = struct.unpack('I', f.read(4))[0]
+			diag_eq.size = struct.unpack('I', f.read(4))[0]
+			diag_eq.irqn = struct.unpack('I', f.read(4))[0]
+			diag_eq.eqn = struct.unpack('B', f.read(1))[0]
+			diag_eq.nent = struct.unpack('I', f.read(4))[0]
+			diag_eq.mask = struct.unpack('Q', f.read(8))[0]
+			diag_eq.index = struct.unpack('I', f.read(4))[0]
+			diag_eq.group_id = struct.unpack('I', f.read(4))[0]
+			ring.write('EQ TYPE: %d, CI: %d, SIZE: %d, IRQN: %d, EQN: %d, NENT: %d, MASK: %d, INDEX: %d, GROUP_ID: %d\n' %(diag_eq.eq_type, diag_eq.ci, diag_eq.size, diag_eq.irqn, diag_eq.eqn, diag_eq.nent, diag_eq.mask, diag_eq.index, diag_eq.group_id))
+		else:
+			print 'Unknown block type'
+	ring.close()
+	f.close()
+	if os.stat(ring_dump_file).st_size == 0:
+		os.remove(ring_dump_file)
+
+	return 'Parsing Complete!'
+
+
+parser = OptionParser(usage="%prog -f <dump file name> -m <mst dump file> -r <ring dump file>", version="%prog 1.0")
+
+parser.add_option("-f", "--dump_file", dest="dump_file", help="Dump file name")
+
+parser.add_option("-m", "--mst_dump_file", dest="mst_dump_file", default='mst_dump.txt', help="File name for parsed MST data")
+
+parser.add_option("-r", "--ring_dump_file", dest="ring_dump_file", default='ring_dump.txt', help="File name for parsed ring dump")
+
+(options, args) = parser.parse_args()
+
+if (options.dump_file == None):
+	print "Name of dump file is required"
+	parser.print_usage()
+	sys.exit(1)
+
+str = read_binary(options.dump_file, options.mst_dump_file, options.ring_dump_file)
+print "%s" % str

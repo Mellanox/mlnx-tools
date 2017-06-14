@@ -1,0 +1,394 @@
+#!/usr/bin/python
+"""
+This is a tool to parse the flow steering information.
+
+It can either parse the output from command:
+
+	sudo mlxdump -d /dev/mst/mt4115_pciconf0 fsdump --type FT --no_zero=true > fs_log
+
+by doing: mlx_fs_dump.py -f fs_log
+
+Or just run this script and it will run the command(make sure mst is running).
+
+See ./mlx_fs_dump -h for help.
+"""
+
+__author__ =  'Bodong Wang - bodong@mellanox.com'
+__author__ =  'Huy Nguyen - huyn@mellanox.com'
+__author__ =  'Sunil Sudhakar Rani - sunils@mellanox.com'
+__version__=  '1.0'
+
+import sys
+import os
+import re
+import glob
+import subprocess
+import argparse
+import traceback
+from enum import Enum
+from argparse import RawTextHelpFormatter
+try:
+	from anytree import Node, RenderTree, NodeMixin, AsciiStyle
+except ImportError:
+	sys.exit("- ERR - Please install anytree (e.g, pip install anytree)")
+
+try:
+	from termcolor import colored
+except ImportError:
+	sys.exit("- ERR - Please install termcolor (e.g, pip install termcolor)")
+
+# Global
+tableList = []
+groupList = []
+entryList = []
+color = 1
+
+ftb_type = ["NIC_RX", "NIC_TX", "ESW_EGRESS_ACL","ESW_INGRESS_ACL", "ESW_FDB", "SNIFFER_RX", "SNIFFER_TX", "TX_RDMA", "TX_RDMA"]
+fte_action = ["", "ALLOW", "DROP", "", "FWD"]
+fte_match = ["OUT_HDR", "MISC", "IN_HDR", "", ""]
+dest_type = ["VPORT", "FLOW_TABLE", "TIR", "QP"]
+
+# Dict to rename the long name to short one
+match_criteria = {
+	"outer_headers.smac_47_16"		:	"out.smac_47_16",
+	"outer_headers.ethertype"		:	"out.ethtype",
+	"outer_headers.smac_15_0"		:	"out.smac_15_0",
+	"outer_headers.dmac_47_16"		:	"out.dmac_47_16",
+	"outer_headers.first_vid"		:	"out.1st_vid",
+	"outer_headers.first_cfi"		:	"out.1st_cfi",
+	"outer_headers.first_prio"		:	"out.1st_prio",
+	"outer_headers.dmac_15_0"		:	"out.dmac_15_0",
+	"outer_headers.tcp_flags"		:	"out.tcp_flags",
+	"outer_headers.frag"			:	"out.frag",
+	"outer_headers.svlan_tag"		:	"out.svlan_tag",
+	"outer_headers.cvlan_tag"		:	"out.cvlan_tag",
+	"outer_headers.ip_ecn"			:	"out.ip_ecn",
+	"outer_headers.ip_dscp"			:	"out.ip_dscp",
+	"outer_headers.ip_protocol"		:	"out.ip_prot",
+	"outer_headers.tcp_dport"		:	"out.tcp_dport",
+	"outer_headers.tcp_sport"		:	"out.tcp_sport",
+	"outer_headers.udp_dport"		:	"out.udp_dport",
+	"outer_headers.udp_sport"		:	"out.udp_sport",
+	"outer_headers.src_ip_127_96"		:	"out.src_ip_127_96",
+	"outer_headers.src_ip_95_64"		:	"out.src_ip_95_64",
+	"outer_headers.src_ip_63_32"		:	"out.src_ip_63_32",
+	"outer_headers.src_ip_31_0"		:	"out.src_ip_31_0",
+	"outer_headers.dst_ip_127_96"		:	"out.dst_ip_127_96",
+	"outer_headers.dst_ip_95_64"		:	"out.dst_ip_95_64",
+	"outer_headers.dst_ip_63_32"		:	"out.dst_ip_63_32",
+	"outer_headers.dst_ip_31_0"		:	"out.dst_ip_31_0",
+	"misc_parameters.source_sqn"		:	"src_sqn",
+	"misc_parameters.source_port"		:	"src_port",
+	"misc_parameters.inner_second_vid"	:	"in_2nd_vid",
+	"misc_parameters.inner_second_cfi"	:	"in_2nd_cfi",
+	"misc_parameters.inner_second_prio"	:	"in_2nd_prio",
+	"misc_parameters.outer_second_vid"	:	"out_2nd_vid",
+	"misc_parameters.outer_second_cfi"	:	"out_2nd_cfi",
+	"misc_parameters.outer_second_prio"	:	"out_2nd_prio",
+	"misc_parameters.gre_protocol"		:	"gre_protocol",
+	"misc_parameters.inner_second_svlan_ta"	:	"in_2nd_svlan_ta",
+	"misc_parameters.outer_second_svlan_ta"	:	"out_2nd_svlan_ta",
+	"misc_parameters.inner_second_cvlan_ta"	:	"in_2nd_cvlan_ta",
+	"misc_parameters.outer_second_cvlan_ta"	:	"out_2nd_cvlan_ta",
+	"misc_parameters.gre_key_l"		:	"gre_key_l",
+	"misc_parameters.gre_key_h"		:	"gre_key_h",
+	"misc_parameters.vxlan_vni"		:	"vxlan_vni",
+	"misc_parameters.geneve_oam"		:	"geneve_oam",
+	"misc_parameters.geneve_vni"		:	"geneve_vni",
+	"misc_parameters.outer_ipv6_flow_label"	:	"out_ipv6_flow_label",
+	"misc_parameters.inner_ipv6_flow_label"	:	"in_ipv6_flow_label",
+	"misc_parameters.geneve_protocol_type"	:	"geneve_prot_type",
+	"misc_parameters.bth_dst_qp"		:	"bth_dst_qp",
+	"inner_headers.smac_47_16"		:	"in.smac_47_16",
+	"inner_headers.ethertype"		:	"in.ethtype",
+	"inner_headers.smac_15_0"		:	"in.smac_15_0",
+	"inner_headers.dmac_47_16"		:	"in.dmac_47_16",
+	"inner_headers.first_vid"		:	"in.1st_vid",
+	"inner_headers.first_cfi"		:	"in.1st_cfi",
+	"inner_headers.first_prio"		:	"in.1st_prio",
+	"inner_headers.dmac_15_0"		:	"in.dmac_15_0",
+	"inner_headers.tcp_flags"		:	"in.tcp_flags",
+	"inner_headers.frag"			:	"in.frag",
+	"inner_headers.svlan_tag"		:	"in.svlan_tag",
+	"inner_headers.cvlan_tag"		:	"in.cvlan_tag",
+	"inner_headers.ip_ecn"			:	"in.ip_ecn",
+	"inner_headers.ip_dscp"			:	"in.ip_dscp",
+	"inner_headers.ip_protocol"		:	"in.ip_prot",
+	"inner_headers.tcp_dport"		:	"in.tcp_dport",
+	"inner_headers.tcp_sport"		:	"in.tcp_sport",
+	"inner_headers.udp_dport"		:	"in.udp_dport",
+	"inner_headers.udp_sport"		:	"in.udp_sport",
+	"inner_headers.src_ip_127_96"		:	"in.src_ip_127_96",
+	"inner_headers.src_ip_95_64"		:	"in.src_ip_95_64",
+	"inner_headers.src_ip_63_32"		:	"in.src_ip_63_32",
+	"inner_headers.src_ip_31_0"		:	"in.src_ip_31_0",
+	"inner_headers.dst_ip_127_96"		:	"in.dst_ip_127_96",
+	"inner_headers.dst_ip_95_64"		:	"in.dst_ip_95_64",
+	"inner_headers.dst_ip_63_32"		:	"in.dst_ip_63_32",
+	"inner_headers.dst_ip_31_0"		:	"in.dst_ip_31_0"
+}
+
+# Dict to find the ethType name
+eth_type = {
+	"0x800" : "IPv4",
+	"0x806" : "APR",
+	"33024" : "VLAN_TAGGED",
+	"0x8914": "FCOE",
+	"0x86dd": "IPv6",
+	"0x8915": "RCOE"
+}
+
+# Dict to find the IP_Protocal name
+ip_proto = {
+	1 : "ICMP",
+	2 : "IGMP",
+	4 : "IP-in-IP",
+	6  : "TCP",
+	17 : "UDP",
+	41 : "IPv6",
+	50 : "ESP",
+	51 : "AH",
+}
+
+def test_bit(node=[], bit=None):
+	try:
+		return node[node.index(bit) + 1]
+	except ValueError:
+		return "0"
+
+def green(string):
+	if color:
+    		return colored(string, 'green')
+	else:
+		return string
+
+def blue(string):
+	if color:
+    		return colored(string, 'blue')
+	else:
+		return string
+
+def red(string):
+	if color:
+    		return colored(string, 'red')
+	else:
+		return string
+
+class flow_table(NodeMixin):
+	def __init__(self, parent=None, table_id=None, level=None, type=None, table_miss_id=None, rootFlag=1):
+		self.parent = parent
+		self.table_id = table_id
+		self.vport = 0
+		self.level = level
+		self.type = type # Use flow_table_type
+		self.table_miss_id = table_miss_id
+		self.rootFlag = rootFlag
+
+class flow_group(NodeMixin):
+	def __init__(self, parent=None, table_id=None, group_id=None, match_enable=None, match_cr=[]):
+		self.parent = parent
+		self.table_id = table_id
+		self.group_id = group_id
+		self.match_enable = match_enable
+		self.match_cr = match_cr
+
+class flow_entry(NodeMixin):
+	def __init__(self, parent=None, table_id=None,\
+			group_id=None, action=None, flow_index=None,\
+			dst_type=None, dst_value=None, match_cr=[]):
+		self.parent = parent
+		self.table_id = table_id
+		self.group_id = group_id
+		self.action = action
+		self.flow_index = flow_index
+		self.dst_type = dst_type
+		self.dst_value = dst_value
+		self.cr_found = []
+
+		for i, cr in enumerate(match_cr):
+			# Only check the cr name
+			if not i % 2:
+				try:
+					cr_rename = match_criteria[cr]
+				except KeyError:
+					continue
+				# Save cr name
+				self.cr_found.append(cr_rename)
+				# Save cr value
+				self.cr_found.append(match_cr[i+1])
+
+def printFt(node):
+	return ("level: %s, type: %s" % (node.level, node.type))
+
+def printFg(node):
+	return ("%s" % (node.match_enable))
+
+def printFte(node):
+	ret = " "
+
+	if node.dst_type is not "0":
+		ret += "to (" + node.dst_type + ":" + node.dst_value + ") "
+
+	for i, cr in enumerate(node.cr_found):
+		# Only print cr with none 0 value
+		if (i % 2) and (cr is not "0"):
+			cr_name = node.cr_found[i-1]
+			if "ethtype" in cr_name:
+				try:
+					cr = eth_type[cr]
+				except KeyError:
+					pass
+			elif "ip_prot" in cr_name:
+				try:
+					cr = ip_proto[int(cr, 0)]
+				except KeyError:
+					pass
+			elif "out.dmac_47_16" in cr_name:
+				cr_name = "out.dmac"
+				try:
+					index = node.cr_found.index("out.dmac_15_0")
+				except ValueError:
+					index = -1
+
+				if index is not -1:
+					cr = cr.zfill(8) + node.cr_found[index+1].lstrip("0x").zfill(4)
+					node.cr_found[index] = "0"
+					node.cr_found[index+1] = "0"
+			elif "out.smac_47_16" in cr_name:
+				cr_name = "out.smac"
+				try:
+					index = node.cr_found.index("out.smac_15_0")
+				except ValueError:
+					index = -1
+
+				if index is not -1:
+					cr = cr.zfill(8) + node.cr_found[index+1].lstrip("0x").zfill(4)
+					node.cr_found[index] = "0"
+					node.cr_found[index+1] = "0"
+
+
+			ret += cr_name + ":" + cr + " "
+
+	return ret
+
+def printNode(pre, node, substring):
+	if isinstance(node, flow_table):
+		print(blue("%s%s%s (%s)") % (pre, "FT: ", node.table_id, printFt(node)))
+	elif isinstance(node, flow_group):
+ 		print(red("%s%s%s (%s)") % (pre, "FG: ", node.group_id, printFg(node)))
+	elif isinstance(node, flow_entry):
+		print(green("%s%s%s (%s)%s") % \
+			(pre, "FTE: ", node.flow_index, node.action, printFte(node)))
+
+class fancy_dump():
+
+	def __init__(self, args=[]):
+		global color
+		parser = argparse.ArgumentParser(\
+			description='-'*65 + "\n" +
+			'Dump flow table in a fancy way.\n\n' + \
+			'Package/Tool required:\n' +\
+			'\t - mst\n' +\
+			'\t - python packages (anytree, termcolor)\n' + \
+			'-'*65,
+			formatter_class=RawTextHelpFormatter)
+		# Add arguments
+		parser.add_argument('-g', type=int, help='Gvmi number', dest='gvmi', required=False, default=0)
+		parser.add_argument('-c', type=int, help='Print with color', dest='color', required=False, default=1)
+		parser.add_argument('-f', help='Parse a file from mlxdump', dest='in_file', required=False, default=None)
+		# Array for all arguments passed to script
+		arg = parser.parse_args()
+		self.gvmi = arg.gvmi
+		color = arg.color
+		self.in_file = arg.in_file
+
+	def run(self):
+		if self.in_file is None:
+			#run fsdump command
+			self.cmd = "sudo mlxdump -d /dev/mst/mt4115_pciconf0 fsdump --type FT --no_zero=true" + " --gvmi " + str(self.gvmi)
+
+			p = subprocess.Popen(self.cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+			out, err = p.communicate()
+
+			if err:
+				return ("[%s] Failed\n- ERROR - %s" % (self.cmd, err))
+
+			if b"-E-" in out:
+				return ("[%s] Failed\n- %s" % (self.cmd, out))
+		else:
+			with open(self.in_file, 'rb') as f:
+				    out = f.read()
+
+		# split the output with empty lines
+		out_1 = out.decode('utf8').split(os.linesep + os.linesep)
+
+		# split with ,
+		for i in out_1:
+			node = i.replace("\n", ",").replace("-", "").replace(" ", "").replace("=", ",").replace(":", ",").lstrip(',').split(',')
+			#print node
+
+			table_id = test_bit(node, "table_id")
+			group_id = test_bit(node, "group_id")
+
+			if node[0] == "FT":
+				vport = test_bit(node, "gvmi")
+				type = ftb_type[int(test_bit(node, "table_type"), 0)]
+				level = test_bit(node, "level")
+				table_miss_id = test_bit(node, "table_miss_id")
+
+				tableList.append(flow_table(None, table_id, level, type, table_miss_id, 1))
+
+			if node[0] == "FG":
+				match_enable = test_bit(node, "match_criteria_enable")
+
+				if int(match_enable, 0):
+					match_cr = node[node.index("match_criteria_enable") + 2:]
+				else:
+					match_cr = []
+
+				match_enable = fte_match[int(match_enable, 0)]
+
+				groupList.append(flow_group(None, table_id, group_id, match_enable, match_cr))
+
+			if node[0] == "FTE":
+				action = fte_action[int(test_bit(node, "action"), 0)]
+				valid = test_bit(node,"valid")
+				flow_index = test_bit(node,"flow_index")
+				dst_value = test_bit(node,"destination[0].destination_id")
+				dst_type = test_bit(node, "destination[0].destination_type").\
+						split("(")[0].rstrip('_')
+
+				if int(valid, 0):
+					match_cr = node[node.index("valid") + 2:]
+				else:
+					match_cr = []
+				entryList.append(flow_entry(None, table_id,\
+						group_id, action, flow_index,\
+						dst_type, dst_value, match_cr))
+
+		for ftb_idx, ftb in enumerate(tableList):
+                        for fg_idx, fg in enumerate(groupList):
+                            for fte_idx, fte in enumerate(entryList):
+                                if int(fte.group_id, 0) == int(fg.group_id, 0):
+                                    entryList[fte_idx].parent = groupList[fg_idx]
+                            if int(ftb.table_id, 0) == int(fg.table_id, 0):
+                                groupList[fg_idx].parent = tableList[ftb_idx]
+
+		for fte_idx, fte in enumerate(entryList):
+			if fte.dst_type == "FLOW_TABLE":
+				for ftb_idx, ftb in enumerate(tableList):
+					if int(ftb.table_id, 0) == int(fte.dst_value, 0):
+						tableList[ftb_idx].parent = entryList[fte_idx]
+						tableList[ftb_idx].rootFlag = 0
+
+		for i in tableList:
+			if not i.rootFlag:
+				continue
+
+			for pre, _, node in RenderTree(i, style=AsciiStyle()):
+				printNode(pre, node, 0)
+
+if __name__ == "__main__":
+	test = fancy_dump(sys.argv[1:])
+	rc = test.run()
+	sys.exit(rc)
