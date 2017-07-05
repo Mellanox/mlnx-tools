@@ -36,7 +36,7 @@ Example:
 set_rocev2_default() {
 	cma_roce_mode -d $IBDEV -p $PORT -m 2 > /dev/null
 	if [[ $? != 0 ]] ; then
-		echo " - Setting RoCEv2 as rdma_cm preference failed; Please make sure you installed cma_roce_mode"
+		>&2 echo " - Setting RoCEv2 as rdma_cm preference failed; Please make sure you installed cma_roce_mode"
 		exit 1
 	else
 		echo " + RoCE v2 is set as default rdma_cm preference"
@@ -46,7 +46,7 @@ set_rocev2_default() {
 config_trust_mode() {
 	mlnx_qos -i $NETDEV --trust $TRUST_MODE > /dev/null
 	if [[ $? != 0 ]] ; then
-		echo " - Setting $TRUST_MODE as trust mode failed; Please make sure you installed mlnx_qos"
+		>&2 echo " - Setting $TRUST_MODE as trust mode failed; Please make sure you installed mlnx_qos"
 		exit 1
 	else
 		echo " + Trust mode is set to $TRUST_MODE"
@@ -56,7 +56,7 @@ config_trust_mode() {
 start_lldpad() {
 	service lldpad start > /dev/null
 	if [[ $? != 0 ]] ; then
-		echo " - Starting lldpad failed; exiting"
+		>&2 echo " - Starting lldpad failed; exiting"
 		exit 1
 	else
 		echo " + Service lldpad is running"
@@ -70,7 +70,7 @@ config_pfc() {
 	lldptool -T -i $NETDEV -V PFC enableTx=yes > /dev/null &&
 	lldptool -T -i $NETDEV -V PFC enabled=$PFC_STRING > /dev/null
 	if [[ $? != 0 ]] ; then
-		echo " - Configuring PFC failed for priority lanes $PFC_STRING"
+		>&2 echo " - Configuring PFC failed for priority lanes $PFC_STRING"
 		exit 1
 	else
 		echo " + PFC is configured for priority lanes $PFC_STRING"
@@ -81,7 +81,7 @@ enable_pfc_willing() {
 	lldptool -T -i $NETDEV -V PFC enableTx=yes > /dev/null &&
 	lldptool -T -i $NETDEV -V PFC willing=yes > /dev/null
 	if [[ $? != 0 ]] ; then
-		echo " - Enabling PFC willing bit failed"
+		>&2 echo " - Enabling PFC willing bit failed"
 		exit 1
 	else
 		echo " + Enabled PFC willing bit"
@@ -93,7 +93,7 @@ enable_pfc_willing() {
 enable_congestion_control() {
 	echo 1 > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/cc_enable
 	if [[ $? != 0 ]] ; then
-		echo " - Enabling congestion control failed"
+		>&2 echo " - Enabling congestion control failed"
 		exit 1
 	else
 		echo " + Congestion control enabled"
@@ -105,7 +105,7 @@ enable_congestion_control() {
 set_cnp_priority() {
 	echo 7 > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/np_cnp_prio
 	if [[ $? != 0 ]] ; then
-		echo " - Setting CNP priority failed"
+		>&2 echo " - Setting CNP priority failed"
 		exit 1
 	else
 		echo " + CNP priority is set to 7"
@@ -135,7 +135,7 @@ case $1 in
 	-h )	print_usage
 		exit
 		;;
-	* )	echo " - Invalid option \"$1\""
+	* )	(>&2 echo " - Invalid option \"$1\"")
 		print_usage
 		exit 1
     esac
@@ -143,30 +143,30 @@ case $1 in
 done
 
 if [ "$EUID" -ne 0 ] ; then
-	echo " - Please run as root"
+	>&2 echo " - Please run as root"
 	exit 1
 fi
 
 if [[ $NETDEV == "" ]] ; then
-	echo " - Please enter an interface name, -i option is mandatory"
+	>&2 echo " - Please enter an interface name, -i option is mandatory"
 	print_usage
 	exit 1
 fi
 IBDEV="$(ibdev2netdev | grep "$NETDEV" | head -1 | cut -f 1 -d " ")"
 if [ -z "$IBDEV" ] ; then
-	echo " - netdev \"$NETDEV\" doesn't exist or doesn't have a corresponding ibdev"
+	>&2 echo " - netdev \"$NETDEV\" doesn't exist or doesn't have a corresponding ibdev"
 	exit 1
 fi
 PORT="$(ibdev2netdev | grep $NETDEV | head -1 | cut -f 3 -d " ")"
 echo "NETDEV=$NETDEV; IBDEV=$IBDEV; PORT=$PORT"
 
 if [[ $W_DCBX != "1" && $W_DCBX != "0" ]] ; then
-	echo " - Option -d can take only 1 or 0 as input"
+	>&2 echo " - Option -d can take only 1 or 0 as input"
 	exit 1
 fi
 
 if [[ $TRUST_MODE != "dscp" && $TRUST_MODE != "pcp" ]] ; then
-	echo " - Option -t can take only dscp or pcp as input"
+	>&2 echo " - Option -t can take only dscp or pcp as input"
 	exit 1
 fi
 
@@ -175,13 +175,13 @@ config_trust_mode
 
 PCI_ADDR="$(ethtool -i $NETDEV | grep "bus-info" | cut -f 2 -d " ")"
 if [ -z "$PCI_ADDR" ] ; then
-	echo " - Failed to obtain PCI ADDRESS for netdev \"$NETDEV\""
+	>&2 echo " - Failed to obtain PCI ADDRESS for netdev \"$NETDEV\""
 	exit 1
 fi
 if (! cat /proc/mounts |grep /sys/kernel/debug > /dev/null) ; then
 	mount -t debugfs none /sys/kernel/debug
 	if [[ $? != 0 ]] ; then
-		echo " - Failed to mount debugfs"
+		>&2 echo " - Failed to mount debugfs"
 		exit 1
 	fi
 fi
