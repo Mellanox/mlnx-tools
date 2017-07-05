@@ -2,26 +2,34 @@
 #NETDEV is the netdev interface name (e.g.: eth4)
 #IBDEV is the corresponding IB device (e.g.: mlx5_0)
 #PORT is the corresponding IB port
-#W_SWITCH identifies if the interface is connected to a switch or not
+#W_DCBX identifies if dynamic/static config is preferred
 
-W_SWITCH=1
+NETDEV=""
+W_DCBX=1
 TRUST_MODE=dscp
+PFC_STRING=1,2,3,4,5,6
 
 echo ""
 
 print_usage() {
-  echo "Use this script to configure RoCE on Oracle setups
-Usage: 
-	roce_config <netdev> [-s <n>]
+#Use this script to configure RoCE on Oracle setups
+  echo "Usage:
+	roce_config -i <netdev> [-d <n>] [-t <trust_mode>]
+			[-p <pfc_string>]
 
 Options:
- -s <n>			n is 1 if interface is connected to switch
-		  	  is 0 if connected back-to-back(default: 1)
+ -i <interface>		enter the interface name(required)
+
+ -d <n>			n is 1 if dynamic config(DCBX)is preferred,
+			  is 0 if static config is preferred (default: 1)
 
  -t <trust_mode>	set priority trust mode to pcp or dscp(default: dscp)
 
+ -p <pfc_string>	enter the string of priority lanes to enable pfc for them
+			(default: 1,2,3,4,5,6). This is ignored for dynamic config.
+
 Example:
-	roce_config eth4 -s 0
+	roce_config -i eth4 -d 0 -t pcp
 "
 }
 
@@ -56,21 +64,27 @@ start_lldpad() {
 }
 
 config_pfc() {
-#Alternatively pfc config could be done by using lldp tool
-#	lldptool -T -i $NETDEV -V sysCap enableTx=yes
-#	lldptool -T -i $NETDEV -V mngAddr enableTx=yes
-#	lldptool -T -i $NETDEV -V PFC enableTx=yes
-#	lldptool -T -i $NETDEV -V CEE-DCBX enableTx=yes
-#	lldptool set-lldp -i $NETDEV adminStatus=rxtx
-#	
-#	lldptool -T -i $NETDEV -V PFC enabled=1,2,3,4,5,6
+#Alternatively pfc config could be done by using mlnx_qos tool
+#	mlnx_qos -i $NETDEV --pfc 0,1,1,1,1,1,1,0
 
-	mlnx_qos -i $NETDEV --pfc 0,1,1,1,1,1,1,0 > /dev/null
+	lldptool -T -i $NETDEV -V PFC enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V PFC enabled=$PFC_STRING > /dev/null
 	if [[ $? != 0 ]] ; then
-		echo " - Configuring PFC failed"
+		echo " - Configuring PFC failed for priority lanes $PFC_STRING"
 		exit 1
 	else
-		echo " + PFC is configured as 0,1,1,1,1,1,1,0"
+		echo " + PFC is configured for priority lanes $PFC_STRING"
+	fi
+}
+
+enable_pfc_willing() {
+	lldptool -T -i $NETDEV -V PFC enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V PFC willing=yes > /dev/null
+	if [[ $? != 0 ]] ; then
+		echo " - Enabling PFC willing bit failed"
+		exit 1
+	else
+		echo " + Enabled PFC willing bit"
 	fi
 }
 
@@ -98,7 +112,7 @@ set_cnp_priority() {
 	fi
 }
 
-if [[ $# -gt 5 || $# -lt 1 ]]
+if [[ $# -gt 8 || $# -lt 2 ]]
 then
 	print_usage
 	exit 1
@@ -106,16 +120,24 @@ fi
 
 while [ "$1" != "" ]; do
 case $1 in
-	-s )	shift
-		W_SWITCH=$1
+	-i )	shift
+		NETDEV=$1
+		;;
+	-d )	shift
+		W_DCBX=$1
 		;;
 	-t )	shift
 		TRUST_MODE=$1
 		;;
+	-p )	shift
+		PFC_STRING=$1
+		;;
 	-h )	print_usage
 		exit
 		;;
-	* )	NETDEV=$1
+	* )	echo " - Invalid option \"$1\""
+		print_usage
+		exit 1
     esac
     shift
 done
@@ -125,7 +147,12 @@ if [ "$EUID" -ne 0 ] ; then
 	exit 1
 fi
 
-IBDEV="$(ibdev2netdev | grep $NETDEV | head -1 | cut -f 1 -d " ")"
+if [[ $NETDEV == "" ]] ; then
+	echo " - Please enter an interface name, -i option is mandatory"
+	print_usage
+	exit 1
+fi
+IBDEV="$(ibdev2netdev | grep "$NETDEV" | head -1 | cut -f 1 -d " ")"
 if [ -z "$IBDEV" ] ; then
 	echo " - netdev \"$NETDEV\" doesn't exist or doesn't have a corresponding ibdev"
 	exit 1
@@ -133,8 +160,8 @@ fi
 PORT="$(ibdev2netdev | grep $NETDEV | head -1 | cut -f 3 -d " ")"
 echo "NETDEV=$NETDEV; IBDEV=$IBDEV; PORT=$PORT"
 
-if [[ $W_SWITCH != "1" && $W_SWITCH != "0" ]] ; then
-	echo " - Option -s can take only 1 or 0 as input"
+if [[ $W_DCBX != "1" && $W_DCBX != "0" ]] ; then
+	echo " - Option -d can take only 1 or 0 as input"
 	exit 1
 fi
 
@@ -145,27 +172,27 @@ fi
 
 set_rocev2_default
 config_trust_mode
-start_lldpad
 
-if [[ $W_SWITCH == "0" ]] ; then
-	config_pfc
-
-	PCI_ADDR="$(ethtool -i $NETDEV | grep "bus-info" | cut -f 2 -d " ")"
-	if [ -z "$PCI_ADDR" ] ; then
-		echo " - Failed to obtain PCI ADDRESS for netdev \"$NETDEV\""
+PCI_ADDR="$(ethtool -i $NETDEV | grep "bus-info" | cut -f 2 -d " ")"
+if [ -z "$PCI_ADDR" ] ; then
+	echo " - Failed to obtain PCI ADDRESS for netdev \"$NETDEV\""
+	exit 1
+fi
+if (! cat /proc/mounts |grep /sys/kernel/debug > /dev/null) ; then
+	mount -t debugfs none /sys/kernel/debug
+	if [[ $? != 0 ]] ; then
+		echo " - Failed to mount debugfs"
 		exit 1
 	fi
+fi
+enable_congestion_control
+set_cnp_priority
 
-	if (! cat /proc/mounts |grep /sys/kernel/debug > /dev/null) ; then
-		mount -t debugfs none /sys/kernel/debug
-        	if [[ $? != 0 ]] ; then
-                	echo " - Failed to mount debugfs"
-			exit 1
-		fi
-	fi
-
-	enable_congestion_control
-	set_cnp_priority
+start_lldpad
+if [[ $W_DCBX == "0" ]] ; then
+	config_pfc
+else
+	enable_pfc_willing
 fi
 
 echo ""
@@ -192,3 +219,8 @@ function ets_traffic_class_config {
 function ets_rate_limiting {
 	mlnx_qos -i $NETDEV -r 5,4,3,2,1,10,17,8
 }
+#	lldptool -T -i $NETDEV -V sysCap enableTx=yes
+#	lldptool -T -i $NETDEV -V mngAddr enableTx=yes
+#	lldptool -T -i $NETDEV -V PFC enableTx=yes
+#	lldptool -T -i $NETDEV -V CEE-DCBX enableTx=yes
+#	lldptool set-lldp -i $NETDEV adminStatus=rxtx
