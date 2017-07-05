@@ -152,9 +152,15 @@ if [[ $NETDEV == "" ]] ; then
 	print_usage
 	exit 1
 fi
+ip a s $NETDEV > /dev/null
+if [[ $? != 0 ]] ; then
+	>&2 echo " - netdevice \"$NETDEV\" doesn't exist"
+	exit 1
+fi
+
 IBDEV="$(ibdev2netdev | grep "$NETDEV" | head -1 | cut -f 1 -d " ")"
 if [ -z "$IBDEV" ] ; then
-	>&2 echo " - netdev \"$NETDEV\" doesn't exist or doesn't have a corresponding ibdev"
+	>&2 echo " - netdev \"$NETDEV\" doesn't have a corresponding ibdev"
 	exit 1
 fi
 PORT="$(ibdev2netdev | grep $NETDEV | head -1 | cut -f 3 -d " ")"
