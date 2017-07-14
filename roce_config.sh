@@ -68,6 +68,7 @@ config_pfc() {
 #	mlnx_qos -i $NETDEV --pfc 0,1,1,1,1,1,1,0
 
 	lldptool -T -i $NETDEV -V PFC enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V PFC willing=no > /dev/null &&
 	lldptool -T -i $NETDEV -V PFC enabled=$PFC_STRING > /dev/null
 	if [[ $? != 0 ]] ; then
 		>&2 echo " - Configuring PFC failed for priority lanes $PFC_STRING"
