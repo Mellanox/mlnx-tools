@@ -104,12 +104,13 @@ enable_congestion_control() {
 #Perform CNP frame configuration, indicating with L2 priority
 #to use for sending CNP frames.
 set_cnp_priority() {
-	echo 7 > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/np_cnp_prio
+	echo 7  > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/np_cnp_prio &&
+	echo 56 > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/np_cnp_dscp
 	if [[ $? != 0 ]] ; then
-		>&2 echo " - Setting CNP priority failed"
+		>&2 echo " - Setting CNP priority lane failed"
 		exit 1
 	else
-		echo " + CNP priority is set to 7"
+		echo " + CNP is set to priority lane 7"
 	fi
 }
 
