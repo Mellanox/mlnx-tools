@@ -28,6 +28,9 @@ install -o root -g root -m 0755 ${parent_path}/ofed_scripts/cma_roce_mode /usr/s
 echo "Installing show_gids..."
 install -o root -g root -m 0755 ${parent_path}/ofed_scripts/show_gids /usr/sbin/show_gids
 
+echo "Installing roce_config..."
+install -o root -g root -m 0755 ${parent_path}/roce_config.sh /usr/bin/roce_config
+
 echo "Installing Mellanox Python utils..."
 cd ${parent_path}/ofed_scripts/utils/
 /usr/bin/env python setup.py install
