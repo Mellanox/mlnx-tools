@@ -17,8 +17,8 @@ def hexdump(msg, data):
 			arr +="\n"
 		arr += '%02x ' % ord(data[i])
 #	hex = lambda data: ' '.join('{:02X}'.format(data[i]) for i in range(len(data)))
-	print msg, ":"
-	print arr
+	print((msg, ":"))
+	print(arr)
 
 
 try:
@@ -118,7 +118,7 @@ class Attr:
         hdr = struct.pack("HH", len(self.data)+4, self.type)
         length = len(self.data)
         pad = ((length + 4 - 1) & ~3 ) - length
-        return hdr + self.data + '\0' * pad
+        return hdr + self.data + b'\0' * pad
 
     def __repr__(self):
         return '<Attr type %d, data "%s">' % (self.type, repr(self.data))
@@ -139,6 +139,8 @@ class Attr:
         return self.data.split('\0')[0]
     def nested(self):
         return parse_attributes(self.data)
+    def get_app_table(self):
+        return parse_app_entry(self.data)
 
 class StrAttr(Attr):
     def __init__(self, attr_type, data):
@@ -199,7 +201,7 @@ class Message:
             contents = []
             for attr in payload:
                 contents.append(attr._dump())
-            self.payload = ''.join(contents)
+            self.payload = b''.join(contents)
         else:
             self.payload = payload
 
@@ -261,6 +263,18 @@ def parse_attributes(data):
     while len(data):
         attr_len, attr_type = struct.unpack("HH", data[:4])
         attrs[attr_type] = Attr(attr_type, data[4:attr_len])
+        attr_len = ((attr_len + 4 - 1) & ~3 )
+        data = data[attr_len:]
+    return attrs
+
+def parse_app_entry(data):
+    attrs = {}
+    i = 0
+
+    while len(data):
+        attr_len, attr_type = struct.unpack("HH", data[:4])
+        attrs[i] = Attr(attr_type, data[4:attr_len])
+        i = i + 1
         attr_len = ((attr_len + 4 - 1) & ~3 )
         data = data[attr_len:]
     return attrs

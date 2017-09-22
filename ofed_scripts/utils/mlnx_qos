@@ -1,13 +1,42 @@
 #!/usr/bin/python
+#
+# Copyright (c) 2017 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
 
 import sys
 import os
+import subprocess
+
 if os.path.exists('/usr/share/pyshared'):
-    sys.path.append('/usr/share/pyshared')
+	sys.path.append('/usr/share/pyshared')
 from optparse import OptionParser
 from dcbnetlink import DcbController
 from collections import defaultdict
 from subprocess import Popen, PIPE
+from dcbnetlink import DcbApp, DcbAppTable
 
 DCB_CAP_DCBX_HOST = 0x1
 DCB_CAP_DCBX_LLD_MANAGED = 0x2
@@ -20,57 +49,85 @@ IEEE_8021QAZ_TSA_CB_SHAPER = 1
 IEEE_8021QAZ_TSA_ETS = 2
 IEEE_8021QAZ_TSA_VENDOR = 255
 
-class Maxrate:
-    def get(self):
-        pass
-    def set(self, ratelimit):
-        pass
+IEEE_8021QAZ_APP_SEL_ETHERTYPE	= 1
+IEEE_8021QAZ_APP_SEL_STREAM	= 2
+IEEE_8021QAZ_APP_SEL_DGRAM	= 3
+IEEE_8021QAZ_APP_SEL_ANY	= 4
+IEEE_8021QAZ_APP_SEL_DSCP       = 5
 
-    def prepare(self, ratelimit):
-	old_ratelimit = self.get()
-        ratelimit += old_ratelimit[len(ratelimit):8]
-        return ratelimit
+class Maxrate:
+	def get(self):
+		pass
+	def set(self, ratelimit):
+		pass
+
+	def prepare(self, ratelimit):
+		old_ratelimit = self.get()
+		ratelimit += old_ratelimit[len(ratelimit):8]
+		return ratelimit
 
 class MaxrateNL(Maxrate):
-    def __init__(self, ctrl):
-        self.ctrl = ctrl
-    def get(self):
-        return ctrl.get_ieee_maxrate()
+	def __init__(self, ctrl):
+		self.ctrl = ctrl
+	def get(self):
+		return ctrl.get_ieee_maxrate()
 
-    def set(self, ratelimit):
-        ratelimit = self.prepare(ratelimit)
-	ctrl.set_ieee_maxrate(ratelimit)
+	def set(self, ratelimit):
+		ratelimit = self.prepare(ratelimit)
+		ctrl.set_ieee_maxrate(ratelimit)
 
 class MaxrateSysfs(Maxrate):
-    def __init__(self, path):
-        self.path = path
+	def __init__(self, path):
+		self.path = path
 
-    def get(self):
-	ratelimit = []
-	f = open(self.path, "r")
-	for item in f.read().split():
-		ratelimit.append(float(item))
-	f.close()
+	def get(self):
+		ratelimit = []
+		f = open(self.path, "r")
+		for item in f.read().split():
+			ratelimit.append(float(item))
+		f.close()
 
-	return ratelimit
+		return ratelimit
 
-    def set(self, ratelimit):
-        ratelimit = self.prepare(ratelimit)
-	f = open(self.path, "w")
-	f.write(" ".join(str(r) for r in ratelimit))
-	f.close()
+	def set(self, ratelimit):
+		ratelimit = self.prepare(ratelimit)
+		f = open(self.path, "w")
+		f.write(" ".join(str(r) for r in ratelimit))
+		f.close()
 
-def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust):
-	string = "Priority trust mode: "
-	if (trust == 1):
-		string = string + "pcp"
-	elif (trust == 2):
-		string = string + "dscp"
-	elif (trust == 3):
-		string = string + "both"
+class Trust:
+	def __init__(self):
+		self.trust = "none"
+
+	def getTrust(self, ctrl):
+		appTable = ctrl.get_ieee_app_table()
+
+		if appTable.countAppSelector(IEEE_8021QAZ_APP_SEL_DSCP) == 0:
+			self.trust = "pcp"
+		else:
+			self.trust = "dscp"
+
+	def setTrust(self, ctrl, optionTrust):
+		if self.trust == optionTrust:
+			return
+
+		appTable = ctrl.get_ieee_app_table()
+
+		if optionTrust == "pcp":
+			appTable.delAppEntry(ctrl, IEEE_8021QAZ_APP_SEL_DSCP)
+		elif optionTrust == "dscp":
+			appTable.setDefaultAppEntry(ctrl, IEEE_8021QAZ_APP_SEL_DSCP, 64)
+
+def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, appTable, pfc_delay):
+	if (ctrl.get_dcbx() & DCB_CAP_DCBX_HOST):
+		print("DCBX mode: OS controlled")
 	else:
-		string = string + "none"
-	print string
+		print("DCBX mode: Firmware controlled")
+
+	print ("Priority trust state: " + trust)
+	if trust == "dscp":
+		print("dscp2prio mapping:")
+		appTable.printAppSelector(IEEE_8021QAZ_APP_SEL_DSCP)
 
 	tc2up = defaultdict(list)
 
@@ -78,26 +135,27 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust):
 		for i in range(8):
 			tc2up.setdefault(i,[])
 
-	print "PFC configuration:"
-	print "\tpriority    0   1   2   3   4   5   6   7"
+	print("Cable len: %d" % pfc_delay)
+
+	print("PFC configuration:")
+	print("\tpriority    0   1   2   3   4   5   6   7")
 	msg = "\tenabled     "
 	for up in range(8):
 		msg += "%1d   " % ((pfc_en >> up) & 0x01)
-	print msg
-	print ""
+	print(msg)
 
 	for up in range(len(prio_tc)):
 		tc = prio_tc[up]
 		tc2up[int(tc)].append(up)
 
 	for tc in tc2up:
-                r = "unlimited"
+		r = "unlimited"
 		msg = ""
 		try:
-	                if ratelimit[tc] > 0:
-	                    r = "%.1f Gbps" % (float(ratelimit[tc] / 1000)/1000)
+			if ratelimit[tc] > 0:
+				r = "%.1f Gbps" % (float(ratelimit[tc] / 1000)/1000)
 			msg = "tc: %d ratelimit: %s, tsa: " % (tc, r)
-		except Exception, err:
+		except Exception as err:
 			pass
 		try:
 			if (tsa[tc] == IEEE_8021QAZ_TSA_ETS):
@@ -108,77 +166,88 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust):
 				msg += "vendor"
 			else:
 				msg += "unknown"
-		except Exception, err:
+		except Exception as err:
 			pass
 
 		if msg:
-			print msg
+			print(msg)
 
 		try:
 			for up in tc2up[tc]:
-				print "\t priority: ", up
-		except Exception, err:
+				print(("\t priority:  %s" % up))
+		except Exception as err:
 			pass
 
 def parse_int(str, min, max, description):
-    try:
-        v = int(str)
+	try:
+		v = int(str)
 
-        if (v < min or v > max):
-            raise ValueError("%d is not in the range %d..%d" % (v, min, max))
+		if (v < min or v > max):
+			raise ValueError("%d is not in the range %d..%d" % (v, min, max))
 
-        return v
-    except ValueError, e:
-        print "Bad value for %s: %s" % (description, e)
-        parser.print_usage()
-        sys.exit(1)
+		return v
+	except ValueError as e:
+		print(("Bad value for %s: %s" % (description, e)))
+		parser.print_usage()
+		sys.exit(1)
 
-parser = OptionParser(usage="%prog -i <interface> [options]", version="%prog 1.0")
+parser = OptionParser(usage="%prog -i <interface> [options]", version="%prog 1.2")
 
 parser.add_option("-f", "--pfc", dest="pfc",
 		  help="Set priority flow control for each priority. LIST is " +
-                  "comma separated value for each priority starting from 0 to 7. " +
-		  "Example: 0,0,0,0,1,1,1,1 enable PFC on TC4-7", metavar="LIST")
+			"comma separated value for each priority starting from 0 to 7. " +
+			"Example: 0,0,0,0,1,1,1,1 enable PFC on TC4-7",
+		  metavar="LIST")
 parser.add_option("-p", "--prio_tc", dest="prio_tc",
 		  help="maps UPs to TCs. LIST is 8 comma seperated TC numbers. " +
-		  "Example: 0,0,0,0,1,1,1,1 maps UPs 0-3 to TC0, and UPs 4-7 to " +
-		  "TC1", metavar="LIST")
-parser.add_option("-s", "--tsa", dest="tsa", help="Transmission algorithm for " +
-		"each TC. LIST is comma seperated algorithm names for each TC. " +
-		"Possible algorithms: strict, etc. Example: ets,strict,ets sets " +
-		"TC0,TC2 to ETS and TC1 to strict. The rest are unchanged.",
-		metavar="LIST")
+			"Example: 0,0,0,0,1,1,1,1 maps UPs 0-3 to TC0, and UPs 4-7 to " +
+			"TC1",
+		  metavar="LIST")
+parser.add_option("-s", "--tsa", dest="tsa",
+		  help="Transmission algorithm for " +
+			"each TC. LIST is comma seperated algorithm names for each TC. " +
+			"Possible algorithms: strict, etc. Example: ets,strict,ets sets " +
+			"TC0,TC2 to ETS and TC1 to strict. The rest are unchanged.",
+		  metavar="LIST")
 parser.add_option("-t", "--tcbw", dest="tc_bw",
 		  help="Set minimal guaranteed %BW for ETS TCs. LIST is comma " +
-		  "seperated percents for each TC. Values set to TCs that are " +
-		  "not configured to ETS algorithm are ignored, but must be " +
-		  "present. Example: if TC0,TC2 are set to ETS, then 10,0,90 " +
-		  "will set TC0 to 10% and TC2 to 90%. Percents must sum to " +
-		  "100.", metavar="LIST")
+			"seperated percents for each TC. Values set to TCs that are " +
+			"not configured to ETS algorithm are ignored, but must be " +
+			"present. Example: if TC0,TC2 are set to ETS, then 10,0,90 " +
+			"will set TC0 to 10% and TC2 to 90%. Percents must sum to " +
+			"100.",
+		  metavar="LIST")
 parser.add_option("-r", "--ratelimit", dest="ratelimit",
 		  help="Rate limit for TCs (in Gbps). LIST is a comma seperated " +
-		  "Gbps limit for each TC. Example: 1,8,8 will limit TC0 to " +
-		  "1Gbps, and TC1,TC2 to 8 Gbps each.", metavar="LIST")
+			"Gbps limit for each TC. Example: 1,8,8 will limit TC0 to " +
+			"1Gbps, and TC1,TC2 to 8 Gbps each.",
+		  metavar="LIST")
 parser.add_option("-d", "--dcbx", dest="dcbx",
-                  help="get the dcbx mode(get) or set dcbx mode to firmware controlled(fw) or " +
-		  "os controlled(os)")
+		  help="set dcbx mode to firmware controlled(fw) or " +
+		       "OS controlled(os). Note, when in OS mode, mlnx_qos should not be used " +
+		       "in parallel with other dcbx tools such as lldptool")
 parser.add_option("--trust", dest="trust",
-                  help="set priority trust mode to pcp or dscp")
+                  help="set priority trust state to pcp or dscp")
+parser.add_option("--dscp2prio", dest="dscp2prio",
+                  help="set/del a (dscp,prio) mapping. Example 'set,30,2' maps dscp 30 to priority 2. " +
+                       "'del,30,2' resets the dscp 30 mapping back to the default setting priority 0.")
+parser.add_option("--cable_len", dest="cable_len",
+                  help="set cable_len for buffer's xoff and xon thresholds")
 parser.add_option("-i", "--interface", dest="intf",
-                  help="Interface name")
+		  help="Interface name")
 
 parser.add_option("-a", action="store_true", dest="printall", default=False,
-                  help="Show all interface's TCs")
+		  help="Show all interface's TCs")
 
 (options, args) = parser.parse_args()
 
 if len(args) > 0:
-    print "Bad arguments"
-    parser.print_usage()
-    sys.exit(1)
+	print("Bad arguments")
+	parser.print_usage()
+	sys.exit(1)
 
 if (options.intf == None):
-	print "Interface name is required"
+	print("Interface name is required")
 	parser.print_usage()
 	
 	sys.exit(1)
@@ -186,65 +255,118 @@ if (options.intf == None):
 ratelimit_path = "/sys/class/net/" + options.intf + "/qos/maxrate"
 
 pfc_en = 0
+pfc_delay = 0
 tsa = [IEEE_8021QAZ_TSA_STRICT, IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT]
 tc_bw = [0, 0, 0, 0, 0, 0, 0, 0]
 prio_tc = [0, 0, 0, 0, 0, 0, 0, 0]
 printall = False
 
+res = subprocess.Popen(["ps", "-e"], stdout=subprocess.PIPE)
+output = res.communicate()[0]
+if 'lldpad' in output:
+	print('****** WARNING: lldpad service is running and may overwrite your settings ******\n')
+
 ctrl = DcbController(options.intf)
 
+# ********* dcbx mode command **************************************
 if (options.dcbx != None):
 	if (options.dcbx == "os"):
 		ctrl.set_dcbx(ctrl.get_dcbx() | DCB_CAP_DCBX_HOST);
 	elif (options.dcbx == "fw"):
 		ctrl.set_dcbx(0);
+	elif (options.dcbx != "get"):
+		print ("Invalid dcbx mode command. Refer to the help.")
+		sys.exit(1)
 
-	if (ctrl.get_dcbx() & DCB_CAP_DCBX_HOST):
-		print ("DCBX mode: OS controlled")
-	else:
-		print ("DCBX mode: Firmware controlled")
-
+# ********* dscp2prio command ******************************
+if options.dscp2prio and options.trust:
+	print ("trust and dscp2prio commands cannot be used at the same time.")
 	sys.exit(1)
 
 try:
-	trust = ctrl.get_ieee_trust()
+	if options.dscp2prio:
+		action, dscp, prio = options.dscp2prio.split(",")
+		dscp = int(dscp)
+		prio = int(prio)
+
+		if ((action != "set") and (action != "del")) or (dscp > 63) or (prio > 7):
+			sys.exit(1)
+
+except:
+	print("Invalid dscp2prio command. Refer to the help.")
+	sys.exit(1)
+
+try:
+	if options.dscp2prio:
+		if action == "set":
+			ctrl.set_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
+		elif action == "del":
+			ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
+
+	appTable = ctrl.get_ieee_app_table()
+
+except:
+	if options.dscp2prio:
+		print("dscp2prio command failed")
+		sys.exit(1)
+	else:
+		appTable = DcbAppTable()
+
+# ********* trust command ******************************
+if options.trust:
+	if (options.trust != "dscp") and (options.trust != "pcp"):
+		print("Invalid trust state command. Refer to the help.")
+		sys.exit(1)
+try:
+	trustObj = Trust()
+	trustObj.getTrust(ctrl)
 
 	if options.trust:
-		if (options.trust == "pcp"):
-			trust = 1
-			ctrl.set_ieee_trust(trust)
-		elif (options.trust == "dscp"):
-			trust = 2
-			ctrl.set_ieee_trust(trust)
+		trustObj.setTrust(ctrl, options.trust)
+		trustObj.getTrust(ctrl)
+		appTable = ctrl.get_ieee_app_table()
+
 except:
-	print "Priority trust mode is not supported on your system"
+	print ("Priority trust state is not supported on your system")
 	if options.trust:
 		sys.exit(1)
 	else:
-		trust = 0
+		trustObj.trust = "none"
 
+# ********* ratelimit command ******************************
 try:
 	ratelimit = []
 	maxrate = None
 	if (not os.path.exists(ratelimit_path)):
-	    maxrate = MaxrateNL(ctrl)
+		maxrate = MaxrateNL(ctrl)
 	else:
-	    maxrate = MaxrateSysfs(ratelimit_path)
+		maxrate = MaxrateSysfs(ratelimit_path)
 	
 	if options.ratelimit:
+		i = 0
 		for r in options.ratelimit.split(","):
+			if i >=8:
+				print ("Too many items for ratelimit")
+				sys.exit(1)
+
 			r = parse_int(r, 0, 1000000, "ratelimit")
 	
 			ratelimit += [r * 1000 * 1000]
-                try:
-	                maxrate.set(ratelimit)
-                except:
-	                print "Rate limit is not supported on your system!"
-	
-        try:
-	        ratelimit = maxrate.get()
-        except:
-	        print "Rate limit is not supported on your system!"
+			i += 1
+
+		if i != 8:
+			print("ratelimit must have 8 items")
+			sys.exit(1)
+
+		try:
+			maxrate.set(ratelimit)
+		except:
+			print("Rate limit is not supported on your system!")
+
+	try:
+		ratelimit = maxrate.get()
+	except:
+		print("Rate limit is not supported on your system!")
 except:
 	if options.ratelimit:
 		sys.exit(1)
@@ -252,35 +374,19 @@ except:
 		ratelimit = []
 
 try:
-	if (not (ctrl.get_dcbx() & DCB_CAP_DCBX_VER_IEEE)):
-		ctrl.set_dcbx(DCB_CAP_DCBX_VER_IEEE | DCB_CAP_DCBX_HOST)
-
 	prio_tc, tsa, tc_bw = ctrl.get_ieee_ets()
-
-	pfc_en = ctrl.get_ieee_pfc()
+	pfc_en = ctrl.get_ieee_pfc_en()
+	pfc_delay = ctrl.get_ieee_pfc_delay()
 
 except:
-	print "ETS features are not supported on your system"
-
-if (options.tsa):
-	i = 0
-	for t in options.tsa.split(","):
-                if i >= 8:
-                    print "Too many items for TSA"
-                    sys.exit(1)
-
-		if (t == "strict"):
-			tsa[i] = IEEE_8021QAZ_TSA_STRICT
-		elif (t == 'ets'):
-			tsa[i] = IEEE_8021QAZ_TSA_ETS
-		else:
-			print "Bad TSA value: ", t
-			parser.print_usage()
-			sys.exit(1)
-		i += 1
+	print("ETS features are not supported on your system")
 
 if options.printall:
 	printall = True
+
+# ********* pfc command ******************************
+if options.cable_len:
+	pfc_delay = parse_int(options.cable_len, 0, 1000, "cable_len")
 
 if options.pfc:
 	i = 0
@@ -288,7 +394,7 @@ if options.pfc:
 
 	for t in options.pfc.split(","):
 		if i >= 8:
-			print "Too many items for PFC"
+			print("Too many items for PFC")
 			sys.exit(1)
 
 		temp = parse_int(t, 0, 1, "PFC")
@@ -296,44 +402,79 @@ if options.pfc:
 
 		i += 1
 
-        try:
-		ctrl.set_ieee_pfc(_pfc_en = pfc_en)
-	except OSError, e:
-		print e
+	if i != 8:
+		print("pfc list must have 8 items")
+		sys.exit(1)
+
+if options.cable_len or options.pfc:
+	try:
+		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
+	except OSError as e:
+		print(e)
+		sys.exit(1)
+
+# ********* ets (tsa, tc_bw, prio_tc) command ******************************
+if (options.tsa):
+	i = 0
+	for t in options.tsa.split(","):
+		if i >= 8:
+			print("Too many items for TSA")
+			sys.exit(1)
+
+		if (t == "strict"):
+			tsa[i] = IEEE_8021QAZ_TSA_STRICT
+		elif (t == 'ets'):
+			tsa[i] = IEEE_8021QAZ_TSA_ETS
+		else:
+			print(("Bad TSA value: ", t))
+			parser.print_usage()
+			sys.exit(1)
+		i += 1
+
+	if i != 8:
+		print("tsa list must have 8 items")
 		sys.exit(1)
 
 if options.tc_bw:
 	i = 0
 	for t in options.tc_bw.split(","):
-            if i >= 8:
-                print "Too many items for ETS BW"
-                sys.exit(1)
+		if i >= 8:
+			print("Too many items for ETS BW")
+			sys.exit(1)
 
-            bw = parse_int(t, 0, 100, "ETS BW")
+		bw = parse_int(t, 0, 100, "ETS BW")
 
-            if tsa[i] == IEEE_8021QAZ_TSA_STRICT and bw != 0:
-                print "ETS BW for a strict TC must be 0"
-                parser.print_usage()
-                sys.exit(1)
+		if tsa[i] == IEEE_8021QAZ_TSA_STRICT and bw != 0:
+			print("ETS BW for a strict TC must be 0")
+			parser.print_usage()
+			sys.exit(1)
 
-            tc_bw[i] = bw
-            i += 1
+		tc_bw[i] = bw
+		i += 1
+
+	if i != 8:
+		print("tcbw list must have 8 items")
+		sys.exit(1)
 
 if options.prio_tc:
 	i = 0
-        for t in options.prio_tc.split(","):
-                if i >= 8:
-                    print "Too many items in UP => TC mapping"
-                    sys.exit(1)
+	for t in options.prio_tc.split(","):
+		if i >= 8:
+			print("Too many items in UP => TC mapping")
+			sys.exit(1)
 
-                prio_tc[i] = parse_int(t, 0, 7, "UP => TC mapping")
-                i += 1
+		prio_tc[i] = parse_int(t, 0, 7, "UP => TC mapping")
+		i += 1
+
+	if i != 8:
+		print("prio_tc list must have 8 items")
+		sys.exit(1)
 
 if options.tsa or options.tc_bw or options.prio_tc:
-    try:
-	ctrl.set_ieee_ets(_prio_tc = prio_tc, _tsa = tsa, _tc_bw = tc_bw)
-    except OSError, e:
-        print e
-        sys.exit(1)
+	try:
+		ctrl.set_ieee_ets(_prio_tc = prio_tc, _tsa = tsa, _tc_bw = tc_bw)
+	except OSError as e:
+		print(e)
+		sys.exit(1)
 
-pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trust)
+pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trustObj.trust, appTable, pfc_delay)
