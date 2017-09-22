@@ -25,6 +25,9 @@ parent_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 echo "Installing cma_roce_mode..."
 install -o root -g root -m 0755 ${parent_path}/ofed_scripts/cma_roce_mode /usr/sbin/cma_roce_mode
 
+echo "Installing ibdev2netdev..."
+install -o root -g root -m 0755 ${parent_path}/ofed_scripts/ibdev2netdev /usr/bin/ibdev2netdev
+
 echo "Installing show_gids..."
 install -o root -g root -m 0755 ${parent_path}/ofed_scripts/show_gids /usr/sbin/show_gids
 
