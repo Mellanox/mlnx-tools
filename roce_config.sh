@@ -63,6 +63,22 @@ start_lldpad() {
 	fi
 }
 
+#This generic lldpad configuration(not related to RoCE)
+do_lldpad_config() {
+	lldptool set-lldp -i $NETDEV adminStatus=rxtx > /dev/null &&
+	lldptool -T -i $NETDEV -V sysName enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V portDesc enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V sysDesc enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V sysCap enableTx=yes > /dev/null &&
+	lldptool -T -i $NETDEV -V mngAddr enableTx=yes > /dev/null
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Generic lldpad configuration failed"
+		exit 1
+	else
+		echo " + Finished generic lldpad configuration"
+	fi
+}
+
 config_pfc() {
 #Alternatively pfc config could be done by using mlnx_qos tool
 #	mlnx_qos -i $NETDEV --pfc 0,1,1,1,1,1,1,0
@@ -197,6 +213,7 @@ enable_congestion_control
 set_cnp_priority
 
 start_lldpad
+do_lldpad_config
 if [[ $W_DCBX == "0" ]] ; then
 	config_pfc
 else
