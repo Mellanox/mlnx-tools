@@ -54,7 +54,11 @@ config_trust_mode() {
 }
 
 start_lldpad() {
-	service lldpad start > /dev/null
+	if [[ $OS_VERSION == "6" ]] ; then
+		service lldpad start > /dev/null
+	else
+		/bin/systemctl start lldpad.service > /dev/null
+	fi
 	if [[ $? != 0 ]] ; then
 		>&2 echo " - Starting lldpad failed; exiting"
 		exit 1
@@ -191,6 +195,12 @@ fi
 
 if [[ $TRUST_MODE != "dscp" && $TRUST_MODE != "pcp" ]] ; then
 	>&2 echo " - Option -t can take only dscp or pcp as input"
+	exit 1
+fi
+
+OS_VERSION="$(cat /etc/oracle-release | rev | cut -d" " -f1 | rev | cut -d "." -f 1)"
+if [[ $OS_VERSION != "6" && $OS_VERSION != "7" ]] ; then
+	>&2 echo " - Unexpected OS Version; this script works only for OL6 & OL7"
 	exit 1
 fi
 
