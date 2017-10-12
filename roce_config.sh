@@ -8,6 +8,7 @@ NETDEV=""
 W_DCBX=1
 TRUST_MODE=dscp
 PFC_STRING=1,2,3,4,5,6
+CC_FLAG=1
 
 echo ""
 
@@ -109,15 +110,44 @@ enable_pfc_willing() {
 	fi
 }
 
+set_cc_algo_mask() {
+	yes | mstconfig -d 0000:30:00.0 set ROCE_CC_PRIO_MASK_P1=255 ROCE_CC_PRIO_MASK_P2=255 \
+	ROCE_CC_ALGORITHM_P1=ECN ROCE_CC_ALGORITHM_P2=ECN > /dev/null
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Setting congestion control algo/mask failed"
+		exit 1
+	fi
+}
+
 #This enables congestion control on all priorities, for RP and NP both, 
 #regardless of PFC is enabled on one more priorities.
 enable_congestion_control() {
-	echo 1 > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/cc_enable
-	if [[ $? != 0 ]] ; then
-		>&2 echo " - Enabling congestion control failed"
-		exit 1
+	if [ -f "/sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/cc_enable" ] ; then
+		echo 1 > /sys/kernel/debug/mlx5/$PCI_ADDR/cc_params/cc_enable
+		if [[ $? != 0 ]] ; then
+			>&2 echo " - Enabling congestion control failed"
+			exit 1
+		else
+			echo " + Congestion control enabled"
+		fi
 	else
-		echo " + Congestion control enabled"
+		CC_VARS="$(mstconfig -d $PCI_ADDR q | grep ROCE_CC | awk '{print $NF}')"
+		if [[ $? != 0 ]] ; then
+			>&2 echo " - mstconfig query failed"
+			exit 1
+		fi
+		CC_FLAG=1
+		while read -r line; do
+			if [[ $line != "255" && $line != "ECN(0)" ]] ; then
+				CC_FLAG=0
+			fi
+		done <<< "$CC_VARS"
+		if [[ $CC_FLAG == "1" ]] ; then
+			echo " + Congestion control algo/mask are set as expected"
+		else
+			set_cc_algo_mask
+			echo " + Congestion control algo/mask has been changed; Please **REBOOT** to load the new settings"
+		fi
 	fi
 }
 
@@ -231,7 +261,13 @@ else
 fi
 
 echo ""
-echo "Finished configuring \"$NETDEV\" ヽ(•‿•)ノ"
+if [[ $CC_FLAG = "0" ]] ; then
+	>&2 echo "Finished configuring \"$NETDEV\", but needs a *REBOOT*"
+	echo ""
+	exit 1
+else
+	echo "Finished configuring \"$NETDEV\" ヽ(•‿•)ノ"
+fi
 echo ""
 
 ##################################################
