@@ -44,6 +44,29 @@ set_rocev2_default() {
 	fi
 }
 
+set_tos_mapping() {
+	if [ ! -d "/sys/kernel/config/rdma_cm/$IBDEV/tos_map" ] ; then
+		return
+	fi
+
+	echo 32 > /sys/kernel/config/rdma_cm/$IBDEV/tos_map/tos_map_0
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Failed to set tos mapping"
+		exit 1
+	fi
+	for i in {1..7}
+	do
+		let "mapping=$i<<5"
+		echo $mapping > /sys/kernel/config/rdma_cm/$IBDEV/tos_map/tos_map_$i
+		if [[ $? != 0 ]] ; then
+			>&2 echo " - Failed to set tos mapping"
+			exit 1
+		fi
+	done
+
+	echo " + Tos mapping is set"
+}
+
 config_trust_mode() {
 	mlnx_qos -i $NETDEV --trust $TRUST_MODE > /dev/null
 	if [[ $? != 0 ]] ; then
@@ -263,6 +286,7 @@ if [ ! -d "/sys/kernel/config/rdma_cm/$IBDEV" ] ; then
 fi
 
 set_rocev2_default
+set_tos_mapping
 config_trust_mode
 
 PCI_ADDR="$(ethtool -i $NETDEV | grep "bus-info" | cut -f 2 -d " ")"
