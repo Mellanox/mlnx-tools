@@ -35,9 +35,9 @@ Example:
 }
 
 set_rocev2_default() {
-	cma_roce_mode -d $IBDEV -p $PORT -m 2 > /dev/null
+	echo "RoCE v2" > /sys/kernel/config/rdma_cm/$IBDEV/ports/$PORT/default_roce_mode > /dev/null
 	if [[ $? != 0 ]] ; then
-		>&2 echo " - Setting RoCEv2 as rdma_cm preference failed; Please make sure you installed cma_roce_mode"
+		>&2 echo " - Setting RoCEv2 as rdma_cm preference failed"
 		exit 1
 	else
 		echo " + RoCE v2 is set as default rdma_cm preference"
@@ -232,6 +232,34 @@ OS_VERSION="$(cat /etc/oracle-release | rev | cut -d" " -f1 | rev | cut -d "." -
 if [[ $OS_VERSION != "6" && $OS_VERSION != "7" ]] ; then
 	>&2 echo " - Unexpected OS Version; this script works only for OL6 & OL7"
 	exit 1
+fi
+
+if (! cat /proc/mounts | grep /sys/kernel/config > /dev/null) ; then
+	mount -t configfs none /sys/kernel/config
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Failed to mount configfs"
+		exit 1
+	fi
+fi
+
+if [ ! -d "/sys/kernel/config/rdma_cm" ] ; then
+	modprobe rdma_cm > /dev/null
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Failed to load rdma_cm module"
+		exit 1
+	fi
+	if [ ! -d "/sys/kernel/config/rdma_cm" ] ; then
+		>&2 echo " - rdma_cm is missing under /sys/kernel/config"
+		exit 1
+	fi
+fi
+
+if [ ! -d "/sys/kernel/config/rdma_cm/$IBDEV" ] ; then
+	mkdir /sys/kernel/config/rdma_cm/$IBDEV
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Failed to create /sys/kernel/config/rdma_cm/$IBDEV"
+		exit 1
+	fi
 fi
 
 set_rocev2_default
