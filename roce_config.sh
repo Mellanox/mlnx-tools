@@ -9,6 +9,7 @@ W_DCBX=1
 TRUST_MODE=dscp
 PFC_STRING=1,2,3,4,5,6
 CC_FLAG=1
+SET_TOS=0
 
 echo ""
 
@@ -16,7 +17,7 @@ print_usage() {
 #Use this script to configure RoCE on Oracle setups
   echo "Usage:
 	roce_config -i <netdev> [-d <n>] [-t <trust_mode>]
-			[-p <pfc_string>]
+			[-p <pfc_string>] [-q <default_tos>]
 
 Options:
  -i <interface>		enter the interface name(required)
@@ -28,6 +29,9 @@ Options:
 
  -p <pfc_string>	enter the string of priority lanes to enable pfc for them
 			(default: 1,2,3,4,5,6). This is ignored for dynamic config.
+
+ -q <default_tos>	set the default tos to a value between 0-255. If this option
+			is not used, default tos will remain unchanged.
 
 Example:
 	roce_config -i eth4 -d 0 -t pcp
@@ -65,6 +69,19 @@ set_tos_mapping() {
 	done
 
 	echo " + Tos mapping is set"
+}
+
+set_deafult_tos() {
+	if [[ $SET_TOS == "0" ]] ; then
+		return
+	fi
+	echo $DEFAULT_TOS > /sys/kernel/config/rdma_cm/$IBDEV/ports/$PORT/default_roce_tos
+	if [[ $? != 0 ]] ; then
+		>&2 echo " - Failed to set default roce tos"
+		exit 1
+	else
+		echo " + Default roce tos is set to $DEFAULT_TOS"
+	fi
 }
 
 config_trust_mode() {
@@ -207,6 +224,10 @@ case $1 in
 	-p )	shift
 		PFC_STRING=$1
 		;;
+	-q )	shift
+		DEFAULT_TOS=$1
+		SET_TOS=1
+		;;
 	-h )	print_usage
 		exit
 		;;
@@ -251,6 +272,11 @@ if [[ $TRUST_MODE != "dscp" && $TRUST_MODE != "pcp" ]] ; then
 	exit 1
 fi
 
+if [[ $SET_TOS == "1" && $DEFAULT_TOS -gt "255" ]] ; then
+	>&2 echo " - Option -q (default tos) can only take values between 0-255"
+	exit 1
+fi
+
 OS_VERSION="$(cat /etc/oracle-release | rev | cut -d" " -f1 | rev | cut -d "." -f 1)"
 if [[ $OS_VERSION != "6" && $OS_VERSION != "7" ]] ; then
 	>&2 echo " - Unexpected OS Version; this script works only for OL6 & OL7"
@@ -287,6 +313,7 @@ fi
 
 set_rocev2_default
 set_tos_mapping
+set_deafult_tos
 config_trust_mode
 
 PCI_ADDR="$(ethtool -i $NETDEV | grep "bus-info" | cut -f 2 -d " ")"
