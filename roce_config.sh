@@ -10,6 +10,8 @@ TRUST_MODE=dscp
 PFC_STRING=1,2,3,4,5,6
 CC_FLAG=1
 SET_TOS=0
+MAJOR_VERSION=1
+MINOR_VERSION=1
 
 echo ""
 
@@ -36,6 +38,11 @@ Options:
 Example:
 	roce_config -i eth4 -d 0 -t pcp
 "
+}
+
+print_version() {
+	echo "Version: $MAJOR_VERSION.$MINOR_VERSION"
+	echo ""
 }
 
 set_rocev2_default() {
@@ -227,6 +234,9 @@ case $1 in
 	-q )	shift
 		DEFAULT_TOS=$1
 		SET_TOS=1
+		;;
+	-v )	print_version
+		exit
 		;;
 	-h )	print_usage
 		exit
