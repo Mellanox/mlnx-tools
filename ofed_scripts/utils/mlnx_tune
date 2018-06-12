@@ -158,9 +158,9 @@ class Profile:
 	IP_FORWARDING_MULTI_STREAM_0_LOSS	= "IP_FORWARDING_MULTI_STREAM_0_LOSS"
 	IP_FORWARDING_SINGLE_STREAM		= "IP_FORWARDING_SINGLE_STREAM"
 	IP_FORWARDING_SINGLE_STREAM_0_LOSS	= "IP_FORWARDING_SINGLE_STREAM_0_LOSS"
-        IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT = "IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT"
-        LOW_LATENCY_VMA				= "LOW_LATENCY_VMA"
-        MULTICAST				= "MULTICAST"
+	IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT = "IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT"
+	LOW_LATENCY_VMA				= "LOW_LATENCY_VMA"
+	MULTICAST				= "MULTICAST"
 	IP_FORWARDING_SINGLE_STREAM_PROFILES	= [IP_FORWARDING_SINGLE_STREAM, IP_FORWARDING_SINGLE_STREAM_0_LOSS, IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT]
 	IP_FORWARDING_MULTI_STREAM_PROFILES	= [
 							IP_FORWARDING_MULTI_STREAM_THROUGHPUT,
@@ -603,26 +603,26 @@ class NodeInfo:
 	def report_status(self, profile):
 		""" Report the system status to the user
 		"""
-		print ""
-		print "Mellanox Technologies - System Report"
-		print ""
+		print("")
+		print("Mellanox Technologies - System Report")
+		print("")
 		self.os.report_status(profile)
-		print ""
+		print("")
 		self.cpu.report_status(profile)
-		print ""
+		print("")
 		self.memory.report_status(profile)
-		print ""
+		print("")
 		self.hyper_threading.report_status(profile)
-		print ""
+		print("")
 		self.irq_balancer.report_status(profile)
-		print ""
+		print("")
 		self.firewall.report_status(profile)
-		print ""
+		print("")
 		self.driver.report_status(profile)
-		print ""
+		print("")
 		for device in self.pci_devices:
 			device.report_status(self.cpu.architecture, profile)
-			print ""
+			print("")
 
 class OsInfo:
 	""" Describes the system's operation system
@@ -645,18 +645,18 @@ class OsInfo:
 	def report_status(self, profile):
 		""" Report the operation system status to the user
 		"""
-		print "Operation System Status"
-		print "%s"%(self.name)
-		print "%s"%(self.kernel)
+		print("Operation System Status")
+		print("%s"%(self.name))
+		print("%s"%(self.kernel))
 		if profile == Profile.LOW_LATENCY_VMA:
-			print "Services:"
+			print("Services:")
 			for service in [service for service in self.services if (service.name in Service.DISABLE_FOR_VMA)]:
 				service_status = (status_ok_string(), status_warning_string())[service.is_active()]
-				print "%s: %s %s"%(service_status, service.name, service.status)
-			print "\nKernel Modules:"
+				print("%s: %s %s"%(service_status, service.name, service.status))
+			print("\nKernel Modules:")
 			for kernel_module in [kernel_module for kernel_module in self.kernel_modules if (kernel_module.name in KernelModule.REMOVE_FOR_VMA)]:
 				kernel_module_status = (status_ok_string(), status_warning_string())[kernel_module.is_loaded()]
-				print "%s: %s %s"%(kernel_module_status, kernel_module.name, kernel_module.status)
+				print("%s: %s %s"%(kernel_module_status, kernel_module.name, kernel_module.status))
 
 	def collect_info(self, node_info):
 		""" Collects OS information from the system and updates the class fields
@@ -702,8 +702,8 @@ class Cpu:
 	def report_status(self, profile):
 		""" Report the CPU status to the user
 		"""
-		print "CPU Status"
-		print "%s %s %s"%(self.vendor, self.model, self.architecture)
+		print("CPU Status")
+		print("%s %s %s"%(self.vendor, self.model, self.architecture))
 		status_error = False
 		freq_ok = False
 		# Don't crash if actual cpu frequency cannot be found
@@ -716,9 +716,9 @@ class Cpu:
 
 		freq_suggestion = (" >>> CPU frequency is below maximum. Install cpupowerutils and run x86_energy_perf_policy performance.", "")[freq_ok]
 		if status_error:
-			print "%s: CPU frequency status cannot be determined" % (freq_status)
+			print("%s: CPU frequency status cannot be determined" % (freq_status))
 		else:
-			print "%s: Frequency %sMHz"%(freq_status, self.actual_freq) + freq_suggestion
+			print("%s: Frequency %sMHz"%(freq_status, self.actual_freq) + freq_suggestion)
 
 	def collect_info(self, node_info):
 		""" Collects CPU information from the system and updates the class fields
@@ -990,11 +990,11 @@ class Memory:
 	def report_status(self, profile):
 		""" Report the memory status to the user
 		"""
-		print "Memory Status"
-		print "Total: %0.2f %s"%(Unit().convert(self.total_memory_kbytes, Unit.KBYTE, Unit.GBYTE), Unit.GBYTE)
-		print "Free: %0.2f %s"%(Unit().convert(self.free_memory_kbytes, Unit.KBYTE, Unit.GBYTE), Unit.GBYTE)
+		print("Memory Status")
+		print("Total: %0.2f %s"%(Unit().convert(self.total_memory_kbytes, Unit.KBYTE, Unit.GBYTE), Unit.GBYTE))
+		print("Free: %0.2f %s"%(Unit().convert(self.free_memory_kbytes, Unit.KBYTE, Unit.GBYTE), Unit.GBYTE))
 
-		print ""
+		print("")
 		self.hugepages.report_status(profile)
 
 	def collect_info(self, node_info):
@@ -1085,14 +1085,14 @@ class Hugepages:
 	def report_status(self, profile):
 		""" Report the hugepage status to the user
 		"""
-		print "Hugepages Status"
+		print("Hugepages Status")
 		for numa in self.numa_hugepages.keys():
 			report_str = "On NUMA %s:"%numa
 			for hugepages_val in self.numa_hugepages[numa].items():
 				report_str += " %sKB: %s pages"%(hugepages_val[0], hugepages_val[1])
-		print report_str
-		print "Transparent enabled: %s"%self.transparent_hugepages_enabled
-		print "Transparent defrag: %s"%self.transparent_hugepages_defrag
+		print(report_str)
+		print("Transparent enabled: %s"%self.transparent_hugepages_enabled)
+		print("Transparent defrag: %s"%self.transparent_hugepages_defrag)
 
 	def collect_info(self, node_info):
 		""" Collects hugepages information from the system and updates the class fields
@@ -1193,7 +1193,7 @@ class KernelModule(object):
 		self.read_status()
 
 	def read_status(self):
-		""" check the status of a kernel module (loaded\unloaded).
+		""" check the status of a kernel module (loaded/unloaded).
 		"""
 		cmd = LSMOD
 		(rc, output) = run_command(cmd)
@@ -1313,8 +1313,8 @@ class Service(object):
 	def report_status(self, profile):
 		""" Report service status to the user
 		"""
-		print "%s Status"%self.to_presentation_name()
-		print "%s"%self.status
+		print("%s Status"%self.to_presentation_name())
+		print("%s"%self.status)
 
 	def is_supported(self, node_info):
 		""" Checks if the service is supported by the current OS
@@ -1574,8 +1574,8 @@ class HyperThreading:
 	def report_status(self, profile):
 		""" Report the hyper threading status to the user
 		"""
-		print "Hyper Threading Status"
-		print "%s"%self.status
+		print("Hyper Threading Status")
+		print("%s"%self.status)
 
 	def read_status(self, node_info):
 		""" Reads current Hyper Threading status from the system and update the class status field
@@ -1643,13 +1643,13 @@ class Driver:
 	def report_status(self, profile):
 		""" Report the driver status to the user
 		"""
-		print "Driver Status"
+		print("Driver Status")
 		driver_status = status_ok_string()
 		driver_suggestion = ""
 		if not self.installed:
 			driver_status = status_warning_string()
 			driver_suggestion = " >>> MLNX_OFED is not installed."
-		print "%s: %s"%(driver_status, self.version) + driver_suggestion
+		print("%s: %s"%(driver_status, self.version) + driver_suggestion)
 
 	def collect_info(self):
 		""" Collects CPU information from the system and updates the class fields
@@ -1824,17 +1824,17 @@ class InterfaceInfo( object ):
 	def report_status(self, cpu_arch, profile):
 		""" Report the interface status to the user
 		"""
-		print "%s (Port %s) Status"%(self.name, self.port_number)
-		print "Link Type %s"%self.link_type
+		print("%s (Port %s) Status"%(self.name, self.port_number))
+		print("Link Type %s"%self.link_type)
 		link_ok = (self.status == InterfaceInfo.UP)
 		link_status = (status_warning_string(), status_ok_string())[link_ok]
 		link_suggestion = (" >>> Check your port configuration (Physical connection, SM, IP).", "")[link_ok]
-		print "%s: Link status %s"%(link_status, self.status) + link_suggestion
+		print("%s: Link status %s"%(link_status, self.status) + link_suggestion)
 		speed_compatible_to_cpu_ok = not (self.speed_value and self.speed_value >= 100 and cpu_arch == Architecture.SANDY_BRIDGE)
 		speed_compatible_to_cpu_status = (status_warning_string(), status_ok_string())[speed_compatible_to_cpu_ok]
 		speed_compatible_to_cpu_suggestion = (" >>> The system CPU isn't recommended for this link speed.", "")[speed_compatible_to_cpu_ok]
-		print "Speed %s %s"%(self.speed_name, speed_compatible_to_cpu_suggestion)
-		print "MTU %s"%self.mtu
+		print("Speed %s %s"%(self.speed_name, speed_compatible_to_cpu_suggestion))
+		print("MTU %s"%self.mtu)
 
 	def set_status(self):
 		""" Set interface status. Up/Down.
@@ -2005,12 +2005,12 @@ class EthInterfaceInfo(InterfaceInfo):
 			tx_nocache_copy_ok = (self.tx_nocache_copy.lower() == 'off')
 			tx_nocache_copy_status = (status_warning_string(), status_ok_string())[tx_nocache_copy_ok]
 			tx_nocache_copy_suggestion = (" >>> Turn TX no cache copy off (ethtool -K %s tx-nocache-copy off)."%self.name, "")[tx_nocache_copy_ok]
-			print "%s: TX nocache copy '%s'"%(tx_nocache_copy_status, self.tx_nocache_copy) + tx_nocache_copy_suggestion
+			print("%s: TX nocache copy '%s'"%(tx_nocache_copy_status, self.tx_nocache_copy) + tx_nocache_copy_suggestion)
 		if profile == Profile.MULTICAST and self.disable_mc_loopback != NA:
 			disable_mc_loopback_ok = (self.disable_mc_loopback.lower() == 'on')
 			disable_mc_loopback_status = (status_warning_string(), status_ok_string())[disable_mc_loopback_ok]
 			disable_mc_loopback_suggestion = (" >>> Turn disable multicast loopback on (ethtool --set-priv-flags %s disable_mc_loopback on)."%self.name, "")[disable_mc_loopback_ok]
-			print "%s: Disable multicast loopback '%s'"%(disable_mc_loopback_status, self.disable_mc_loopback) + disable_mc_loopback_suggestion
+			print("%s: Disable multicast loopback '%s'"%(disable_mc_loopback_status, self.disable_mc_loopback) + disable_mc_loopback_suggestion)
 
 	def set_speed(self):
 		""" Set ethernet interface speed.
@@ -2216,26 +2216,26 @@ class PciDeviceInfo:
 	def report_status(self, cpu_arch, profile):
 		""" Report the device status to the user
 		"""
-		print "%s Device Status on PCI %s"%(self.type.name, self.pci_slot)
-		print "FW version %s"%self.firmware_version
+		print("%s Device Status on PCI %s"%(self.type.name, self.pci_slot))
+		print("FW version %s"%self.firmware_version)
 		actual_pci_width_ok = self.actual_pci_width == self.pci_width_capabilities
 		actual_pci_width_status = (status_warning_string(), status_ok_string())[actual_pci_width_ok]
 		pci_width_suggestion = (" >>> PCI width status is below PCI capabilities. Check PCI configuration in BIOS.", "")[actual_pci_width_ok]
 		pci_width_compatible_to_cpu_ok = not (int(self.actual_pci_width) >= PciDeviceInfo.MIN_LENGTH_CHECK_HSW_COMPATIBLE and cpu_arch in Architecture.HASWELL_UARCH)
 		pci_width_compatible_to_cpu_status = (status_warning_string(), status_ok_string())[pci_width_compatible_to_cpu_ok]
 		pci_width_compatible_to_cpu_suggestion = (" >>> PCI capabilities might not be fully utilized with %s CPU. Make sure I/O non-posted prefetch is disabled in BIOS."%cpu_arch, "")[pci_width_compatible_to_cpu_ok]
-		print "%s: PCI Width x%s"%(actual_pci_width_status, self.actual_pci_width) + pci_width_suggestion
+		print("%s: PCI Width x%s"%(actual_pci_width_status, self.actual_pci_width) + pci_width_suggestion)
 		if pci_width_compatible_to_cpu_suggestion:
-			print pci_width_compatible_to_cpu_suggestion
+			print(pci_width_compatible_to_cpu_suggestion)
 		actual_pci_speed_ok = self.actual_pci_speed == self.pci_speed_capabilities
 		actual_pci_speed_status = (status_warning_string(), status_ok_string())[actual_pci_speed_ok]
 		pci_speed_suggestion = (" >>> PCI width status is below PCI capabilities. Check PCI configuration in BIOS.", "")[actual_pci_speed_ok]
-		print "%s: PCI Speed %sGT/s"%(actual_pci_speed_status, self.actual_pci_speed) + pci_speed_suggestion
-		print "PCI Max Payload Size %s"%self.pci_max_payload
-		print "PCI Max Read Request %s"%self.pci_max_read_request
-		print "Local CPUs list %s"%self.closest_core_list
+		print("%s: PCI Speed %sGT/s"%(actual_pci_speed_status, self.actual_pci_speed) + pci_speed_suggestion)
+		print("PCI Max Payload Size %s"%self.pci_max_payload)
+		print("PCI Max Read Request %s"%self.pci_max_read_request)
+		print("Local CPUs list %s"%self.closest_core_list)
 		for interface in self.interfaces:
-			print ""
+			print("")
 			interface.report_status(cpu_arch, profile)
 
 	def set_core_driver(self):
@@ -2742,7 +2742,7 @@ class PciDeviceInfo:
 			logging.warning("Can't assign XPS for devices with 2 interfaces and less than 4 cores.")
 			return
 
-                for interface in self.interfaces:
+		for interface in self.interfaces:
 			xps_core_list = [numa_cores[XPS_Q0_CORE_INDEX], numa_cores[XPS_Q1_CORE_INDEX]]
 			logging.debug("interface: %s got list %s"%(interface.name, xps_core_list))
 			interface.reset_xps()
@@ -2881,7 +2881,7 @@ class FppPciDeviceInfo(PciDeviceInfo):
 		"""
 		for fpp_device in self.fpp_devices:
 			fpp_device.report_status(cpu_arch, profile)
-			print ""
+			print("")
 
 	def get_interfaces_ordered(self):
 		""" Returns the device interfaces by their PCI location
@@ -3403,7 +3403,7 @@ if __name__ == '__main__':
 	# Create the system's information tree. The information is automatically collected on creation.
 	node_info = NodeInfo()
 	if options.debug_info:
-		print str(node_info)
+		print(str(node_info))
 		exit(0)
 
 	if options.profile:
