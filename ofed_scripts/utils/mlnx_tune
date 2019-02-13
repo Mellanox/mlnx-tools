@@ -1,0 +1,3419 @@
+#!/usr/bin/env python
+#
+# Copyright (c) 2017 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+
+#################################################################################
+#SCRIPT:mlnx_tune								#
+#AUTHOR: Tal Gilboa								#
+#DATE:26-May-2014								#
+#PLATFORM:Linux									#
+#################################################################################
+
+import pdb
+import os
+import sys
+import commands
+import logging
+import errno
+import datetime
+import re
+import platform
+from optparse 					import OptionParser
+
+VERSION_MAJOR					= "4"
+VERSION_MINOR					= "5"
+VERSION_BUILD					= "1"
+
+INDENT						= 1
+NA						= "N/A"
+
+MLX4_CORE					= "mlx4_core"
+MLX5_CORE					= "mlx5_core"
+
+FORMAT_1_ARG					= '%s%-40s\n'
+FORMAT_2ARGS 					= '%s%-40s %-6s\n'
+
+SERVICE_STATUS_CMD				= "yes | service --status-all"
+FIREWALL_IPTABLES_SERVICE			= "iptables"
+FIREWALL_IP6TABLES_SERVICE			= "ip6tables"
+
+CPU_MAX_PERFORMANCE_CMD				= "echo performance > /sys/devices/system/cpu/cpu%s/cpufreq/scaling_governor"
+NUMA_NODES_CMD			 		= "ls /sys/devices/system/node/ | grep node"
+CPUINFO_CMD					= "cat /proc/cpuinfo"
+GET_ARCHITECTURE_INFO_CMD			= "uname -m"
+LSCPU_CMD					= "lscpu"
+GET_NMI_WATCHDOG_CMD				= "cat /proc/sys/kernel/nmi_watchdog"
+SET_NMI_WATCHDOG_CMD				= "echo %s > /proc/sys/kernel/nmi_watchdog"
+GET_WATCHDOG_CMD				= "cat /proc/sys/kernel/watchdog"
+SET_WATCHDOG_CMD				= "echo %s > /proc/sys/kernel/watchdog"
+GET_VM_STAT_INTERVAL_CMD			= "cat /proc/sys/vm/stat_interval"
+SET_VM_STAT_INTERVAL_CMD			= "echo %s > /proc/sys/vm/stat_interval"
+GET_MEMORY_INFO_CMD				= "cat /proc/meminfo"
+GET_NUMA_BALANCING_CMD				= "cat /proc/sys/kernel/numa_balancing"
+SET_NUMA_BALANCING_CMD				= "echo %s > /proc/sys/kernel/numa_balancing"
+GET_MAX_SHARED_MEMORY_SEGMENT_SIZE_CMD		= "cat /proc/sys/kernel/shmmax"
+GET_NUMA_HUGEPAGES_CMD				= "cat /sys/devices/system/node/node%s/hugepages/hugepages-%skB/nr_hugepages"
+GET_VM_HUGEPAGES_CMD				= "cat /proc/sys/vm/nr_hugepages"
+GET_VM_SWAPPINESS_CMD				= "cat /proc/sys/vm/swappiness"
+SET_VM_SWAPPINESS_CMD				= "echo %s > /proc/sys/vm/swappiness"
+GET_VM_ZONE_RECLAIM_MODE_CMD			= "cat /proc/sys/vm/zone_reclaim_mode"
+SET_VM_ZONE_RECLAIM_MODE_CMD			= "echo %s > /proc/sys/vm/zone_reclaim_mode"
+GET_TRANSPARENT_HUGEPAGES_ENABLED_CMD		= "cat /sys/kernel/mm/transparent_hugepage/enabled"
+SET_TRANSPARENT_HUGEPAGES_ENABLED_CMD		= "echo %s > /sys/kernel/mm/transparent_hugepage/enabled"
+GET_TRANSPARENT_HUGEPAGES_DEFRAG_CMD		= "cat /sys/kernel/mm/transparent_hugepage/defrag"
+SET_TRANSPARENT_HUGEPAGES_DEFRAG_CMD		= "echo %s > /sys/kernel/mm/transparent_hugepage/defrag"
+PROC_INTERRUPT_CMD				= "cat /proc/interrupts"
+DEVICE_INTERRUPTS_CMD				= "ls /sys/bus/pci/devices/*%s/msi_irqs/"
+RINGS_CMD					= "ls /sys/class/net/%s/queues/"
+IRQ_EXISTS_CMD					= "cat /proc/irq/%s/"
+IRQ_AFFINITY_MASK_CMD				= "cat /proc/irq/%s/smp_affinity"
+IRQ_AFFINITY_MASK_SET_CMD			= "echo  %s > /proc/irq/%s/smp_affinity"
+IRQ_AFFINITY_HINT_MASK_CMD			= "cat /proc/irq/%s/affinity_hint"
+RPS_AFFINITY_MASK_SET_CMD			= "echo %s > /sys/class/net/%s/queues/rx-%s/rps_cpus"
+RPS_AFFINITY_MASK_CMD				= "cat /sys/class/net/%s/queues/rx-%s/rps_cpus"
+XPS_AFFINITY_MASK_SET_CMD			= "echo %s > /sys/class/net/%s/queues/tx-%s/xps_cpus"
+XPS_AFFINITY_MASK_CMD				= "cat /sys/class/net/%s/queues/tx-%s/xps_cpus"
+FIND_INTERFACES_FROM_PCI_BUS_CMD		= "ls /sys/bus/pci/devices/*%s/net/"
+GET_DEV_ID_FROM_PCI_BUS_CMD			= "cat /sys/bus/pci/devices/*%s/device"
+GET_DEV_FW_FROM_MLX_DEVICE			= "cat /sys/class/infiniband/%s/fw_ver"
+FW_VERSION_FROM_PCI				= "cat /sys/bus/pci/devices/0000\:%s\:%s/infiniband/mlx*_*/fw_ver"
+FW_VERSION_FROM_PCI_PPC				= "cat /sys/bus/pci/devices/%s\:%s\:%s/infiniband/mlx*_*/fw_ver"
+FW_VERSION_FROM_PCI_PPC_NEW_FORMAT		= "cat /sys/bus/pci/devices/0000\:%s\:%s.%s/infiniband/mlx*_*/fw_ver"
+RDMA_DEVICE_FROM_PCI				= "ls /sys/bus/pci/devices/0000\:%s\:%s/infiniband/"
+RDMA_DEVICE_FROM_PCI_PPC			= "ls /sys/bus/pci/devices/%s\:%s\:%s/infiniband/"
+RDMA_DEVICE_FROM_PCI_PPC_NEW_FORMAT		= "ls /sys/bus/pci/devices/0000\:%s\:%s.%s/infiniband/"
+INTERFACE_STATUS_CMD				= "cat /sys/class/net/%s/carrier 2>/dev/null"
+INTERFACE_MTU_CMD				= "cat /sys/class/net/%s/mtu 2>/dev/null"
+INTERFACE_PORT_CMD				= "cat /sys/class/net/%s/dev_id 2>/dev/null"
+INTERFACE_INDEX_CMD				= "cat /sys/class/net/%s/ifindex 2>/dev/null"
+INTERFACE_SPEED_CMD				= "cat /sys/class/net/%s/speed 2>/dev/null"
+GET_PORT_LINK_TYPE_CMD_MLX4			= "cat /sys/bus/pci/drivers/mlx4_core/0000\:%s\:%s/mlx4_port%s"
+GET_PORT_LINK_TYPE_CMD_MLX4_PPC			= "cat /sys/bus/pci/drivers/mlx4_core/%s\:%s\:%s/mlx4_port%s"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5			= "ls /sys/bus/pci/drivers/mlx5_core/0000\:%s\:%s/net/%s/mode"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC		= "ls /sys/bus/pci/drivers/mlx5_core/%s\:%s\:%s/net/%s/mode"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC_NEW_FORMAT	= "ls /sys/bus/pci/drivers/mlx5_core/0000\:%s\:%s.%s/net/%s/mode"
+
+NUMA_SUPPORT_CMD				= "cat /sys/bus/pci/devices/*%s/numa_node"
+LOCAL_CPUS_CMD					= "cat /sys/bus/pci/devices/*%s/local_cpulist"
+NUMA_CORES_CMD			 		= "ls /sys/devices/system/node/node%s/"
+ALL_CPUS_CMD			 		= "ls /sys/devices/system/cpu/"
+CORE_ID_CMD					= "cat /sys/devices/system/node/node%s/cpu%s/topology/core_id"
+IPV4_FORWARDING_CFG				= "/proc/sys/net/ipv4/ip_forward"
+IPV6_FORWARDING_CFG			 	= "/proc/sys/net/ipv6/conf/%s/forwarding"
+
+RUNNING_PROCESS					= "ps -ef"
+
+LSMOD						= "lsmod"
+LOAD_MODULE_CMD					= "modprobe -f %s"
+UNLOAD_MODULE_CMD				= "modprobe -rf %s"
+DMIDECODE					= "dmidecode"
+MST_STATUS					= "mst status -v"
+MST_START					= "mst start"
+FLINT						= "flint -d %s -qq q"
+IFCONFIG					= "ifconfig"
+ETHTOOL						= "ethtool"
+LSPCI						= "lspci"
+QDISC						= "tc qdisc"
+KERNEL_PARAMETERS				= "cat /proc/cmdline"
+
+OFED_PATH					= "which ofed_info"
+
+GET_NETWORK_PARAMETERS_CMD			= ETHTOOL + " -%s %s"
+SET_MULTIPLE_NETWORK_PARAMETER_CMD		= ETHTOOL + " -%s %s %s"
+SET_TXQ_LENGTH_CMD				= IFCONFIG + " %s txqueuelen %s"
+ADD_INTERFACE_TO_QDISC_CMD			= QDISC + " add dev %s root sfq"
+DEL_INTERFACE_FROM_QDISC_CMD			= QDISC + " del dev %s root"
+ADD_INTERFACE_QDISC_NO_QUEUE_CMD = QDISC + " add dev %s root noqueue"
+
+class Profile:
+	""" Describes a valid service status
+	"""
+	HIGH_THROUGHPUT				= "HIGH_THROUGHPUT"
+	IP_FORWARDING_MULTI_STREAM_THROUGHPUT	= "IP_FORWARDING_MULTI_STREAM_THROUGHPUT"
+	IP_FORWARDING_MULTI_STREAM_PACKET_RATE	= "IP_FORWARDING_MULTI_STREAM_PACKET_RATE"
+	IP_FORWARDING_MULTI_STREAM_0_LOSS	= "IP_FORWARDING_MULTI_STREAM_0_LOSS"
+	IP_FORWARDING_SINGLE_STREAM		= "IP_FORWARDING_SINGLE_STREAM"
+	IP_FORWARDING_SINGLE_STREAM_0_LOSS	= "IP_FORWARDING_SINGLE_STREAM_0_LOSS"
+        IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT = "IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT"
+        LOW_LATENCY_VMA				= "LOW_LATENCY_VMA"
+        MULTICAST				= "MULTICAST"
+	IP_FORWARDING_SINGLE_STREAM_PROFILES	= [IP_FORWARDING_SINGLE_STREAM, IP_FORWARDING_SINGLE_STREAM_0_LOSS, IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT]
+	IP_FORWARDING_MULTI_STREAM_PROFILES	= [
+							IP_FORWARDING_MULTI_STREAM_THROUGHPUT,
+							IP_FORWARDING_MULTI_STREAM_PACKET_RATE,
+							IP_FORWARDING_MULTI_STREAM_0_LOSS
+						  ]
+	IP_FORWARDING_0_LOSS_PROFILES		= [
+							IP_FORWARDING_MULTI_STREAM_0_LOSS,
+							IP_FORWARDING_SINGLE_STREAM_0_LOSS
+						  ]
+	ALLOWED_PROFILES			= [
+							HIGH_THROUGHPUT,
+							IP_FORWARDING_MULTI_STREAM_THROUGHPUT,
+							IP_FORWARDING_MULTI_STREAM_PACKET_RATE,
+							IP_FORWARDING_MULTI_STREAM_0_LOSS,
+							IP_FORWARDING_SINGLE_STREAM,
+							IP_FORWARDING_SINGLE_STREAM_0_LOSS,
+							IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT,
+							LOW_LATENCY_VMA, MULTICAST
+						  ]
+	NEED_IFCONFIG				= IP_FORWARDING_SINGLE_STREAM_PROFILES + IP_FORWARDING_MULTI_STREAM_PROFILES
+
+class Status:
+	""" Describes a valid service status
+	"""
+	ACTIVE		= "ACTIVE"
+	INACTIVE	= "INACTIVE"
+	NOT_PRESENT	= "NOT PRESENT"
+	NOT_SUPPORTED	= "NOT SUPPORTED"
+	UNKNOWN		= NA
+
+class CPUVendor:
+	""" Describes a CPU vendor
+	"""
+	INTEL		= "GenuineIntel"
+	AMD		= "AuthenticAMD"
+	IBM		= "IBM"
+	ARM		= "ARM"
+	UNKNOWN		= NA
+
+	LIMIT_TO_32_QUEUES = [AMD]
+
+class CPUConstant:
+	""" Describes CPU constants per vendor
+	"""
+	INTEL_FAMILY		= 6
+	INTEL_SNB_MODEL		= 45
+	INTEL_IVB_MODEL		= 62
+	INTEL_HSW_MODEL		= 63
+	INTEL_BDWL_MODEL	= 79
+	INTEL_SKL_MODEL		= 85
+
+	AMD_MODEL		= "AMD"
+
+	IBM_PPC64LE_MODEL	= "ppc64le"
+
+	ARM_AARCH64_MODEL	= "aarch64"
+
+class Architecture:
+	""" Describes a CPU architecture
+	"""
+	SANDY_BRIDGE	= "Sandy Bridge"
+	IVY_BRIDGE	= "Ivy Bridge"
+	HASWELL		= "Haswell"
+	BROADWELL	= "Broadwell"
+	SKYLAKE		= "Skylake"
+	AMD		= "AMD"
+	AARCH64		= "AArch64"
+	PPC64LE		= "ppc64le"
+	X86_64		= "x86_64"
+	UNKNOWN		= NA
+	HASWELL_UARCH	= [HASWELL, BROADWELL]
+
+	MODEL_TO_ARCH	= {
+				CPUVendor.INTEL: {
+					CPUConstant.INTEL_FAMILY: {
+						CPUConstant.INTEL_SNB_MODEL: SANDY_BRIDGE,
+						CPUConstant.INTEL_IVB_MODEL: IVY_BRIDGE,
+						CPUConstant.INTEL_HSW_MODEL: HASWELL,
+						CPUConstant.INTEL_BDWL_MODEL: BROADWELL,
+						CPUConstant.INTEL_SKL_MODEL: SKYLAKE
+					}
+				},
+				CPUVendor.AMD: {
+					CPUConstant.AMD_MODEL: AMD
+				},
+				CPUVendor.IBM: {
+					CPUConstant.IBM_PPC64LE_MODEL: PPC64LE
+				},
+				CPUVendor.ARM: {
+					CPUConstant.ARM_AARCH64_MODEL: AARCH64
+				}
+			  }
+
+class Unit:
+	""" Describes a unit of measure
+	"""
+	BYTE	= "B"
+	KBYTE	= "KB"
+	MBYTE	= "MB"
+	GBYTE	= "GB"
+	BIT	= "b"
+	KBIT	= "Kb"
+	MBIT	= "Mb"
+	GBIT	= "Gb"
+	BYTES	= [BYTE, KBYTE, MBYTE, GBYTE]
+	BITs	= [BIT, KBIT, MBIT, GBIT]
+
+	unit_to_ratio = {BIT : 1, BYTE : 8, KBIT : 1000, KBYTE : 8*1024, MBIT : 1000**2, MBYTE : 8*1024**2, GBIT : 1000**3, GBYTE : 8*1024**3}
+
+	def convert(self, value, original_unit, wanted_unit):
+		""" Converts a value between units
+		"""
+		if not all(unit in Unit.unit_to_ratio.keys() for unit in (original_unit, wanted_unit)):
+			logging.error("Could not convert between %s%s to %s"%(value, original_unit, wanted_unit))
+			exit(1)
+		# convert value to bits and then apply wanted units
+		return float(value * Unit.unit_to_ratio[original_unit]) / Unit.unit_to_ratio[wanted_unit]
+
+class OS:
+	CENTOS7_0			= "CENTOS7.0"
+	CENTOS7_1			= "CENTOS7.1"
+	CENTOS7_2			= "CENTOS7.2"
+	CENTOS7_3			= "CENTOS7.3"
+	CENTOS7_4			= "CENTOS7.4"
+	CENTOS7_5			= "CENTOS7.5"
+	RH6_4				= "RH6.4"
+	RH6_5				= "RH6.5"
+	RH6_6				= "RH6.6"
+	RH6_7				= "RH6.7"
+	RH7_0				= "RH7.0"
+	RH7_1				= "RH7.1"
+	RH7_2				= "RH7.2"
+	RH7_3				= "RH7.3"
+	RH7_4				= "RH7.4"
+	RH7_5				= "RH7.5"
+	FEDORA				= "FEDORA"
+	SLES11_3			= "SLES11.3"
+	SLES11_4			= "SLES11.4"
+	SLES12				= "SLES12"
+	UBUNTU14_04			= "UBUNTU14.04"
+	UBUNTU14_10			= "UBUNTU14.10"
+	UBUNTU15_04			= "UBUNTU15.04"
+	UBUNTU15_10			= "UBUNTU15.10"
+	UBUNTU16_04			= "UBUNTU16.04"
+	UBUNTU16_10			= "UBUNTU16.10"
+	UBUNTU17_04			= "UBUNTU17.04"
+	UBUNTU17_10			= "UBUNTU17.10"
+	UBUNTU18_04			= "UBUNTU18.04"
+	XENSERVER7_0			= "Xen Server 7.0"
+	XENSERVER7_2			= "Xen Server 7.2"
+	ESX				= "ESX"
+	WIN				= "WIN"
+	FREEBSD				= "FREEBSD"
+	POWER_KVM			= "POWER KVM"
+	SUNOS				= "SUNOS"
+	UEFI				= "UEFI"
+	DEBIAN				= "DEBIAN"
+	UNKNOWN				= "UNKNOWN"
+	ALL				= "ALL"
+	SUPPORTED_OS			= [
+						RH6_4, RH6_5, RH6_6, RH6_7, RH7_0, RH7_1, RH7_2,
+						RH7_3, RH7_4, RH7_5, SLES11_3, SLES11_4, SLES12,
+						UBUNTU14_04, UBUNTU14_10, UBUNTU15_04, UBUNTU15_10,
+						UBUNTU16_04, UBUNTU16_10, UBUNTU17_04, UBUNTU17_10,
+						UBUNTU18_04, XENSERVER7_0, XENSERVER7_2, CENTOS7_0,
+						CENTOS7_1, CENTOS7_2, CENTOS7_3, CENTOS7_4,
+						CENTOS7_5
+					  ]
+	SYSTEMCTL_ACCESS_OS		= [
+						RH7_0, RH7_1, RH7_2, RH7_3, RH7_4, RH7_5,
+						CENTOS7_0, CENTOS7_1, CENTOS7_2, CENTOS7_3,
+						CENTOS7_4, CENTOS7_5, XENSERVER7_0, XENSERVER7_2
+					  ]
+	SUSE				= [SLES11_3, SLES11_4, SLES12]
+	PPC_DEVICE_NEW_FORMAT_OS	= [RH7_0, RH7_1, RH7_2, RH7_3, RH7_4, RH7_5]
+	NO_IPV6_FORWARDING_SUPPORT_OS	= [UBUNTU14_04]
+	TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS = [RH7_3, RH7_4, RH7_5]
+
+	def get_os(self):
+		""" Return local OS Type (one of the list OS_ALL)
+		    in case of unknown system type, it's return OS.UNKNOWN.
+		"""
+		os_platform = platform.system().lower()
+		if os_platform in ["windows", "microsoft"]:
+			return OS.WIN
+
+		if os_platform == "uefi":
+			return OS.UEFI
+
+		if os_platform == "vmkernel":
+			return OS.ESX
+
+		if os_platform == "sunos":
+			return OS.SUNOS
+
+		if os_platform == "linux":
+			linux_dist = platform.linux_distribution()[0].lower()
+			os_version = platform.platform().split('-with-')[1].split('-')[1]
+			if any(dist in linux_dist for dist in ['redhat', 'red hat']):
+				if os_version == '6.4':
+					return OS.RH6_4
+				if os_version == '6.5':
+					return OS.RH6_5
+				if os_version == '6.6':
+					return OS.RH6_6
+				if os_version == '6.7':
+					return OS.RH6_7
+				if os_version == '7.0':
+					return OS.RH7_0
+				if os_version == '7.1':
+					return OS.RH7_1
+				if os_version == '7.2':
+					return OS.RH7_2
+				if os_version == '7.3':
+					return OS.RH7_3
+				if os_version == '7.4':
+					return OS.RH7_4
+				if os_version == '7.5':
+					return OS.RH7_5
+			if linux_dist == 'fedora':
+				return OS.FEDORA
+			if 'suse' in linux_dist:
+				if os_version == '11':
+					return OS.SLES11_3
+				if os_version == '12':
+					return OS.SLES12
+			if linux_dist == 'ubuntu':
+				if os_version == '14.04':
+					return OS.UBUNTU14_04
+				if os_version == '14.10':
+					return OS.UBUNTU14_10
+				if os_version == '15.04':
+					return OS.UBUNTU15_04
+				if os_version == '15.10':
+					return OS.UBUNTU15_10
+				if os_version == '16.04':
+					return OS.UBUNTU16_04
+				if os_version == '16.10':
+					return OS.UBUNTU16_10
+				if os_version == '17.04':
+					return OS.UBUNTU17_04
+				if os_version == '17.10':
+					return OS.UBUNTU17_10
+				if os_version == '18.04':
+					return OS.UBUNTU18_04
+			if 'centos' in linux_dist:
+				if os_version.startswith('7.0'):
+					return OS.CENTOS7_0
+				if os_version.startswith('7.1'):
+					return OS.CENTOS7_1
+				if os_version.startswith('7.2'):
+					return OS.CENTOS7_2
+				if os_version.startswith('7.3'):
+					return OS.CENTOS7_3
+				if os_version.startswith('7.4'):
+					return OS.CENTOS7_4
+				if os_version.startswith('7.5'):
+					return OS.CENTOS7_5
+			if linux_dist == 'debian':
+				return OS.DEBIAN
+			if linux_dist == "freebsd":
+				return OS.FREEBSD
+			if linux_dist == "ibm_powerkvm":
+				return OS.POWER_KVM
+			if linux_dist == 'xenserver':
+				if os_version == '7.0.0':
+					return OS.XENSERVER7_0
+				if os_version == '7.2.0':
+					return OS.XENSERVER7_2
+
+		logging.warning("Unknown OS [%s,%s,%s]. Tuning might be non-optimized." % (str(platform.system()), str(platform.release()), str(platform.dist())))
+		return OS.UNKNOWN
+
+	def get_kernel(self):
+		""" Return kernel version.
+		"""
+		return platform.release()
+
+	def is_supported_system (self):
+		""" Check if the local OS,ARCH is in the given supportedOSlist and supportedARCHs
+		    return True if true, Otherwise UnkownSystemError is raised.
+		"""
+		currentOS = self.get_os()
+		if currentOS in OS.SUPPORTED_OS:
+			return True
+		return False
+
+class DeviceType:
+	""" A class describing A Mellanox device
+	"""
+
+	def __init__(self, id, name = ""):
+		self.id = id
+		if name:
+			self.name = name
+		else:
+			matching_devices = filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS)
+			if any(matching_devices):
+				self.name = matching_devices[0].name
+
+	def __eq__(self, other):
+		""" Decides whether or not two instances of DeviceType class are the same
+		"""
+		return self.id == other.id
+
+class Devices:
+	""" A class describing supported Mellanox devices
+	"""
+	ConnectX2			= DeviceType("26428", "ConnectX-2")
+	ConnectX3			= DeviceType("4099", "ConnectX-3")
+	ConnectX3VF			= DeviceType("4100", "ConnectX-3VF")
+	ConnectX3Pro			= DeviceType("4103", "ConnectX-3Pro")
+	ConnectX3ProVF			= DeviceType("4104", "ConnectX-3ProVF")
+	ConnectIB			= DeviceType("4113", "Connect-IB")
+	ConnectIBVF			= DeviceType("4114", "Connect-IBVF")
+	ConnectX4			= DeviceType("4115", "ConnectX-4")
+	ConnectX4VF			= DeviceType("4116", "ConnectX-4VF")
+	ConnectX4LX			= DeviceType("4117", "ConnectX-4LX")
+	ConnectX4LXVF			= DeviceType("4118", "ConnectX-4LXVF")
+	ConnectX5			= DeviceType("4119", "ConnectX-5")
+	ConnectX5VF			= DeviceType("4120", "ConnectX-5VF")
+	ConnectX5EX			= DeviceType("4121", "ConnectX-5EX")
+	ConnectX5EXVF			= DeviceType("4122", "ConnectX-5EXVF")
+	UNDEFINED			= DeviceType(NA, NA)
+	MLX4_CONSUMERS			= [ConnectX2, ConnectX3, ConnectX3Pro, ConnectX3VF, ConnectX3ProVF]
+	MLX5_CONSUMERS			= [
+						ConnectX5, ConnectX5EX, ConnectX4, ConnectX4LX, ConnectIB,
+						ConnectX5VF, ConnectX5EXVF, ConnectX4VF, ConnectX4LXVF, ConnectIBVF
+					  ]
+	SUPPORTED_CONSUMERS		= MLX4_CONSUMERS + MLX5_CONSUMERS
+	HW_LRO_SUPPORTING_DEVICES	= [
+						ConnectX5, ConnectX5EX, ConnectX4, ConnectX4LX,
+						ConnectX5VF, ConnectX5EXVF, ConnectX4VF, ConnectX4LXVF
+					  ]
+	NEED_32_QUEUES_LIMIT_DEVICES	= [ConnectX4LX]
+
+	def supported_ids(self):
+		""" Returns a list of all supported device ids
+		"""
+		return list(map((lambda type: type.id), Devices.SUPPORTED_CONSUMERS))
+
+	def supported_names(self):
+		""" Returns a list of all supported device names
+		"""
+		return list(map((lambda type: type.name), Devices.SUPPORTED_CONSUMERS))
+
+class IbSpeed:
+	""" Describes a valid service status
+	"""
+	HDR	= "HDR"
+	EDR	= "EDR"
+	FDR	= "FDR"
+	QDR	= "QDR"
+	SDR	= "SDR"
+	UNKNOWN	= NA
+
+	speed_names_to_speed = {HDR : 200, EDR : 100, FDR : 56, QDR : 40, SDR : 10, UNKNOWN : None}
+
+	def from_number(self, speed):
+		""" Returns a IB speed name from a speed value
+		"""
+		if speed in IbSpeed.speed_names_to_speed.values():
+			return filter(lambda key: IbSpeed.speed_names_to_speed[key] == speed, IbSpeed.speed_names_to_speed.keys())[0]
+		else:
+			return IbSpeed.UNKNOWN
+
+# Information tree structure and classes
+class NodeInfo:
+	""" Describes a system's information tree
+	"""
+	def __init__(self):
+		logging.info("Collecting node information")
+		self.os			= OsInfo(self)
+		# Collecting info asumes self.os already exists.
+		self.os.collect_info(self)
+		self.cpu		= Cpu(self)
+		self.memory		= Memory(self)
+		self.irq_balancer	= Service(Service.IRQBALANCER, self)
+		self.firewall		= Firewall(self)
+		self.ip_forwarding	= IpForwarding()
+		self.hyper_threading	= HyperThreading(self)
+		self.iommu		= Iommu()
+		self.driver		= Driver()
+		self.pci_devices	= mlnx_pci_devices_status(self)
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "System Info:\n"
+
+		INDENT	+= 2
+		string	+= str(self.os) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.cpu) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.memory) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.irq_balancer) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.firewall) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.ip_forwarding) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.hyper_threading) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.iommu) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string 	+= str(self.driver) + '\n'
+		INDENT	-= 2
+
+		for device in self.pci_devices:
+			INDENT += 2
+			string += str(device) + '\n'
+			INDENT -= 2
+
+		string	+= '\n'
+
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the system status to the user
+		"""
+		print ""
+		print "Mellanox Technologies - System Report"
+		print ""
+		self.os.report_status(profile)
+		print ""
+		self.cpu.report_status(profile)
+		print ""
+		self.memory.report_status(profile)
+		print ""
+		self.hyper_threading.report_status(profile)
+		print ""
+		self.irq_balancer.report_status(profile)
+		print ""
+		self.firewall.report_status(profile)
+		print ""
+		self.driver.report_status(profile)
+		print ""
+		for device in self.pci_devices:
+			device.report_status(self.cpu.architecture, profile)
+			print ""
+
+class OsInfo:
+	""" Describes the system's operation system
+	"""
+	def __init__(self, node_info):
+		logging.info("Collecting OS information")
+		self.name		= OS().get_os()
+		self.kernel		= OS().get_kernel()
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "OS:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the operation system status to the user
+		"""
+		print "Operation System Status"
+		print "%s"%(self.name)
+		print "%s"%(self.kernel)
+		if profile == Profile.LOW_LATENCY_VMA:
+			print "Services:"
+			for service in [service for service in self.services if (service.name in Service.DISABLE_FOR_VMA)]:
+				service_status = (status_ok_string(), status_warning_string())[service.is_active()]
+				print "%s: %s %s"%(service_status, service.name, service.status)
+			print "\nKernel Modules:"
+			for kernel_module in [kernel_module for kernel_module in self.kernel_modules if (kernel_module.name in KernelModule.REMOVE_FOR_VMA)]:
+				kernel_module_status = (status_ok_string(), status_warning_string())[kernel_module.is_loaded()]
+				print "%s: %s %s"%(kernel_module_status, kernel_module.name, kernel_module.status)
+
+	def collect_info(self, node_info):
+		""" Collects OS information from the system and updates the class fields
+		"""
+		self.services		= []
+		self.kernel_modules	= []
+		for service in Service.ALL:
+			self.services.append(Service(service, node_info))
+
+		for kernel_module in KernelModule.ALL:
+			self.kernel_modules.append(KernelModule(kernel_module))
+
+	def optimize(self, node_info, profile):
+		""" Optimizes the OS acording to the requested profile
+		"""
+		if profile == Profile.LOW_LATENCY_VMA:
+			logging.info("Stopping services.")
+			services_to_stop = filter(lambda service: service.name in Service.DISABLE_FOR_VMA and service.is_active(), self.services)
+			for service in services_to_stop:
+				service.stop(node_info)
+			logging.info("Unloading kernel modules.")
+			kernel_modules_to_unload = filter(lambda kernel_module: kernel_module.name in KernelModule.REMOVE_FOR_VMA and kernel_module.is_loaded(), self.kernel_modules)
+			for kernel_module in kernel_modules_to_unload:
+				kernel_module.unload()
+
+class Cpu:
+	""" Describes the system's CPU
+	"""
+	def __init__(self, node_info):
+		logging.info("Collecting CPU information")
+		self.collect_info(node_info)
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "CPU:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the CPU status to the user
+		"""
+		print "CPU Status"
+		print "%s %s %s"%(self.vendor, self.model, self.architecture)
+		status_error = False
+		freq_ok = False
+		# Don't crash if actual cpu frequency cannot be found
+		try:
+			freq_ok = (int(self.actual_freq) >= int(self.max_freq.split(" ")[0]) - 100)
+			freq_status = (status_ok_string(), status_warning_string())[freq_ok]
+		except:
+			status_error = True
+			freq_status = status_warning_string()
+
+		freq_suggestion = (" >>> CPU frequency is below maximum. Install cpupowerutils and run x86_energy_perf_policy performance.", "")[freq_ok]
+		if status_error:
+			print "%s: CPU frequency status cannot be determined" % (freq_status)
+		else:
+			print "%s: Frequency %sMHz"%(freq_status, self.actual_freq) + freq_suggestion
+
+	def collect_info(self, node_info):
+		""" Collects CPU information from the system and updates the class fields
+		"""
+		# Set default values
+		self.total_cores	= 0
+		self.physical_cores_num	= 0
+		self.sockets		= 0
+		self.sockets_cores	= {}
+		self.sibling_cores	= {}
+		self.physical_cores	= {}
+		self.offline_cores	= {}
+		self.all_cores		= []
+		self.model		= None
+		self.vendor		= CPUVendor.UNKNOWN
+		self.architecture	= Architecture.UNKNOWN
+		self.actual_freq	= None
+		self.max_freq		= None
+		self.watchdog		= Status.INACTIVE
+		self.nmi_watchdog	= Status.INACTIVE
+		self.vm_stat_interval	= 0
+
+		(rc, cpuinfo_output) = run_command_warn_when_fail(CPUINFO_CMD, "Unable to collect cpu info.")
+		(rc, architecture_info_output) = run_command_warn_when_fail(GET_ARCHITECTURE_INFO_CMD, "Unable to collect architecture info.")
+		# Get CPU vendor name. TODO - Move to OS/ARCH access module.
+		architecture_str = architecture_info_output.lower()
+		if Architecture.X86_64.lower() in architecture_str:
+			self.collect_x86_64_cpu_info(cpuinfo_output)
+		elif Architecture.PPC64LE.lower() in architecture_str:
+			self.vendor = CPUVendor.IBM
+			self.collect_ppc_cpu_info(cpuinfo_output)
+		elif Architecture.AARCH64.lower() in architecture_str:
+			self.vendor = CPUVendor.ARM
+			self.collect_arm_cpu_info(cpuinfo_output)
+
+		self.collect_common_cpu_info()
+
+	def collect_common_cpu_info(self):
+		""" Collects CPU information common for all systems
+		"""
+		arr = []
+		(rc, output) = run_command_warn_when_fail(NUMA_NODES_CMD, "Unable to collect NUMA node info.")
+		if not rc:
+			for line in output.split("\n"):
+				arr.append(int(line.replace('node','').strip()))
+			self.sockets = len(arr)
+
+		socket_dict = {}
+		for socket in arr:
+			socket_dict[socket] = []
+			(rc, output) = run_command_warn_when_fail(NUMA_CORES_CMD%socket, "Unable to collect NUMA cores info.")
+			if not rc:
+				for element in output.split('\n'):
+					if 'cpu' in element and element.replace('cpu','').isdigit():
+						socket_dict[socket].append(int(element.replace('cpu','')))
+				socket_dict[socket] = sorted(socket_dict[socket])
+		if not socket_dict:
+			# If no NUMA found - consider all CPUs to be on NUMA 0.
+			self.sockets = 1
+			socket_dict[0] = []
+			(rc, output) = run_command_warn_when_fail(ALL_CPUS_CMD, "Unable to find any CPU on the system.")
+			for element in output.split('\n'):
+				if 'cpu' in element and element.replace('cpu','').isdigit():
+					socket_dict[0].append(int(element.replace('cpu','')))
+			socket_dict[0] = sorted(socket_dict[0])
+
+		self.sockets_cores = socket_dict
+		for numa in self.sockets_cores.keys():
+			self.all_cores += self.sockets_cores[numa]
+
+		self.sibling_cores = {}
+		self.physical_cores = {}
+		for numa in self.sockets_cores.keys():
+			if numa not in self.sibling_cores.keys():
+				self.sibling_cores[numa] = {}
+				self.physical_cores[numa] = []
+				self.offline_cores[numa] = []
+				for core in self.sockets_cores[numa]:
+					(rc, output) = run_command_debug_when_fail(CORE_ID_CMD%(numa,core), "Unable to collect CORE ID info. Core " + str(core) + " might be offline.")
+					if rc:
+						self.offline_cores[numa].append(core)
+						continue
+					core_id = output.replace('\n','')
+					if core_id in self.sibling_cores[numa].keys():
+						self.sibling_cores[numa][core_id].append(core)
+					else:
+						self.sibling_cores[numa][core_id] = [core]
+						self.physical_cores[numa].append(core)
+				self.sockets_cores[numa] = [c for c in self.sockets_cores[numa] if c not in self.offline_cores[numa]]
+
+		(rc, output) = run_command_warn_when_fail(GET_WATCHDOG_CMD, "Unable to collect watchdog info.")
+		if not rc and int(output) != 0:
+			self.watchdog		= Status.ACTIVE
+
+		(rc, output) = run_command_warn_when_fail(GET_NMI_WATCHDOG_CMD, "Unable to collect NMI watchdog info.")
+		if not rc and int(output) != 0:
+			self.nmi_watchdog	= Status.ACTIVE
+
+		(rc, output) = run_command_warn_when_fail(GET_VM_STAT_INTERVAL_CMD, "Unable to collect VM stat interval info.")
+		if not rc and int(output) > 0:
+			self.vm_stat_interval	= int(output)
+
+	def collect_ppc_cpu_info(self, raw_cpuinfo):
+		""" Collects CPU information for PPC systems
+		"""
+		raw_cpuinfo = raw_cpuinfo.split('\n')
+		total_cores = 0
+		for line in raw_cpuinfo:
+			if "processor" in line:
+				total_cores += 1
+		self.total_cores = total_cores
+		for line in raw_cpuinfo:
+			if "clock" in line:
+				self.actual_freq = float(line.split(":")[1].split("MHz")[0].strip())
+				break
+
+		(rc, lscpu_output) = run_command_warn_when_fail(LSCPU_CMD, "Unable to collect cpu info.")
+		for line in lscpu_output.split('\n'):
+			if "Architecture" in line:
+				architecture_str = line.split()[1].strip().lower()
+				if architecture_str in Architecture.MODEL_TO_ARCH[CPUVendor.IBM].keys():
+					self.architecture = Architecture.MODEL_TO_ARCH[CPUVendor.IBM][architecture_str]
+			if "Thread(s)" in line:
+				threads_per_core = int(line.split(":")[1].strip())
+				self.physical_cores_num = int(self.total_cores / threads_per_core)
+				break
+
+	def collect_arm_cpu_info(self, raw_cpuinfo):
+		""" Collects CPU information for ARM systems
+		"""
+		raw_cpuinfo = raw_cpuinfo.split('\n')
+		total_cores = 0
+		processor_pattern = re.compile("processor( *): \d+")
+		for line in raw_cpuinfo:
+			match = processor_pattern.search(line)
+			if match:
+				total_cores+=1
+
+		(rc, lscpu_output) = run_command_warn_when_fail(LSCPU_CMD, "Unable to collect cpu info.")
+		for line in lscpu_output.split('\n'):
+			if "Architecture" in line:
+				architecture_str = line.split()[1].strip().lower()
+				if architecture_str in Architecture.MODEL_TO_ARCH[CPUVendor.ARM].keys():
+					self.architecture = Architecture.MODEL_TO_ARCH[CPUVendor.ARM][architecture_str]
+			if "Thread(s)" in line:
+				threads_per_core = int(line.split(":")[1].strip())
+				self.physical_cores_num = int(self.total_cores / threads_per_core)
+				break
+
+	def collect_x86_64_cpu_info(self, raw_cpuinfo):
+		""" Collects CPU information for Intel systems
+		"""
+		raw_cpuinfo = raw_cpuinfo.split('\n')
+		for line in raw_cpuinfo:
+			if "vendor_id" in line:
+				self.vendor = (line.split(":")[1].strip())
+				break
+		for line in raw_cpuinfo:
+			if "siblings" in line:
+				self.total_cores = int(line.split(":")[1].strip())
+				break
+		for line in raw_cpuinfo:
+			if "cpu cores" in line:
+				self.physical_cores_num = int(line.split(":")[1].strip())
+				break
+		for line in raw_cpuinfo:
+			if "model name" in line:
+				self.model = line.split(":")[1].strip()
+				break
+		for line in raw_cpuinfo:
+			if "model name" not in line and "model" in line:
+				cpu_model_number = line.split(":")[1].strip()
+				break
+		for line in raw_cpuinfo:
+			if "cpu MHz" in line:
+				self.actual_freq = float(line.split(":")[1].strip())
+				break
+		for line in raw_cpuinfo:
+			if "cpu family" in line:
+				cpu_family_number = line.split(":")[1].strip()
+				break
+
+		if self.vendor == CPUVendor.INTEL:
+			self.architecture = self.convert_architecture_number_to_name(
+				int(cpu_model_number), int(cpu_family_number))
+		(rc, output) = run_command_warn_when_fail("%s %s"%(DMIDECODE, "-s processor-frequency"), "Unable to collect processor frequency")
+		if rc:
+			self.max_freq = None
+		else:
+			max_freq_pattern = re.compile("\d+ MHz")
+			for line in output.split("\n"):
+				match = max_freq_pattern.search(line)
+				if match:
+					self.max_freq = match.group(0)
+					break
+
+	def convert_architecture_number_to_name(self, model_number, family_number):
+		""" Converts model and family number to architecture name
+		"""
+		if family_number == CPUConstant.INTEL_FAMILY:
+			if model_number in Architecture.MODEL_TO_ARCH[CPUVendor.INTEL][CPUConstant.INTEL_FAMILY].keys():
+				return Architecture.MODEL_TO_ARCH[CPUVendor.INTEL][CPUConstant.INTEL_FAMILY][model_number]
+
+		return Architecture.UNKNOWN
+
+	def set_high_performance(self):
+		""" Sets CPU power management to 'high performance'
+		"""
+		for i in range(self.total_cores):
+			logging.debug("Setting core number %s to high perforamnce"%i)
+			rc = run_command_warn_when_fail(CPU_MAX_PERFORMANCE_CMD%i)
+
+	def stop_monitoring_services(self):
+		""" Stops monitoring services to ensure minimum overhead on the CPU.
+		"""
+		if self.watchdog != Status.INACTIVE:
+			(rc, output) = run_command_warn_when_fail(SET_WATCHDOG_CMD%0, "Unable to disable watchdog info.")
+
+		if self.nmi_watchdog != Status.INACTIVE:
+			(rc, output) = run_command_warn_when_fail(SET_NMI_WATCHDOG_CMD%0, "Unable to disable NMI watchdog info.")
+
+		(rc, output) = run_command_warn_when_fail(SET_VM_STAT_INTERVAL_CMD%30, "Unable to set VM stat interval info.")
+
+class Memory:
+	""" Describes the system's Memory
+	"""
+	TOTAL			= "memtotal"
+	FREE			= "memfree"
+
+	ZONE_RECLAIM_OFF	= "Off"
+	ZONE_RECLAIM_ON		= "On"
+	ZONE_RECLAIM_WRITE_OUT	= "Write out"
+	ZONE_RECLAIM_SWAP	= "Swap"
+	ZONE_RECLAIM_INVALID	= "N/A"
+
+	valid_options		= [ZONE_RECLAIM_OFF, ZONE_RECLAIM_ON, ZONE_RECLAIM_WRITE_OUT, ZONE_RECLAIM_INVALID, ZONE_RECLAIM_SWAP]
+
+	def int_to_zone_reclaim(self, int_value):
+		""" Converts an integer to a zone reclaim value
+		"""
+		return (Memory.ZONE_RECLAIM_INVALID, Memory.valid_options[int_value])[int_value < len(Memory.valid_options)]
+
+	def __int__(self, zone_reclaim_value):
+		""" Converts a zone reclaim value to an integer
+		"""
+		return Memory.valid_options.index(zone_reclaim_value)
+
+
+	def __init__(self, node_info):
+		logging.info("Collecting memory information")
+		self.hugepages = Hugepages(node_info)
+		self.collect_info(node_info)
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Memory:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
+
+		INDENT	+= 2
+		string	+= str(self.hugepages) + '\n'
+		INDENT	-= 2
+
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the memory status to the user
+		"""
+		print "Memory Status"
+		print "Total: %0.2f %s"%(Unit().convert(self.total_memory_kbytes, Unit.KBYTE, Unit.GBYTE), Unit.GBYTE)
+		print "Free: %0.2f %s"%(Unit().convert(self.free_memory_kbytes, Unit.KBYTE, Unit.GBYTE), Unit.GBYTE)
+
+		print ""
+		self.hugepages.report_status(profile)
+
+	def collect_info(self, node_info):
+		""" Collects memory information from the system and updates the class fields
+		"""
+		self.total_memory_kbytes		= 0
+		self.free_memory_kbytes			= 0
+		self.numa_balancing			= Status.INACTIVE
+		self.max_shared_memory_segment_size	= 0
+		self.vm_swappiness			= 0
+		self.vm_zone_reclaim_mode		= Memory.ZONE_RECLAIM_INVALID
+
+		(rc, output) = run_command_warn_when_fail(GET_MEMORY_INFO_CMD, "Unable to collect memory info.")
+		if not rc:
+			for line in output.split('\n'):
+				if Memory.TOTAL in line.lower():
+					self.total_memory_kbytes	= int(line.split(":")[1].strip().split()[0])
+					continue
+				if Memory.FREE in line.lower():
+					self.free_memory_kbytes		= int(line.split(":")[1].strip().split()[0])
+					continue
+
+		(rc, output) = run_command_warn_when_fail(GET_NUMA_BALANCING_CMD, "Unable to collect NUMA balancing info.")
+		if not rc and int(output) != 0:
+			self.numa_balancing			= Status.ACTIVE
+
+		(rc, output) = run_command_warn_when_fail(GET_MAX_SHARED_MEMORY_SEGMENT_SIZE_CMD, "Unable to collect max shared memory segment size info.")
+		if not rc:
+			self.max_shared_memory_segment_size	= int(output)
+
+		(rc, output) = run_command_warn_when_fail(GET_VM_SWAPPINESS_CMD, "Unable to collect VM swappiness info.")
+		if not rc:
+			self.vm_swappiness			= int(output)
+
+		(rc, output) = run_command_warn_when_fail(GET_VM_ZONE_RECLAIM_MODE_CMD, "Unable to collect VM zone reclaim mode info.")
+		if not rc:
+			self.vm_zone_reclaim_mode		= self.int_to_zone_reclaim(int(output))
+
+	def disable_operations(self, node_info):
+		""" Disables all memory operations done by the system.
+		"""
+		self.hugepages.disable_operations(node_info)
+
+		if self.numa_balancing == Status.ACTIVE:
+			(rc, output) = run_command_warn_when_fail(SET_NUMA_BALANCING_CMD%0, "Unable to disable NUMA balancing.")
+
+		if self.vm_swappiness != 0:
+			(rc, output) = run_command_warn_when_fail(SET_VM_SWAPPINESS_CMD%0, "Unable to disable VM swappiness.")
+
+		if self.vm_zone_reclaim_mode not in (Memory.ZONE_RECLAIM_OFF, Memory.ZONE_RECLAIM_INVALID):
+			(rc, output) = run_command_warn_when_fail(SET_VM_ZONE_RECLAIM_MODE_CMD%int(Memory().ZONE_RECLAIM_OFF), "Unable to disable VM zone reclaim.")
+
+
+class Hugepages:
+	""" Describes the system's Hugepages
+	"""
+	POLICY_ALWAYS		= "always"
+	POLICY_MADVISE		= "madvise"
+	POLICY_NEVER		= "never"
+	POLICY_UNKNOWN		= "N/A"
+	POLICY_ALL_VALID	= [POLICY_ALWAYS, POLICY_MADVISE, POLICY_NEVER]
+
+	PAGE_2MB		= 2**11
+	PAGE_1GB		= 2**20
+	PAGE_SUPPORTED		= [PAGE_2MB]
+
+	def str_to_policy(self, str_value):
+		""" Convert a string value to a policy value
+		"""
+		if not str_value in Hugepages.POLICY_ALL_VALID:
+			return Hugepages.POLICY_UNKNOWN
+		return [policy for policy in Hugepages.POLICY_ALL_VALID if (policy == str_value)][0]
+
+	def __init__(self, node_info):
+		logging.info("Collecting hugepages information")
+		self.collect_info(node_info)
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Hugepages:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the hugepage status to the user
+		"""
+		print "Hugepages Status"
+		for numa in self.numa_hugepages.keys():
+			report_str = "On NUMA %s:"%numa
+			for hugepages_val in self.numa_hugepages[numa].items():
+				report_str += " %sKB: %s pages"%(hugepages_val[0], hugepages_val[1])
+		print report_str
+		print "Transparent enabled: %s"%self.transparent_hugepages_enabled
+		print "Transparent defrag: %s"%self.transparent_hugepages_defrag
+
+	def collect_info(self, node_info):
+		""" Collects hugepages information from the system and updates the class fields
+		"""
+		self.vm_hugepages			= 0
+		self.numa_hugepages			= {}
+		self.transparent_hugepages_enabled	= Hugepages.POLICY_UNKNOWN
+		self.transparent_hugepages_defrag	= Hugepages.POLICY_UNKNOWN
+
+		(rc, output) = run_command_warn_when_fail(GET_VM_HUGEPAGES_CMD, "Unable to collect VM hugepages info.")
+		if not rc and int(output) > 0:
+			self.vm_hugepages			= int(output)
+
+		for numa in range(node_info.cpu.sockets):
+			self.numa_hugepages[numa]	= {}
+			for page_size in Hugepages.PAGE_SUPPORTED:
+				(rc, output) = run_command_warn_when_fail(GET_NUMA_HUGEPAGES_CMD%(numa, page_size), "Unable to collect NUMA %s %sKB hugepages info."%(numa, page_size))
+				if not rc and int(output) > 0:
+					self.numa_hugepages[numa][page_size]	= int(output)
+
+		policy_pattern	= re.compile("\[\w+\]")
+		(rc, output) = run_command_warn_when_fail(GET_TRANSPARENT_HUGEPAGES_ENABLED_CMD, "Unable to collect transparent hugepages info.")
+		if not rc:
+			match = policy_pattern.search(output)
+			if match:
+				self.transparent_hugepages_enabled	= self.str_to_policy(match.group(0).strip("[]"))
+
+		(rc, output) = run_command_warn_when_fail(GET_TRANSPARENT_HUGEPAGES_DEFRAG_CMD, "Unable to collect transparent hugepages info.")
+		if not rc:
+			match = policy_pattern.search(output)
+			if match:
+				self.transparent_hugepages_defrag	= self.str_to_policy(match.group(0).strip("[]"))
+
+	def disable_operations(self, node_info):
+		""" Disables all hegupages operations done by the system.
+		"""
+		if self.transparent_hugepages_enabled != Hugepages.POLICY_NEVER:
+			(rc, output) = run_command_warn_when_fail(SET_TRANSPARENT_HUGEPAGES_ENABLED_CMD%Hugepages.POLICY_NEVER, "Unable to set transparent hugepages enabled to '%s'."%Hugepages.POLICY_NEVER)
+
+		if self.transparent_hugepages_defrag != Hugepages.POLICY_NEVER:
+			(rc, output) = run_command_warn_when_fail(SET_TRANSPARENT_HUGEPAGES_DEFRAG_CMD%Hugepages.POLICY_NEVER, "Unable to set transparent hugepages defrag to '%s'."%Hugepages.POLICY_NEVER)
+
+class KernelModule(object):
+	""" Describes a kernel module
+	"""
+	LOADED			= "loaded"
+	UNLOADED		= "unloaded"
+
+	EBTABLE_NAT		= "ebtable_nat"
+	EBTABLES		= "ebtables"
+	IPT_SYNPROXY		= "ipt_SYNPROXY"
+	NF_SYNPROXY_CORE	= "nf_synproxy_core"
+	XT_CT			= "xt_CT"
+	NF_CONNTRACK_FTP	= "nf_conntrack_ftp"
+	NF_CONNTRACK_TFTP	= "nf_conntrack_tftp"
+	NF_CONNTRACK_IRC	= "nf_conntrack_irc"
+	NF_NAT_TFTP		= "nf_nat_tftp"
+	IPT_MASQUERADE		= "ipt_MASQUERADE"
+	IPTABLE_NAT		= "iptable_nat"
+	NF_NAT_IPV4		= "nf_nat_ipv4"
+	NF_NAT			= "nf_nat"
+	NF_CONNTRACK_IPV4	= "nf_conntrack_ipv4"
+	NF_CONNTRACK_IPV6	= "nf_conntrack_ipv6"
+	XT_STATE		= "xt_state"
+	XT_CONNTRACK		= "xt_conntrack"
+	IPTABLES_RAW		= "iptable_raw"
+	NF_CONNTRACK		= "nf_conntrack"
+	IPTABLE_FILTER		= "iptable_filter"
+	IPTABLE_RAW		= "iptable_raw"
+	IPTABLE_MANGLE		= "iptable_mangle"
+	IPT_REJECT		= "ipt_REJECT"
+	XT_CHECKSUM		= "xt_CHECKSUM"
+	IP_TABLES		= "ip_tables"
+	NF_DEFRAG_IPV4		= "nf_defrag_ipv4"
+	IP6TABLE_FILTER		= "ip6table_filter"
+	IP6_TABLES		= "ip6_tables"
+	NF_DEFRAG_IPV6		= "nf_defrag_ipv6"
+	IP6T_REJECT		= "ip6t_REJECT"
+	XT_LOG			= "xt_LOG"
+	XT_MULTIPORT		= "xt_multiport"
+
+	ALL			= [
+					EBTABLE_NAT, EBTABLES, IPT_SYNPROXY,NF_SYNPROXY_CORE, XT_CT, NF_CONNTRACK_FTP, NF_CONNTRACK_TFTP, NF_CONNTRACK_IRC, NF_NAT_TFTP,
+					IPT_MASQUERADE, IPTABLE_NAT, NF_NAT_IPV4, NF_NAT, NF_CONNTRACK_IPV4, NF_CONNTRACK_IPV6, XT_STATE, XT_CONNTRACK, IPTABLES_RAW,
+					NF_CONNTRACK, IPTABLE_FILTER, IPTABLE_RAW, IPTABLE_MANGLE, IPT_REJECT, XT_CHECKSUM, IP_TABLES, NF_DEFRAG_IPV4, IP6TABLE_FILTER,
+					IP6_TABLES, NF_DEFRAG_IPV6, IP6T_REJECT, XT_LOG, XT_MULTIPORT
+				  ]
+
+	REMOVE_FOR_VMA		= [
+					EBTABLE_NAT, EBTABLES, IPT_SYNPROXY,NF_SYNPROXY_CORE, XT_CT, NF_CONNTRACK_FTP, NF_CONNTRACK_TFTP, NF_CONNTRACK_IRC, NF_NAT_TFTP,
+					IPT_MASQUERADE, IPTABLE_NAT, NF_NAT_IPV4, NF_NAT, NF_CONNTRACK_IPV4, NF_CONNTRACK_IPV6, XT_STATE, XT_CONNTRACK, IPTABLES_RAW,
+					NF_CONNTRACK, IPTABLE_FILTER, IPTABLE_RAW, IPTABLE_MANGLE, IPT_REJECT, XT_CHECKSUM, IP_TABLES, NF_DEFRAG_IPV4, IP6TABLE_FILTER,
+					IP6_TABLES, NF_DEFRAG_IPV6, IP6T_REJECT, XT_LOG, XT_MULTIPORT
+				  ]
+
+	def __init__(self, name):
+		self.name	= name
+		self.read_status()
+
+	def read_status(self):
+		""" check the status of a kernel module (loaded\unloaded).
+		"""
+		cmd = LSMOD
+		(rc, output) = run_command(cmd)
+		self.status = KernelModule.UNLOADED
+		for line in output.split('\n'):
+			module_name = line.split()[0].strip()
+			if self.name == module_name:
+				self.status = KernelModule.LOADED
+				break
+
+	def is_loaded(self):
+		""" Checks if a kernel module is loaded
+		"""
+		return self.status == KernelModule.LOADED
+
+	def load(self):
+		""" Loads the kernel module
+		"""
+		cmd = LOAD_MODULE_CMD%self.name
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to load kernel module '%s'"%self.name)
+
+	def unload(self):
+		""" Unloads the kernel module
+		"""
+		cmd = UNLOAD_MODULE_CMD%self.name
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to unload kernel module '%s'"%self.name)
+
+
+class ServiceState(object):
+	""" Describes a system service state
+	"""
+	ACTIVE		= "active"
+	INACTIVE	= "inactive"
+	DISABLED	= "disabled"
+	STOPPED		= "stopped"
+	NOT_RUNNING	= "not running"
+	NOT_LOADED	= "not loaded"
+	NOT_FOUND	= "not-found"
+	UNKNOWN		= "unknown"
+	ALL_INACTIVE	= [INACTIVE, DISABLED, STOPPED, NOT_RUNNING, NOT_LOADED]
+	ALL_NOT_PRESENT	= [NOT_FOUND, UNKNOWN]
+
+
+class Service(object):
+	""" Describes a system service
+	"""
+	IRQBALANCER		= "irqbalance"
+	IRQBALANCER_SUSE	= "irq_balancer"
+	IPTABLE			= "iptables"
+	IP6TABLE		= "ip6tables"
+	FIREWALL		= "firewalld"
+	FIREWALL_SUSE		= "SuSEfirewall2 %s"
+	CPUPOWER		= "cpupower"
+	WATCHDOG		= "watchdog"
+	ABRT_CCPP		= "abrt-ccpp"
+	ABRTD			= "abrtd"
+	ABRT_OOPS		= "abrt-oops"
+	ALSA_STATE		= "alsa-state"
+	ANACRON			= "anacorn"
+	ATD			= "atd"
+	AVAHI_DAEMON		= "avahi-daemon"
+	BLUETOOTH		= "bluetooth"
+	CERTMONGER		= "certmonger"
+	CUPS			= "cups"
+	HALDDAEMON		= "halddaemon"
+	HIDD			= "hidd"
+	IPRDUMP			= "iprdump"
+	IPRINIT			= "iprinit"
+	IPRUPDATE		= "iprupdate"
+	MDMONITOR		= "mdmonitor"
+	POLKIT			= "polkit"
+	RSYSLOG			= "rsyslog"
+	SERVICE_PATH		= "/etc/init.d/"
+	SYSTEMCTL		= "/bin/systemctl"
+	ALL			= [
+					CPUPOWER, WATCHDOG, ABRT_CCPP, ABRTD, ABRT_OOPS, ALSA_STATE, ANACRON, ATD, AVAHI_DAEMON, BLUETOOTH,
+					CERTMONGER, CUPS, HALDDAEMON, HIDD, IPRDUMP, IPRINIT, IPRUPDATE, MDMONITOR, POLKIT, RSYSLOG
+				  ]
+	DISABLE_FOR_VMA		= [
+					CPUPOWER, WATCHDOG, ABRT_CCPP, ABRTD, ABRT_OOPS, ALSA_STATE, ANACRON, ATD, AVAHI_DAEMON, BLUETOOTH,
+					CERTMONGER, CUPS, HALDDAEMON, HIDD, IPRDUMP, IPRINIT, IPRUPDATE, MDMONITOR, POLKIT, RSYSLOG
+				  ]
+
+	service_name_to_suse		= {IRQBALANCER: IRQBALANCER_SUSE}
+	service_to_presentation_name	= {IRQBALANCER: "IRQ Balancer", IRQBALANCER_SUSE: "IRQ Balancer", FIREWALL: "Firewall", IPTABLE: "IP table", IP6TABLE: "IPv6 table"}
+
+	def __init__(self, name, node_info, supporting_os = [OS.ALL]):
+		self.name		= name
+		self.status		= Status.UNKNOWN
+		self.supporting_os	= supporting_os
+		self.read_status(node_info)
+
+	def to_suse(self):
+		""" Returns the requested service name in a format recognized by SUSE OS
+		"""
+		if self.name in Service.service_name_to_suse.keys():
+			return Service.service_name_to_suse[self.name]
+		return self.name
+
+	def to_presentation_name(self):
+		""" Returns the requested service name in a presentation format.
+		"""
+		if self.name in Service.service_to_presentation_name.keys():
+			return Service.service_to_presentation_name[self.name]
+		return self.name
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "%s:\n"%self.to_presentation_name()
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report service status to the user
+		"""
+		print "%s Status"%self.to_presentation_name()
+		print "%s"%self.status
+
+	def is_supported(self, node_info):
+		""" Checks if the service is supported by the current OS
+		"""
+		if OS.ALL not in self.supporting_os and node_info.os.name not in self.supporting_os:
+			logging.debug("'%s' service isn't supported on '%s'."%(self.to_presentation_name(), node_info.os.name))
+			return False
+		return True
+
+	def is_active(self):
+		""" Checks if the service is currently active
+		"""
+		return self.status == Status.ACTIVE
+
+	def read_status(self, node_info):
+		""" check the status of a service.
+		    returns NOT_SUPPORTED if the service is not supported by the OS.
+		    returns NOT_PRESENT if the service is not installed.
+		    returns ACTIVE or INACTIVE according to the service state.
+		    any status except for 'running' is treated as 'inactive'.
+		"""
+		if not self.is_supported(node_info):
+			self.status = Status.NOT_SUPPORTED
+			return
+
+		logging.info("Collecting %s information"%self.to_presentation_name())
+		if node_info.os.name in OS.SYSTEMCTL_ACCESS_OS:
+			status_cmd = "%s is-active %s.service"%(Service.SYSTEMCTL, self.name)
+			exists_cmd = ""
+		else:
+			status_cmd = "%s status"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+			exists_cmd = "ls -l %s"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+
+		if exists_cmd:
+			(rc, output) = run_command_warn_when_fail(exists_cmd, "Unable to check service %s existence" % self.name)
+			if rc:
+				self.status = Status.NOT_PRESENT
+				return
+		(rc, output) = run_command(status_cmd)
+		self.status = Status.ACTIVE
+		for line in output.split('\n'):
+			if any(state in line for state in ServiceState.ALL_NOT_PRESENT):
+				self.status = Status.NOT_PRESENT
+				break
+			elif any(state in line for state in ServiceState.ALL_INACTIVE):
+				self.status = Status.INACTIVE
+				break
+
+	def stop(self, node_info):
+		""" stop the service
+		"""
+		if self.status != Status.ACTIVE:
+			logging.debug("Can only stop active services. %s status is %s"%(self.name, self.status))
+			return
+
+		if node_info.os.name in OS.SYSTEMCTL_ACCESS_OS:
+			cmd = "%s stop %s.service"%(Service.SYSTEMCTL, self.name)
+		else:
+			cmd = "%s stop"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to stop %s service"%self.name)
+		if (not rc):
+			self.read_status(node_info)
+
+	def start(self, node_info):
+		""" start the service
+		"""
+		if self.status != Status.INACTIVE:
+			logging.debug("Can only start inactive services. %s status is %s"%(self.name, self.status))
+			return
+
+		if node_info.os.name in OS.SYSTEMCTL_ACCESS_OS:
+			cmd = "%s start %s.service"%(Service.SYSTEMCTL, self.name)
+		else:
+			cmd = "%s start"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to start %s service"%self.name)
+		if (not rc):
+			self.read_status(node_info)
+
+class IpTable(Service):
+	""" Describes an IP table service
+	"""
+	TABLES	= ["nat", "mangle", "raw"]
+
+	def flush(self, node_info, table = None):
+		""" Flushes IP tables. If table name is given, flushes the table.
+		"""
+		cmd = "%s%s -F"%((self.name, self.to_suse())[node_info.os.name in OS.SUSE], ("", " -t %s"%table)[self.is_valid_table_name(table)])
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to flush %s%s"%(self.name, ("", " (table=%s)"%table)[self.is_valid_table_name(table)]))
+
+	def delete_chain(self, node_info, table = None):
+		""" Deletes chains in IP tables. If table name is given, deletes chains in the table.
+		"""
+		cmd = "%s %s -X"%((self.name, self.to_suse())[node_info.os.name in OS.SUSE], ("", "-t %s"%table)[self.is_valid_table_name(table)])
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to delete chain in  %s%s"%(self.name, ("", " (table=%s)"%table)[self.is_valid_table_name(table)]))
+
+	def is_valid_table_name(self, table):
+		""" Verify a table name is valid
+		"""
+		return not (not table)
+
+class Firewall:
+	""" Describes the system's firewall
+	"""
+	def __init__(self, node_info):
+		self.firewall	= Service(Service.FIREWALL, node_info)
+		self.iptable	= IpTable(Service.IPTABLE, node_info)
+		self.ipv6table	= IpTable(Service.IP6TABLE, node_info)
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Firewall:\n"
+
+		INDENT	+= 2
+		string	+= str(self.firewall) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.iptable) + '\n'
+		INDENT	-= 2
+
+		INDENT	+= 2
+		string	+= str(self.ipv6table) + '\n'
+		INDENT	-= 2
+
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report service status to the user
+		"""
+		self.firewall.report_status(profile)
+		self.iptable.report_status(profile)
+		self.ipv6table.report_status(profile)
+
+	def read_status(self, node_info):
+		""" Reads current firewall services status
+		"""
+		self.firewall.read(status, node_info)
+		self.iptable.read(status, node_info)
+		self.ipv6table.read(status, node_info)
+
+	def start(self):
+		""" start the firewall
+		"""
+		raise NotImplementedError("Firewall start is not implemented yet.")
+
+	def stop(self, node_info):
+		""" stop the firewall
+		"""
+		if node_info.os.name in OS.SUSE:
+			cmd = Service.FIREWALL_SUSE%'stop'
+			(rc, output) = run_command_warn_when_fail(cmd, "Unable to stop firewall.")
+		else:
+			for service in [self.firewall, self.iptable, self.ipv6table]:
+				service.stop(node_info)
+
+	def flush(self, node_info):
+		""" Flushes all IP tables.
+		"""
+		self.iptable.flush(node_info)
+		for table in IpTable.TABLES:
+			self.iptable.flush(node_info, table)
+
+		self.ipv6table.flush(node_info)
+
+	def delete_chain(self, node_info):
+		""" Deletes chains in all IP tables.
+		"""
+		self.iptable.delete_chain(node_info)
+		for table in IpTable.TABLES:
+			self.iptable.delete_chain(node_info, table)
+
+		self.ipv6table.delete_chain(node_info)
+
+class IpForwarding:
+	""" Describes the system's IP forwarding
+	"""
+	def __init__(self):
+		logging.info("Collecting IP forwarding information")
+		self.ipv4_status	= Status.UNKNOWN
+		self.ipv6_status	= Status.UNKNOWN
+		self.read_status()
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IP Forwarding:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def read_status(self):
+		""" Reads current IP forwarding IPv4/6 statuses from the system and update the class status fields
+		"""
+		cmd = "cat %s"%(IPV4_FORWARDING_CFG)
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to check ipv4 forwarding status.")
+		if rc:
+			self.ipv4_status = Status.NOT_PRESENT
+		else:
+			if ( output.strip() == '1' ):
+				self.ipv4_status = Status.ACTIVE
+			else:
+				self.ipv4_status = Status.INACTIVE
+
+		cmd = "cat %s"%(IPV6_FORWARDING_CFG%"all")
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to check ipv6 forwarding status.")
+		if rc:
+			self.ipv6_status = Status.NOT_PRESENT
+		else:
+			if ( output.strip() == '1' ):
+				self.ipv6_status = Status.ACTIVE
+			else:
+				self.ipv6_status = Status.INACTIVE
+
+	def start(self, interface_name = None):
+		""" enable ip forwarding
+		"""
+		logging.debug("Enabling IPv4 forwarding for all interfaces")
+		cmd = "echo 1 > %s"%(IPV4_FORWARDING_CFG)
+		(rc, output) = run_command_warn_when_fail(cmd, "Unable to set ipv4 forwarding.")
+		if  not interface_name:
+			interface_name = "all"
+		logging.debug("Enabling IPv6 forwarding for %s"%interface_name)
+		cmd = "echo 1 > %s"%(IPV6_FORWARDING_CFG%interface_name)
+		# Talgi - This cause connectivity loss due to a bug in ofed.
+		# Will be enabled once the issue is fixed.
+		#(rc, output) = run_command_warn_when_fail(cmd, "Unable to set ipv6 forwarding.")
+
+	def stop(self):
+		""" disable ip forwarding
+		"""
+		raise NotImplementedError("IP forwarding stop is not implemented yet.")
+
+class HyperThreading:
+	""" Describes the system's Hyper Threading
+	"""
+	def __init__(self, node_info):
+		logging.info("Collecting hyper threading information")
+		self.status = Status.UNKNOWN
+		self.read_status(node_info)
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Hyper Threading:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the hyper threading status to the user
+		"""
+		print "Hyper Threading Status"
+		print "%s"%self.status
+
+	def read_status(self, node_info):
+		""" Reads current Hyper Threading status from the system and update the class status field
+		"""
+		if ( node_info.cpu.total_cores == node_info.cpu.physical_cores_num ):
+			self.status = Status.INACTIVE
+		else:
+			self.status = Status.ACTIVE
+
+class Iommu:
+	""" Describes the system's IOMMU
+	"""
+	STATUS_PT = "PASS-THROUGH"
+
+	def __init__(self):
+		logging.info("Collecting IOMMU information")
+		self.status = Status.UNKNOWN
+		self.read_status()
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IOMMU:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def read_status(self):
+		""" Reads current Hyper Threading status from the system and update the class status field
+		"""
+		self.status = Status.INACTIVE
+		(rc, output) = run_command_warn_when_fail(KERNEL_PARAMETERS, "Unable to check iommu status.")
+		if rc:
+			self.status = Status.NOT_PRESENT
+		else:
+			for line in output.split("\n"):
+				if "intel_iommu=on" in line:
+					if "iommu=pt" in line:
+						self.status = Iommu.STATUS_PT
+					else:
+						self.status = Status.ACTIVE
+					break
+
+class Driver:
+	""" Descrives the installed Mellanox driver
+	"""
+	def __init__(self):
+		logging.info("Collecting driver information")
+		self.installed	= False
+		self.version	= None
+		self.collect_info()
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Driver:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, profile):
+		""" Report the driver status to the user
+		"""
+		print "Driver Status"
+		driver_status = status_ok_string()
+		driver_suggestion = ""
+		if not self.installed:
+			driver_status = status_warning_string()
+			driver_suggestion = " >>> MLNX_OFED is not installed."
+		print "%s: %s"%(driver_status, self.version) + driver_suggestion
+
+	def collect_info(self):
+		""" Collects CPU information from the system and updates the class fields
+		"""
+		( rc, ofed_path) = run_command_warn_when_fail(OFED_PATH, "MLNX OFED is not installed.")
+
+		if rc:
+			self.installed = False
+		else:
+			self.installed = True
+			( rc, version) = run_command_warn_when_fail(ofed_path, "Unable to find OFED version.")
+			if rc:
+				self.version = None
+			else:
+				self.version = version.split('\n')[0].rstrip(":")
+
+class IrqInfo:
+	def __init__ (self, number):
+		self.number		= number
+		self.smp_affinity_mask	= NA
+		self.affinity_hint_mask	= NA
+		self.wanted_mask	= NA
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "IRQ Info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def get_affinity_mask(self):
+		""" Extract irq affinity mask by irq number
+		"""
+		cmd = IRQ_AFFINITY_MASK_CMD%(self.number)
+		( rc, mask ) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		return mask
+
+	def get_affinity_hint_mask(self):
+		""" Extract irq affinity hint mask by irq number
+		"""
+		cmd = IRQ_AFFINITY_HINT_MASK_CMD%(self.number)
+		( rc, mask ) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		return mask
+
+	def apply_and_set_irq_affinity_wanted_mask(self):
+		""" Set IRQ wanted affinity mask
+		"""
+		if ( self.wanted_mask != self.smp_affinity_mask ):
+			cmd = IRQ_AFFINITY_MASK_SET_CMD%(self.wanted_mask, self.number)
+			( rc, output ) = run_command_warn_when_fail(cmd, "Unable to set IRQ affinity mask.")
+			if (not rc):
+				self.smp_affinity_mask = self.get_affinity_mask()
+
+class RingInfo:
+	def __init__ (self, number):
+		self.number		= number
+		self.rps_mask		= NA
+		self.rps_wanted_mask	= NA
+		self.xps_mask		= NA
+		self.xps_wanted_mask	= NA
+		self.irqs		= NA
+		self.active		= "True"
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Ring Info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\n' + '\t'*(INDENT+1) + 'IRQs:\n'
+		for irq in self.irqs:
+			INDENT += 2
+			string += str(irq) + '\n'
+			INDENT -= 2
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def set_rps_mask(self, interface_name):
+		""" set ring rps number
+		"""
+		cmd = RPS_AFFINITY_MASK_CMD%(interface_name, self.number)
+		( rc, mask ) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		self.rps_mask = mask
+
+	def set_xps_mask(self, interface_name):
+		""" set ring xps number
+		"""
+		cmd = XPS_AFFINITY_MASK_CMD%(interface_name, self.number)
+		( rc, mask ) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		self.xps_mask = mask
+
+	def get_irqs(self, interface_name, ring_number=None):
+		""" Discover the following interface's irq information:
+		    1. irq hint mask
+		    2. irq number
+		    3. irq smp affinity mask
+		    Disregard interrupts bounded directly to the device.
+		"""
+		irqs = []
+		( rc, interrupts ) = commands.getstatusoutput(PROC_INTERRUPT_CMD)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(PROC_INTERRUPT_CMD)
+		for line in interrupts.split('\n'):
+			if (interface_name in line) and ring_number and \
+					('%s%s%s'%(interface_name, '-', str(ring_number)) in line) and \
+					(line.split(interface_name + '-')[1] == str(ring_number)):
+
+				irq			= IrqInfo(line.split()[0].split(":")[0].strip())
+				irq.smp_affinity_mask	= irq.get_affinity_mask()
+				irq.affinity_hint_mask	= irq.get_affinity_hint_mask()
+				irqs.append(irq)
+		return irqs
+
+	def apply_and_set_rps_affinity_mask(self, interface_name):
+		""" Set RPS affinity mask
+		"""
+		cmd = RPS_AFFINITY_MASK_SET_CMD%(self.rps_wanted_mask, interface_name, self.number)
+		( rc, output ) = run_command_warn_when_fail(cmd, "Unable to set RPS affinity mask to interface_name: %s ring: %s."%(interface_name, self.number))
+		if (not rc):
+			self.set_rps_mask(interface_name)
+
+	def apply_and_set_xps_affinity_mask(self, interface_name):
+		""" Set XPS affinity mask
+		"""
+		cmd = XPS_AFFINITY_MASK_SET_CMD%(self.xps_wanted_mask, interface_name, self.number)
+		( rc, output ) = run_command_warn_when_fail(cmd, "Unable to set XPS affinity mask to interface_name: %s ring: %s."%(interface_name, self.number))
+		if (not rc):
+			self.set_xps_mask(interface_name)
+
+	def apply_and_set_irq_affinity_wanted_mask(self):
+		""" set irq affinity wanted mask
+		"""
+		for irq in self.irqs:
+			irq.apply_and_set_irq_affinity_wanted_mask()
+
+class InterfaceInfo( object ):
+
+	UP	= "Up"
+	DOWN	= "Down"
+
+	def __init__ (self, interface_name):
+		self.name		= interface_name
+		self.status		= NA
+		self.port_number	= NA
+		self.rings		= NA
+		self.link_type		= NA
+		self.mtu		= NA
+		self.speed_value	= None
+		self.speed_name		= NA
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + self.link_type + " Interface Info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\n' + '\t'*(INDENT+1) + 'Rings:\n'
+
+		for ring in self.rings:
+			INDENT += 2
+			string += str(ring) + '\n'
+			INDENT -= 2
+
+		return string
+
+	def report_status(self, cpu_arch, profile):
+		""" Report the interface status to the user
+		"""
+		print "%s (Port %s) Status"%(self.name, self.port_number)
+		print "Link Type %s"%self.link_type
+		link_ok = (self.status == InterfaceInfo.UP)
+		link_status = (status_warning_string(), status_ok_string())[link_ok]
+		link_suggestion = (" >>> Check your port configuration (Physical connection, SM, IP).", "")[link_ok]
+		print "%s: Link status %s"%(link_status, self.status) + link_suggestion
+		speed_compatible_to_cpu_ok = not (self.speed_value and self.speed_value >= 100 and cpu_arch == Architecture.SANDY_BRIDGE)
+		speed_compatible_to_cpu_status = (status_warning_string(), status_ok_string())[speed_compatible_to_cpu_ok]
+		speed_compatible_to_cpu_suggestion = (" >>> The system CPU isn't recommended for this link speed.", "")[speed_compatible_to_cpu_ok]
+		print "Speed %s %s"%(self.speed_name, speed_compatible_to_cpu_suggestion)
+		print "MTU %s"%self.mtu
+
+	def set_status(self):
+		""" Set interface status. Up/Down.
+		"""
+		cmd = INTERFACE_STATUS_CMD%(self.name)
+		( rc, output ) = commands.getstatusoutput(cmd)
+		if rc: #command failed upon port down
+			self.status = InterfaceInfo.DOWN
+		elif '1' in output.strip():
+			self.status = InterfaceInfo.UP
+		else:
+			self.status = InterfaceInfo.DOWN
+
+	def set_mtu(self):
+		""" Set interface MTU size.
+		"""
+		cmd = INTERFACE_MTU_CMD%(self.name)
+		( rc, output ) = commands.getstatusoutput(cmd)
+		if rc or (not output):
+			logging.warning("Failed to get MTU size for interface '%s'"%self.name)
+			return
+		self.mtu = int(output.strip())
+
+	def set_speed(self):
+		""" Set interface speed.
+		"""
+		cmd = INTERFACE_SPEED_CMD%(self.name)
+		( rc, output ) = commands.getstatusoutput(cmd)
+		if rc or (not output):
+			logging.warning("Failed to get speed for interface '%s'"%self.name)
+			return
+		if self.status == InterfaceInfo.UP:
+			self.speed_value = int(output.strip()) / 1000
+
+
+	def set_port_index(self):
+		""" Set interface port index (any number, port1 will always get a lower number than port 2).
+		"""
+		cmd = INTERFACE_INDEX_CMD%(self.name)
+		( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find interface port.")
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		self.port_index = int(output)
+
+	def get_rings(self):
+		""" get rings information.
+		"""
+		rings = []
+		cmd = RINGS_CMD%(self.name)
+		( rc, output ) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		for line in output.split('\n'):
+			if ("rx-" in line ):
+				rx_ring = RingInfo(line.split('rx-')[1])
+				rx_ring.set_rps_mask(self.name)
+				rx_ring.set_xps_mask(self.name)
+				rx_ring.irqs = rx_ring.get_irqs(self.name, rx_ring.number)
+				rings.append(rx_ring)
+		rings.sort(key = lambda ring: int(ring.number))
+		return rings
+
+	def enforce_rings_amount(self, wanted_number_of_rings):
+		""" Activates all rings with ring number in range of [0..wanted_number_of_rings). Deactiviates all other rings.
+		"""
+		logging.debug("Activating rings in range of [0..%s) for interface %s"%(wanted_number_of_rings, self.name))
+		for ring in self.rings:
+			if int(ring.number) in range(0,wanted_number_of_rings):
+				ring.active = True
+			else:
+				ring.active = False
+
+	def set_affinity(self, core_list):
+		""" Sets IRQ affinity by core-list in order of rings.
+		"""
+		index = 0
+		for ring in self.rings:
+			for irq in ring.irqs:
+				irq.wanted_mask = hex_mask_builder(irq.smp_affinity_mask, core_list[index])
+				logging.debug("irq number %s got mask %s"%(irq.number, irq.wanted_mask))
+				index = (index + 1) % len(core_list)
+
+	def set_rps(self, core_list, create_one_mask_from_core_list):
+		""" Sets RPS affinity by core-list in order of rings.
+		    If create_one_mask_from_core_list, creates a mask including all of the cores in core list.
+		    Otherwise, creates a mask from a single core for each ring.
+		"""
+		index = 0
+		for ring in self.rings:
+			if create_one_mask_from_core_list:
+				ring_wanted_array = core_list
+			else:
+				ring_wanted_array = core_list[index]
+			ring.rps_wanted_mask = hex_mask_builder(ring.rps_mask, ring_wanted_array)
+			logging.debug("ring %s got RPS mask %s"%(ring.number, ring.rps_wanted_mask))
+			index = (index + 1) % len(core_list)
+
+	def reset_xps(self):
+		""" Resets XPS for all tx queues.
+		"""
+		cmd = RINGS_CMD%(self.name)
+		( rc, output ) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		for line in output.split('\n'):
+			if ("tx-" in line ):
+				tx_num = line.split('tx-')[1]
+				cmd = XPS_AFFINITY_MASK_SET_CMD%(0, self.name, tx_num)
+				( rc, output ) = commands.getstatusoutput(cmd)
+				assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+
+	def set_xps(self, core_list, create_one_mask_from_core_list):
+		""" Sets XPS affinity by core-list in order of rings.
+		    If create_one_mask_from_core_list, creates a mask including all of the cores in core list.
+		    Otherwise, creates a mask from a single core for each ring.
+		"""
+		index = 0
+		for ring in self.rings:
+			if create_one_mask_from_core_list:
+				ring_wanted_array = core_list
+			else:
+				ring_wanted_array = core_list[index]
+			ring.xps_wanted_mask = hex_mask_builder(ring.xps_mask, ring_wanted_array)
+			logging.debug("ring %s got XPS mask %s"%(ring.number, ring.xps_wanted_mask))
+			index = (index + 1) % len(core_list)
+
+	def apply_and_set_irq_affinity_wanted_mask(self):
+		""" set irq affinity wanted mask
+		"""
+		if self.status.lower() != "up":
+			return
+		active_rings = [ring for ring in self.rings if ring.active]
+		for ring in active_rings:
+			ring.apply_and_set_irq_affinity_wanted_mask()
+
+	def apply_and_set_rps_affinity_wanted_mask(self):
+		""" set RPS affinity wanted mask
+		"""
+		active_rings = [ring for ring in self.rings if ring.active]
+		for ring in active_rings:
+			ring.apply_and_set_rps_affinity_mask(self.name)
+
+	def apply_and_set_xps_affinity_wanted_mask(self):
+		""" set XPS affinity wanted mask
+		"""
+		active_rings = [ring for ring in self.rings if ring.active]
+		for ring in active_rings:
+			ring.apply_and_set_xps_affinity_mask(self.name)
+
+class EthInterfaceInfo(InterfaceInfo):
+	def __init__ (self, interface_name):
+		super(EthInterfaceInfo, self).__init__(interface_name)
+		self.link_type			= "eth"
+		self.flow_control_rx		= NA
+		self.flow_control_tx		= NA
+		self.rx_adaptive_moderation	= NA
+		self.tx_adaptive_moderation	= NA
+		self.gro_offload		= NA
+		self.moderation_tx_frames	= NA
+		self.moderation_rx_frames	= NA
+		self.rx_queue_size		= NA
+		self.tx_queue_size		= NA
+		self.tx_nocache_copy		= NA
+		self.disable_mc_loopback	= NA
+
+	def report_status(self, cpu_arch, profile):
+		""" Report the interface status to the user
+		"""
+		super(EthInterfaceInfo, self).report_status(cpu_arch, profile)
+		if self.tx_nocache_copy != NA:
+			tx_nocache_copy_ok = (self.tx_nocache_copy.lower() == 'off')
+			tx_nocache_copy_status = (status_warning_string(), status_ok_string())[tx_nocache_copy_ok]
+			tx_nocache_copy_suggestion = (" >>> Turn TX no cache copy off (ethtool -K %s tx-nocache-copy off)."%self.name, "")[tx_nocache_copy_ok]
+			print "%s: TX nocache copy '%s'"%(tx_nocache_copy_status, self.tx_nocache_copy) + tx_nocache_copy_suggestion
+		if profile == Profile.MULTICAST and self.disable_mc_loopback != NA:
+			disable_mc_loopback_ok = (self.disable_mc_loopback.lower() == 'on')
+			disable_mc_loopback_status = (status_warning_string(), status_ok_string())[disable_mc_loopback_ok]
+			disable_mc_loopback_suggestion = (" >>> Turn disable multicast loopback on (ethtool --set-priv-flags %s disable_mc_loopback on)."%self.name, "")[disable_mc_loopback_ok]
+			print "%s: Disable multicast loopback '%s'"%(disable_mc_loopback_status, self.disable_mc_loopback) + disable_mc_loopback_suggestion
+
+	def set_speed(self):
+		""" Set ethernet interface speed.
+		"""
+		super(EthInterfaceInfo, self).set_speed()
+		if self.speed_value:
+			self.speed_name = str(self.speed_value) + "GbE"
+
+	def set_parameters(self):
+		""" Set the interface's parameters.
+		"""
+		self.set_adaptive_moderation_parameters()
+		self.set_flow_control_parameters()
+		self.set_queue_size_parameters()
+		self.set_offload_parameters()
+		self.set_private_parameters()
+
+	def set_adaptive_moderation_parameters(self):
+		""" Set adaptive moderation parameters.
+		"""
+		self.rx_adaptive_moderation	= self.get_network_parameter_value('c', 'adaptive rx')
+		self.tx_adaptive_moderation	= self.get_network_parameter_value('c', 'adaptive tx')
+		self.moderation_tx_frames	= self.get_network_parameter_value('c', 'tx-frames')
+		self.moderation_rx_frames	= self.get_network_parameter_value('c', 'rx-frames')
+
+	def set_flow_control_parameters(self):
+		""" Set rx and tx flow control parameters.
+		"""
+		self.flow_control_tx = self.get_network_parameter_value('a', 'tx')
+		self.flow_control_rx = self.get_network_parameter_value('a', 'rx')
+
+	def set_queue_size_parameters(self):
+		""" Set rx and tx queue size parameters.
+		"""
+		self.rx_queue_size = self.get_network_parameter_value('g', 'rx', 2)
+		self.tx_queue_size = self.get_network_parameter_value('g', 'tx', 2)
+
+	def set_offload_parameters(self):
+		""" set offload parameters
+		"""
+		self.gro_offload	= self.get_network_parameter_value('k', 'generic-receive-offload')
+		self.tx_nocache_copy	= self.get_network_parameter_value('k', 'tx-nocache-copy')
+		if not self.tx_nocache_copy:
+			self.tx_nocache_copy = NA
+
+	def set_private_parameters(self):
+		""" set private parameters
+		"""
+		self.disable_mc_loopback	= self.get_network_parameter_value('show-priv-flags', 'disable_mc_loopback')
+		if not self.disable_mc_loopback:
+			self.disable_mc_loopback = NA
+
+	def disable_qdisc_tx(self, node_info):
+		""" Disable QDISC tx queue. Use no queue method for supporting OS or set to 0 length otherwise
+		"""
+		if node_info.os.name in OS.TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS:
+			logging.debug("Setting %s to no queue." % (self.name))
+			cmd = ADD_INTERFACE_QDISC_NO_QUEUE_CMD % (self.name)
+			run_command_warn_when_fail(cmd, "Failed to set %s to no queue." % (self.name))
+		else:
+			self.apply_qdisc_tx_len(0)
+
+	def optimize_qdisc_tx_len(self, ratio=1):
+		""" Optimizng QDISC tx queue by setting its length to the given ratio of the
+                    interface's tx queue size.
+		    If the interface's tx queue size could not be queried, warn and exit.
+		"""
+		self.set_parameters()
+		if self.tx_queue_size == NA:
+			logging.warning("Couldn't optimize kernel TX queue for interface '{name}"
+					" - unknown device TX queue size".format(name=self.name))
+			return
+		wanted_qdisc_tx_queue_len = int(int(self.tx_queue_size) * ratio)
+		self.apply_qdisc_tx_len(wanted_qdisc_tx_queue_len)
+
+	def apply_qdisc_tx_len(self, tx_len):
+		""" Applies QDISC tx queue length
+		"""
+		logging.debug("Setting transmit queue length to %s for interface %s."%(tx_len, self.name))
+		cmd = SET_TXQ_LENGTH_CMD%(self.name, str(tx_len))
+		run_command_warn_when_fail(cmd,"Failed to set transmit queue length for %s."%(self.name))
+		logging.debug("Adding %s to queueing discipline."%(self.name))
+		cmd = ADD_INTERFACE_TO_QDISC_CMD%(self.name)
+		run_command_warn_when_fail(cmd,"Failed to add %s to queueing discipline."%(self.name))
+		logging.debug("Removing %s from queueing discipline."%(self.name))
+		cmd = DEL_INTERFACE_FROM_QDISC_CMD%(self.name)
+		run_command_warn_when_fail(cmd,"Failed to remove %s from queueing discipline."%(self.name))
+
+	def get_network_parameter_value(self, group, parameter, appearance_index = 1):
+		""" Gets current network parameter value.
+		"""
+		# Handle show flags
+		if "show" in group:
+			group = "-" + group
+
+		logging.debug("Checking %s value for interface %s."%(parameter, self.name))
+		cmd = GET_NETWORK_PARAMETERS_CMD%(group, self.name)
+		(rc, output) = run_command_warn_when_fail(cmd,"Failed to get %s value for %s."%(parameter, self.name))
+		if not rc:
+			found_index = 0
+			for line in output.split('\n'):
+				if parameter + ":" in line.lower().replace(" ",""):
+					found_index += 1
+					if found_index == appearance_index:
+						current_value = line.split(":")[1].split()[0].strip()
+						return current_value
+		return ""
+
+	def apply_network_parameter_value(self, group, value, parameter_name_set, parameter_name_get = None, appearance_index = 1):
+		""" Sets a network parameter to the given value.
+		    If parameter_name_get isn't passed, parameter_name_set will be used instead.
+		"""
+		if not parameter_name_get:
+			parameter_name_get = parameter_name_set
+		get_group = group.lower()
+		# Handle set/show flags
+		if "set" in group:
+			get_group = group.replace("set","show")
+			group = "-" + group
+		# Force list type
+		if isinstance(parameter_name_get, basestring):
+			parameter_name_get = [parameter_name_get]
+		for param_get in parameter_name_get:
+			current_value = self.get_network_parameter_value(get_group, param_get, appearance_index)
+			if str(current_value) == str(value):
+				logging.debug("%s already set to %s for %s."%(param_get, value, self.name))
+			else:
+				# Force list type
+				if isinstance(parameter_name_set, basestring):
+					parameter_name_set = [parameter_name_set]
+				# Set all parameters and return
+				set_string = ""
+				for param_set in parameter_name_set:
+					set_string += "%s %s "%(param_set, value)
+				logging.debug("Setting %s for %s."%(set_string, self.name))
+				cmd = SET_MULTIPLE_NETWORK_PARAMETER_CMD%(group, self.name, set_string)
+				(rc, out) = run_command_warn_when_fail(cmd,"Failed setting %s for %s."%(set_string, self.name))
+				return rc
+		# No need to set anything
+		return 0
+
+class IbInterfaceInfo(InterfaceInfo):
+	def __init__ (self, interface_name):
+		super(IbInterfaceInfo, self).__init__(interface_name)
+		self.link_type	= "ib"
+		self.mtu	= NA
+
+	def set_speed(self):
+		""" Set IB interface speed.
+		"""
+		super(IbInterfaceInfo, self).set_speed()
+		if self.speed_value:
+			self.speed_name = IbSpeed().from_number(self.speed_value)
+
+class PciDeviceInfo:
+
+	MIN_LENGTH_CHECK_HSW_COMPATIBLE		= 16
+
+	def __init__ (self, pci_string):
+		self.pci_string			= pci_string
+		self.pci_slot			= pci_string.split(" ")[0]
+		self.actual_pci_width		= NA
+		self.pci_width_capabilities	= NA
+		self.actual_pci_speed		= NA
+		self.pci_speed_capabilities	= NA
+		self.core_driver		= NA
+		self.numa			= NA
+		self.mst_device			= NA
+		self.rdma_device		= NA
+		self.firmware_version		= NA
+		self.type			= Devices.UNDEFINED
+		self.psid			= NA
+		self.interfaces			= NA
+		self.irqs			= NA
+		self.closest_core_list		= NA
+		self.numa_aware_core_list	= NA
+		self.pci_max_payload		= NA
+		self.pci_max_read_request	= NA
+
+	def __str__ (self):
+		global INDENT
+		attrs	= vars(self)
+		string	= '\t'*INDENT + "Device Info:\n"
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\n' + '\t'*(INDENT+1) + "numa_aware_core_list: %s"%(self.numa_aware_core_list)
+		string	+= '\n' + '\t'*(INDENT+1) + 'Irqs:\n'
+		for irq in self.irqs:
+			INDENT += 2
+			string += str(irq) + '\n'
+			INDENT -= 2
+
+		string += '\n' + '\t'*(INDENT+1) + 'Interfaces:\n'
+		for interface in self.interfaces:
+			INDENT += 2
+			string += str(interface) + '\n'
+			INDENT -= 2
+
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def report_status(self, cpu_arch, profile):
+		""" Report the device status to the user
+		"""
+		print "%s Device Status on PCI %s"%(self.type.name, self.pci_slot)
+		print "FW version %s"%self.firmware_version
+		actual_pci_width_ok = self.actual_pci_width == self.pci_width_capabilities
+		actual_pci_width_status = (status_warning_string(), status_ok_string())[actual_pci_width_ok]
+		pci_width_suggestion = (" >>> PCI width status is below PCI capabilities. Check PCI configuration in BIOS.", "")[actual_pci_width_ok]
+		pci_width_compatible_to_cpu_ok = not (int(self.actual_pci_width) >= PciDeviceInfo.MIN_LENGTH_CHECK_HSW_COMPATIBLE and cpu_arch in Architecture.HASWELL_UARCH)
+		pci_width_compatible_to_cpu_status = (status_warning_string(), status_ok_string())[pci_width_compatible_to_cpu_ok]
+		pci_width_compatible_to_cpu_suggestion = (" >>> PCI capabilities might not be fully utilized with %s CPU. Make sure I/O non-posted prefetch is disabled in BIOS."%cpu_arch, "")[pci_width_compatible_to_cpu_ok]
+		print "%s: PCI Width x%s"%(actual_pci_width_status, self.actual_pci_width) + pci_width_suggestion
+		if pci_width_compatible_to_cpu_suggestion:
+			print pci_width_compatible_to_cpu_suggestion
+		actual_pci_speed_ok = self.actual_pci_speed == self.pci_speed_capabilities
+		actual_pci_speed_status = (status_warning_string(), status_ok_string())[actual_pci_speed_ok]
+		pci_speed_suggestion = (" >>> PCI width status is below PCI capabilities. Check PCI configuration in BIOS.", "")[actual_pci_speed_ok]
+		print "%s: PCI Speed %sGT/s"%(actual_pci_speed_status, self.actual_pci_speed) + pci_speed_suggestion
+		print "PCI Max Payload Size %s"%self.pci_max_payload
+		print "PCI Max Read Request %s"%self.pci_max_read_request
+		print "Local CPUs list %s"%self.closest_core_list
+		for interface in self.interfaces:
+			print ""
+			interface.report_status(cpu_arch, profile)
+
+	def set_core_driver(self):
+		""" set device core driver
+		"""
+		if 'connect-ib' in self.pci_string.lower():
+			self.core_driver = MLX5_CORE
+		else:
+			self.core_driver = MLX4_CORE
+
+	def set_pci_width_and_speed(self):
+		""" set device pci width and speed
+		"""
+		cmd = "%s -vvv -s %s"%(LSPCI, self.pci_slot)
+		( rc, pci_device_parameters) = commands.getstatusoutput(cmd)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		pci_width_pattern		= re.compile("Width x\d+")
+		pci_speed_pattern		= re.compile("Speed \d+")
+		pci_max_payload_pattern		= re.compile("MaxPayload \d+")
+		pci_max_read_request_pattern	= re.compile("MaxReadReq \d+")
+		for parameter in pci_device_parameters.split('\n'):
+			if "LnkSta:" in parameter:
+				match = pci_width_pattern.search(parameter)
+				if match:
+					self.actual_pci_width = int(match.group(0).split("x")[1])
+				match = pci_speed_pattern.search(parameter)
+				if match:
+					self.actual_pci_speed = int(match.group(0).split(" ")[1])
+			if "LnkCap:" in parameter:
+				match = pci_width_pattern.search(parameter)
+				if match:
+					self.pci_width_capabilities = int(match.group(0).split("x")[1])
+				match = pci_speed_pattern.search(parameter)
+				if match:
+					self.pci_speed_capabilities = int(match.group(0).split(" ")[1])
+			if "MaxPayload" in parameter:
+				match = pci_max_payload_pattern.search(parameter)
+				if match:
+					self.pci_max_payload = int(match.group(0).split(" ")[1])
+			if "MaxReadReq" in parameter:
+				match = pci_max_read_request_pattern.search(parameter)
+				if match:
+					self.pci_max_read_request = int(match.group(0).split(" ")[1])
+
+	def set_rdma_device_info(self, node_info):
+		""" set RDMA device information
+		"""
+		if node_info.cpu.vendor == CPUVendor.IBM:
+			if  node_info.os.name in OS.PPC_DEVICE_NEW_FORMAT_OS:
+				cmd = RDMA_DEVICE_FROM_PCI_PPC_NEW_FORMAT%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split('.')[1])
+			else:
+				cmd = RDMA_DEVICE_FROM_PCI_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2])
+		else:
+			cmd = RDMA_DEVICE_FROM_PCI%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1])
+		( rc, output ) = commands.getstatusoutput(cmd)
+		if rc:
+			logging.debug("Couldn't get RDMA device information from PCI device - '%s' failed"%cmd)
+		else:
+			self.rdma_device = output
+
+
+	def set_mst_info(self):
+		""" set device mst information
+		"""
+		mst_dev_found = False
+		( rc, output ) = commands.getstatusoutput(MST_STATUS)
+		if rc:
+			logging.debug("Couldn't run MST - '%s' failed"%MST_STATUS)
+			return mst_dev_found
+		for line in output.split('\n'):
+			if self.pci_slot in line:
+				mst_dev_pattern = re.compile(r'/dev/mst/mt\d+_pciconf\d')
+				match = mst_dev_pattern.search(line)
+				if match:
+					self.mst_device = match.group(0)
+					mst_dev_found = True
+				else:
+					match = mst_dev_pattern.search(last_line)
+					if match:
+						self.mst_device = match.group(0)
+						mst_dev_found = True
+				break
+			last_line = line
+
+		return mst_dev_found
+
+	def set_id(self):
+		""" set device ID and Type
+		"""
+		( rc, output ) = commands.getstatusoutput(GET_DEV_ID_FROM_PCI_BUS_CMD%self.pci_slot)
+		dev_id_pattern = re.compile(r'0x\d+')
+		match = dev_id_pattern.search(output)
+		if rc or not match:
+			logging.error("Could not find device ID for %s"%self.pci_slot)
+			return False
+		dev_id = str(int(match.group(0),16))
+		if not dev_id in Devices().supported_ids():
+			logging.error("Unrecognized device ID: %s"%dev_id)
+			return False
+		self.type = DeviceType(dev_id)
+		self.psid = dev_id
+		return True
+
+	def set_fw_version(self, node_info):
+		""" set device fw versio
+		"""
+		rc = 0
+		if self.rdma_device != NA:
+			cmd = GET_DEV_FW_FROM_MLX_DEVICE%(self.rdma_device)
+			( rc, output ) = commands.getstatusoutput(cmd)
+			if rc:
+				logging.debug("Couldn't get Firmware version from RDMA device - '%s' failed"%cmd)
+			else:
+				self.firmware_version = output
+		if self.rdma_device == NA or rc and self.mst_device != NA:
+			cmd = FLINT%(self.mst_device)
+			( rc, output ) = commands.getstatusoutput(cmd)
+			if rc:
+				logging.debug("Couldn't get Firmware version from MST device - '%s' failed"%cmd)
+			else:
+				for line in output.split('\n'):
+					if 'FW Version:' in line:
+						self.firmware_version = line.split(":")[1].strip()
+		if (self.rdma_device == NA and self.mst_device == NA) or rc:
+			if node_info.cpu.vendor == CPUVendor.IBM:
+				if  node_info.os.name in OS.PPC_DEVICE_NEW_FORMAT_OS:
+					cmd = FW_VERSION_FROM_PCI_PPC_NEW_FORMAT%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split('.')[1])
+				else:
+					cmd = FW_VERSION_FROM_PCI_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2])
+			else:
+				cmd = FW_VERSION_FROM_PCI%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1])
+			( rc, output ) = commands.getstatusoutput(cmd)
+			if rc:
+				logging.debug("Couldn't get Firmware version from PCI device - '%s' failed"%cmd)
+			else:
+				self.firmware_version = output
+		if rc:
+			logging.warning("Couldn't get Firmware version for device %s"%self.pci_slot)
+
+
+	def set_closest_numa(self):
+		""" find device closest numa to a device by its PCI location
+		"""
+		cmd = NUMA_SUPPORT_CMD%(self.pci_slot)
+		( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find device's NUMA node.")
+		numa = -1
+		if not rc:
+			numa = int(output.strip())
+		if numa == -1:
+			logging.warning("Can't determine device NUMA node for device: %s"%(self.pci_string))
+		self.numa = numa
+
+	def get_interface_link_type(self, interface_name, node_info):
+		""" get interface link type ib/eth
+		"""
+		if self.type == Devices.ConnectIB:
+			return 'ib'
+
+		cmd = INTERFACE_PORT_CMD%(interface_name)
+		( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find interface port. interface: %s"%(interface_name))
+		if rc:
+			assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+		elif '1' in output.strip():
+			port = 2
+		else:
+			port = 1
+
+		if self.type in Devices.MLX4_CONSUMERS:
+			# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
+			if node_info.cpu.vendor == CPUVendor.IBM:
+				cmd = GET_PORT_LINK_TYPE_CMD_MLX4_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2] ,port)
+			else:
+				cmd = GET_PORT_LINK_TYPE_CMD_MLX4%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], port)
+			( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find interface type. interface: %s"%interface_name)
+			if rc:
+				assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
+			elif 'ib' in output.strip().lower():
+				return 'ib'
+			else:
+				return 'eth'
+		elif self.type in Devices.MLX5_CONSUMERS:
+			# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
+			if node_info.cpu.vendor == CPUVendor.IBM:
+				if  node_info.os.name in OS.PPC_DEVICE_NEW_FORMAT_OS:
+					cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC_NEW_FORMAT%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split('.')[1], interface_name)
+				else:
+					cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2], interface_name)
+			else:
+				cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], interface_name)
+			( rc, output ) = commands.getstatusoutput(cmd)
+			if rc:
+				return 'eth'
+			else:
+				return 'ib'
+
+	def get_interfaces(self, node_info):
+		""" get device interfaces objects
+		"""
+		interfaces = []
+		cmd = FIND_INTERFACES_FROM_PCI_BUS_CMD%(self.pci_slot)
+		( rc, output ) = run_command_warn_when_fail(cmd, "Can't find network interface for Mellanox pci device: %s. Please load device core driver: %s"%(self.pci_slot, self.core_driver))
+		if rc:
+			return interfaces
+		interfaces_names = [x for x in output.split('\n')]
+
+		for interface_name in interfaces_names:
+			link_type = self.get_interface_link_type(interface_name, node_info)
+			if link_type == 'eth':
+				interface = EthInterfaceInfo(interface_name)
+			else:
+				interface = IbInterfaceInfo(interface_name)
+			interface.set_status()
+			interface.set_port_index()
+			interface.set_mtu()
+			interface.set_speed()
+			if interface.link_type == 'eth':
+				interface.set_parameters()
+
+			interface.rings = interface.get_rings()
+			interfaces.append(interface)
+
+		# order interfaces by port index
+		ordered_interfaces_by_index = sorted(interfaces, key=lambda interface: interface.port_index)
+		for i in range(0,len(ordered_interfaces_by_index)):
+			ordered_interfaces_by_index[i].port_number = i + 1
+		return interfaces
+
+	def get_irqs(self):
+		""" Discover the following device's irq information:
+		    1. irq hint mask
+		    2. irq number
+		    3. irq smp affinity mask
+		    Disregard interrupts bounded to an interface.
+		"""
+		irqs = []
+		( rc, all_interrupts ) = commands.getstatusoutput(PROC_INTERRUPT_CMD)
+		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(PROC_INTERRUPT_CMD)
+		cmd = DEVICE_INTERRUPTS_CMD%(self.pci_slot)
+		( rc, device_irqs ) = run_command_warn_when_fail(cmd, "Can't find interrupts for Mellanox pci device %s. Please make sure %s is loaded."\
+									%(self.pci_slot, self.core_driver))
+		if rc:
+			return irqs
+
+		interfaces_names = [x.name for x in self.interfaces]
+		for irq_number in device_irqs.split('\n'):
+			for line in all_interrupts.split('\n'):
+				if not (irq_number + ":") in line or any(interface_name in line for interface_name in interfaces_names):
+					continue
+				cmd = IRQ_EXISTS_CMD%(irq_number)
+				( rc, exists ) = commands.getstatusoutput(cmd)
+				if rc:
+					continue
+				irq = IrqInfo(irq_number)
+				irq.smp_affinity_mask	= irq.get_affinity_mask()
+				irq.affinity_hint_mask	= irq.get_affinity_hint_mask()
+				irqs.append(irq)
+		return irqs
+
+	def create_power8_ht_aware_core_list(self, node_info):
+		""" Buids a core list containing equal amount of threads from each physical core.
+		    e.g 40 [0..39] logical cores , 5 phisical cores , 16 rings per device:
+		    power8_ht_aware_core_list will be [0,1,2,3,8,9,10,16,17,18,24,25,26,32,33,34]
+		"""
+		power8_ht_aware_core_list = []
+		if self.numa == -1:
+			logging.warning("Can't set NUMA aware cores list from close NUMA only for devices with unknown close NUMA.")
+			return power8_ht_aware_core_list
+
+		threads_per_core = int(node_info.cpu.total_cores / node_info.cpu.physical_cores_num)
+		total_numa_cores = len(self.numa_aware_core_list)
+		numa_physical_cores = total_numa_cores / threads_per_core
+		total_device_rings = 0
+		for interface in self.interfaces:
+			if not interface.status.lower() == "up":
+				continue
+			total_device_rings += len(interface.rings)
+		threads_to_take_from_each_core = int(total_device_rings / numa_physical_cores)
+		residue_threads = total_device_rings % numa_physical_cores
+
+		numa_core_index = 0
+		while numa_core_index < total_numa_cores:
+			# Take the common amount of threads from the core
+			power8_ht_aware_core_list += self.numa_aware_core_list[numa_core_index:numa_core_index + threads_to_take_from_each_core]
+			# If needed, take one more for the residue
+			if residue_threads > 0:
+				power8_ht_aware_core_list += [self.numa_aware_core_list[numa_core_index + threads_to_take_from_each_core]]
+				residue_threads -= 1
+			# Move to next physical core
+			numa_core_index += threads_per_core
+
+		return power8_ht_aware_core_list
+
+	def set_numa_aware_core_list(self, node_info):
+		""" buid numa aware core list for device while taking the CPU vendor into consideration.
+		    For Intel systems: buid list that contain: [ numa cores , non numa cores ]
+		    For PPC (IBM) systems: buid list that contain: [ numa cores ]
+		"""
+		non_numa_cores = []
+		for numa in node_info.cpu.sockets_cores.keys():
+			if (numa != self.numa):
+				non_numa_cores = non_numa_cores + node_info.cpu.sockets_cores[numa]
+		numa_aware_cores = []
+		if self.numa != -1:
+			self.closest_core_list = node_info.cpu.sockets_cores[self.numa]
+			numa_aware_cores = self.closest_core_list[:]
+		else:
+			# Use device local CPU list as NUMA aware core list
+			cmd = LOCAL_CPUS_CMD%(self.pci_slot)
+			( rc, output ) = run_command_warn_when_fail(cmd,"Failed to find device's local CPU list.")
+			if not rc:
+				for core in output.split(','):
+					if '-' in core:
+						values = core.split('-')
+						cores = range(int(values[0]),int(values[1]))
+						numa_aware_cores += cores
+					else:
+						numa_aware_cores += core
+				self.closest_core_list = numa_aware_cores
+				self.numa_aware_cores = numa_aware_cores
+			else:
+				# Use non NUMA cores as NUMA aware core list
+				if non_numa_cores:
+					self.closest_core_list = non_numa_cores
+					self.numa_aware_cores = non_numa_cores
+				# If no other option, consider all cores as close
+				else:
+					self.closest_core_list = range(0,node_info.cpu.total_cores)
+					self.numa_aware_cores = range(0,node_info.cpu.total_cores)
+
+		if node_info.cpu.vendor != CPUVendor.IBM:
+			numa_aware_cores += non_numa_cores
+		self.numa_aware_core_list = numa_aware_cores
+
+	def set_wanted_affinity_hint_like(self, node_info):
+		""" Set wanted affinity mask according to hints link mechanism
+		"""
+		if node_info.cpu.vendor != CPUVendor.IBM:
+			core_list_for_irq_affinity_hints = self.numa_aware_core_list
+		else:
+			core_list_for_irq_affinity_hints = self.create_power8_ht_aware_core_list(node_info)
+
+		irq_index = 0
+		for interface in self.interfaces:
+			if interface.status == InterfaceInfo.DOWN:
+				continue
+			for ring in interface.rings:
+				for irq in ring.irqs:
+					irq.wanted_mask = hex_mask_builder(irq.smp_affinity_mask \
+							 , core_list_for_irq_affinity_hints[(int)((irq_index) % len(core_list_for_irq_affinity_hints))])
+					irq_index += 1
+
+	def set_affinity_to_first_local_core(self, node_info):
+		""" Set wanted affinity mask to match first local core
+		"""
+		if node_info.cpu.vendor != CPUVendor.IBM:
+			core_list_for_irq_affinity_hints = self.numa_aware_core_list
+		else:
+			core_list_for_irq_affinity_hints = self.create_power8_ht_aware_core_list(node_info)
+
+		for interface in self.interfaces:
+			if interface.status == InterfaceInfo.DOWN:
+				continue
+			for ring in interface.rings:
+				for irq in ring.irqs:
+					irq.wanted_mask = hex_mask_builder(irq.smp_affinity_mask \
+							 , core_list_for_irq_affinity_hints[0])
+
+	def apply_and_set_irq_affinity_wanted_mask(self):
+		""" Force wanted affinity.
+		"""
+		for interface in self.interfaces:
+			interface.apply_and_set_irq_affinity_wanted_mask()
+
+	def get_interfaces_ordered(self):
+		""" Returns the device interfaces by their index order
+		"""
+		return sorted(self.interfaces, key=lambda interface: interface.port_number)
+
+	def set_wanted_irq_affinity_all_cores(self, node_info):
+		""" set wanted affinity to all possible cores
+		"""
+		for interface in self.interfaces:
+			interface.set_affinity(node_info.cpu.all_cores)
+
+	def set_wanted_irq_affinity_all_close_cores(self):
+		""" set wanted affinity to all close cores
+		"""
+		for interface in self.interfaces:
+			interface.set_affinity(self.closest_core_list)
+
+	def set_wanted_affinity_2interfaces_to_numa_node(self, node_info):
+		""" set wanted affinity for 2 interfaces.
+		    first interface set irq affinity to the first half of numa cores.
+		    second interface set irq affinity to second half of numa cores.
+		"""
+		if self.numa == -1:
+			return
+		numa_cores = node_info.cpu.sockets_cores[self.numa]
+		interfaces_ordered = self.get_interfaces_ordered()
+		interfaces_ordered[0].set_affinity(numa_cores[0:len(numa_cores)/2])
+		if len(interfaces_ordered) == 2:
+			interfaces_ordered[1].set_affinity(numa_cores[len(numa_cores)/2:])
+
+	def get_cores_for_steering_tuning(self, node_info, min_num, preferred_num=None):
+		""" Gets a list of cores to be used for steering tuning. This is the full
+		    list of available cores from which a subset should be chosen. If available
+		    cores number is less than min_number returns an empty list. If preferred_num
+		    argument is given, will try to find a list with at least preferred_num cores.
+		"""
+		if self.numa == -1:
+			cores = self.closest_core_list
+		else:
+			cores = node_info.cpu.physical_cores[self.numa]
+			if (preferred_num and len(cores) < preferred_num):
+				cores = node_info.cpu.sockets_cores[self.numa]
+		if len(cores) < min_num:
+			cores = []
+		return cores
+
+	def set_wanted_affinity_2interfaces_to_oposites_cores_on_numa_node(self, node_info):
+		""" Sets wanted affinity for 2 interfaces. Each interface gets a core in each side of the NUMA in symmetric way
+		    The Idea is to put rx0 of each interface on the first and last core
+		    tx1 will be set to second and second from last
+		    using RSS indirection all rx packets will be directed to rx0
+		    tx1 will handle the completion of the forwarded packets
+		    This will work properly only for devices with at least 4 cores. We prefer using
+		    at least 6 cores, even if they are logical, in order to comply with XPS/RPS best
+		    effort tuning.
+		"""
+		tuning_cores = self.get_cores_for_steering_tuning(node_info, 4, 6)
+		if not tuning_cores:
+			logging.warning("Can't assign affinity for devices with 2 interfaces and less than 4 cores.")
+			return
+
+		interfaces_ordered = self.get_interfaces_ordered()
+		affinity_core_list = [tuning_cores[0], tuning_cores[-2]]
+		interfaces_ordered[0].set_affinity(affinity_core_list)
+		logging.debug("interface: %s got list %s"%(interfaces_ordered[0].name, affinity_core_list))
+		affinity_core_list = [tuning_cores[-1], tuning_cores[1]]
+		interfaces_ordered[1].set_affinity(affinity_core_list)
+		logging.debug("interface: %s got list %s"%(interfaces_ordered[1].name, affinity_core_list))
+
+	def set_wanted_irq_affinity_for_single_interface_to_cores_on_same_numa_node(self, node_info):
+		""" Sets wanted cores for both queues in transmit and recive. Each ring (queue) gets a core to work with in same NUMA.
+		    E.g. from the following core list [0,1,2,3], each of the 2 rings (queues) for the single interface will get a core
+		    Set irq affinity for the interface: rx0:0, rx1:2
+		    This will work properly only for devices with at least 4 cores.
+		"""
+
+		IRQ_Q0_CORE_INDEX = 0
+		IRQ_Q1_CORE_INDEX = 2
+
+		if self.numa == -1:
+			numa_cores = self.closest_core_list
+		else:
+			numa_cores = node_info.cpu.sockets_cores[self.numa]
+
+		for interface in self.interfaces:
+			number_of_cores = len(numa_cores)
+			if number_of_cores < 4:
+				logging.warning("Can't assign irq affinity for less than 4 cores.")
+				return
+
+			affinity_core_list = [numa_cores[IRQ_Q0_CORE_INDEX], numa_cores[IRQ_Q1_CORE_INDEX]]
+			logging.debug("interface: %s got list %s"%(interface.name, affinity_core_list))
+			interface.set_affinity(affinity_core_list)
+
+	def set_wanted_xps_2interfaces_to_same_affinity_cores_sides_on_numa_node(self, node_info):
+		""" Sets wanted XPS affinity for 2 interfaces.
+		    E.g. for the following core list [0,1,2,3,4,5,6,7], 2 rings per interface:
+		    First interface set irq affinity: tx-0:3, tx-1:6
+		    Second interface set irq affinity: tx-0:6, tx-1:3
+		    This will work best for devices with at least 6 cores, preferred physical. For systems
+		    with 4 cores we use best effort tuning (non-optimal).
+		"""
+		tuning_cores = self.get_cores_for_steering_tuning(node_info, 4, 6)
+		if not tuning_cores:
+			logging.warning("Can't assign XPS for devices with 2 interfaces and less than 4 cores.")
+			return
+
+		interfaces_ordered = self.get_interfaces_ordered()
+		for i in range(2):
+			xps_core_list = self.get_rps_xps_cores_list(tuning_cores, i+1)
+			logging.debug("interface: %s got list %s"%(interfaces_ordered[i].name, xps_core_list))
+			interfaces_ordered[i].reset_xps()
+			interfaces_ordered[i].set_xps(xps_core_list, False)
+
+	def set_wanted_xps_for_single_interface_to_cores_on_same_numa_node(self, node_info):
+		""" Sets wanted XPS affinity for the single interface.
+		    E.g. There are 2 rings (queues) for the single interface, each will get a core from the core list [0,1,2,3]. Must be same NUMA.
+		    Set wanted xps affinity for the interface: tx-0:1, tx-1:3
+		    This will work properly only for devices with at least 4 cores.
+		"""
+		XPS_Q0_CORE_INDEX = 1
+		XPS_Q1_CORE_INDEX = 3
+
+		if self.numa == -1:
+			numa_cores = self.closest_core_list
+		else:
+			numa_cores = node_info.cpu.sockets_cores[self.numa]
+
+		number_of_cores = len(numa_cores)
+		if number_of_cores < 4:
+			logging.warning("Can't assign XPS for devices with 2 interfaces and less than 4 cores.")
+			return
+
+                for interface in self.interfaces:
+			xps_core_list = [numa_cores[XPS_Q0_CORE_INDEX], numa_cores[XPS_Q1_CORE_INDEX]]
+			logging.debug("interface: %s got list %s"%(interface.name, xps_core_list))
+			interface.reset_xps()
+			interface.set_xps(xps_core_list, False)
+
+	def set_wanted_rps_2interfaces_to_same_affinity_cores_sides_on_numa_node(self, node_info):
+		""" Sets wanted RPS affinity for 2 interfaces.
+		    E.g. for the following core list [0,1,2,3,4,5,6,7], 2 rings per interface:
+		    First interface set irq affinity: rx-0:2, rx-1:5
+		    Second interface set irq affinity: rx-0:5, rx-1:2
+		    This will work best for devices with at least 6 cores, preferred physical. For systems
+		    with 4 cores we use best effort tuning (non-optimal).
+		"""
+		tuning_cores = self.get_cores_for_steering_tuning(node_info, 4, 6)
+		if not tuning_cores:
+			logging.warning("Can't assign RPS for devices with 2 interfaces and less than 4 cores.")
+			return
+
+		interfaces_ordered = self.get_interfaces_ordered()
+		for i in range(2):
+			rps_core_list = self.get_rps_xps_cores_list(tuning_cores, i+1)
+			logging.debug("Interface %s got core list %s"%(interfaces_ordered[i].name, rps_core_list))
+			interfaces_ordered[i].set_rps(rps_core_list, False)
+
+	def set_wanted_rps_for_single_interface_to_cores_on_same_numa_node(self, node_info):
+		""" Sets wanted RPS affinity for the single interface.
+		    E.g. There are 2 rings (queues) for the single interface, each will get a core from the core list [0,1,2,3]. Must be same NUMA.
+		    Set wanted rps affinity for the interface: tx-0:3, tx-1:1
+		    This will work properly only for devices with at least 4 cores.
+		"""
+		RPS_Q0_CORE_INDEX = 3
+		RPS_Q1_CORE_INDEX = 1
+
+		if self.numa == -1:
+			numa_cores = self.closest_core_list
+		else:
+			numa_cores = node_info.cpu.sockets_cores[self.numa]
+
+		number_of_cores = len(numa_cores)
+		if number_of_cores < 4:
+			logging.warning("Can't assign RPS for devices with less than 4 cores.")
+			return
+
+		for interface in self.interfaces:
+			rps_core_list = [numa_cores[RPS_Q0_CORE_INDEX], numa_cores[RPS_Q1_CORE_INDEX]]
+			logging.debug("Interface %s got core list %s"%(interface.name, rps_core_list))
+			interface.set_rps(rps_core_list, False)
+
+	def get_rps_xps_cores_list(self, numa_cores, interface_port_number):
+		""" Configure RPS of interface 1 rx0 to XPS of interface 2 tx1
+		    Configure RPS of interface 2 rx0 to XPS of interface 1 tx1
+		    This will force forwarding of all packets from rx0 to tx1
+		    In order to support any number of cores in CPUs we choose
+		    the 3rd CPU from the edges to be the rps_xps cpu
+		"""
+		core_list = []
+		number_of_cores = len(numa_cores)
+		logging.debug("number_of_cores when setting rps_xps: %s"%(number_of_cores))
+		if number_of_cores < 6:
+			logging.warning("Can't assign RPS XPS for devices with less than 6 cores.")
+			return core_list
+		if interface_port_number in (1,2):
+			if interface_port_number == 1:
+				core_list = [numa_cores[2], numa_cores[-3]]
+			else:
+				core_list = [numa_cores[-3], numa_cores[2]]
+		else:
+			logging.warning("interface port number is not valid: %s"%(interface_port_number))
+		return core_list
+
+	def set_wanted_rps_2interfaces_to_numa_node(self, node_info):
+		""" set wanted RPS affinity for 2 interfaces to the same numa node
+		"""
+		if self.numa == -1:
+			return
+
+		numa_cores = node_info.cpu.sockets_cores[self.numa]
+		interfaces_ordered = self.get_interfaces_ordered()
+		interfaces_ordered[0].set_rps(numa_cores[0:len(numa_cores)/2], True)
+		interfaces_ordered[1].set_rps(numa_cores[len(numa_cores)/2:], True)
+
+	def apply_and_set_rps_affinity_wanted_mask(self):
+		""" set RPS affinity according to wanted mask
+		"""
+		for interface in self.interfaces:
+			interface.apply_and_set_rps_affinity_wanted_mask()
+
+	def apply_and_set_xps_affinity_wanted_mask(self):
+		""" set XPS affinity according to wanted mask
+		"""
+		for interface in self.interfaces:
+			interface.apply_and_set_xps_affinity_wanted_mask()
+
+class FppPciDeviceInfo(PciDeviceInfo):
+	def __init__ (self, dev1, dev2):
+		self.fpp_devices		= [dev1, dev2]
+		self.interfaces			= map(lambda fpp_dev: fpp_dev.interfaces, self.fpp_devices)
+		# Flatten the list (remove lists inside interface list)
+		self.interfaces			= reduce(lambda l1, l2: l1 + l2, self.interfaces)
+		# No MH support yet (TODO). We assume same close NUMA for all FPP devices.
+		self.numa_aware_core_list	= dev1.numa_aware_core_list
+		self.type			= dev1.type
+		self.numa			= dev1.numa
+		self.irqs			= dev1.irqs + dev2.irqs
+		self.closest_core_list		= dev1.closest_core_list
+
+	def __str__ (self):
+		global INDENT
+		string	= '\t'*INDENT + "FPP Device Info:\n"
+
+		string += '\n' + '\t'*(INDENT+1) + 'Logical Devices:\n'
+		for fpp_device in self.fpp_devices:
+			INDENT += 2
+			string += str(fpp_device) + '\n'
+			INDENT -= 2
+
+		return string
+
+	def __repr__ (self):
+		return str(self)
+
+	def __eq__ (self, other):
+		""" Compares between to FPP PCI devices by comparing their FPP devices' PCI slots
+		"""
+		if not isinstance(other, FppPciDeviceInfo):
+			return False
+		self_pci_slots = map(lambda fpp_device: fpp_device.pci_slot, self.fpp_devices)
+		other_pci_slots = map(lambda fpp_device: fpp_device.pci_slot, other.fpp_devices)
+		for pci_slot in self_pci_slots:
+			if pci_slot in other_pci_slots:
+				return True
+		return False
+
+	def report_status(self, cpu_arch, profile):
+		""" Report the FPP device status to the user
+		"""
+		for fpp_device in self.fpp_devices:
+			fpp_device.report_status(cpu_arch, profile)
+			print ""
+
+	def get_interfaces_ordered(self):
+		""" Returns the device interfaces by their PCI location
+		"""
+		fpp_devices_sorted =  sorted(self.fpp_devices, key=lambda device: device.pci_slot)
+		sorted_interfaces = map(lambda fpp_dev: fpp_dev.interfaces, fpp_devices_sorted)
+		return reduce(lambda l1, l2: l1 + l2, sorted_interfaces)
+
+
+# Command execution functions
+def run_command_debug_when_fail(cmd, debug_message=False, prnt=False):
+	""" run command and print debug message when failed
+	"""
+	if prnt:
+		logging.debug("Run cmd: %s"%cmd)
+	( rc, output) = commands.getstatusoutput(cmd)
+	if rc:
+		logging.debug("Failed to run cmd: %s"%cmd)
+		if debug_message:
+			logging.debug("%s"%(debug_message))
+	return (rc, output)
+
+def run_command_warn_when_fail(cmd, warning_message=False, prnt=False):
+	""" run command and print warning message when failed
+	"""
+	if prnt:
+		logging.info("Run cmd: %s"%cmd)
+	else:
+		logging.debug("Run cmd: %s"%cmd)
+	( rc, output) = commands.getstatusoutput(cmd)
+	if rc:
+		logging.warning("Failed to run cmd: %s"%cmd)
+		if warning_message:
+			logging.warning("%s"%(warning_message))
+	return (rc, output)
+
+def run_command(cmd, prnt=False):
+	""" run command
+	"""
+	if prnt:
+		logging.info("Run cmd: %s"%cmd)
+	else:
+		logging.debug("Run cmd: %s"%cmd)
+	( rc, output) = commands.getstatusoutput(cmd)
+	return (rc, output)
+
+def run_command_exit_when_fail(cmd, error_message=False, prnt=False):
+	""" run command, print error message and exit when failed
+	"""
+	if prnt:
+		logging.info("Run cmd: %s"%(cmd))
+	else:
+		logging.debug("Run cmd: %s"%cmd)
+	( rc, output) = commands.getstatusoutput(cmd)
+	if rc:
+		logging.error("Failed to run cmd: %s"%(cmd))
+		if error_message:
+			logging.error("%s"%(error_message))
+		exit(1)
+	return (output)
+
+
+# Main flow helper functions
+def add_options (parser):
+	""" Add options to parser
+	"""
+	parser.add_option("-d","--debug_info",		help = "dump system debug information without setting a profile", action="store_true", default = False)
+	parser.add_option("-r","--report",		help = "Report HW/SW status and issues without setting a profile", action="store_true", default = True)
+	parser.add_option("-c","--colored",		help = "Switch using colored/monochromed status reports. Only applicable with --report", action="store_true", default = True)
+	parser.add_option("-p","--profile",		help = "Set profile and run it. choose from: %s"%(Profile.ALLOWED_PROFILES), default = None)
+	parser.add_option("-q","--verbosity",		help = "print debug information to the screen [default %default]", action="store_true", default = False)
+	parser.add_option("-v","--version",		help = "print tool version and exit [default %default]", action="store_true", default = False)
+	parser.add_option("-i","--info_file_path",	help = "info_file path. [default %s]", default ="/tmp/mlnx_tune_%s.log"%(datetime.datetime.now().strftime("%y%m%d_%H%M%S")))
+	parser.add_option("-l","--list_os",		help = "List supported OS [default %default]", action="store_true", default = False)
+
+def force_dependencies(options):
+	""" Force dependencies between input arguments
+	"""
+	if options.profile and options.profile not in Profile.ALLOWED_PROFILES:
+		logging.error("Can't set profile. Wrong profile selected. please choose: %s"%(Profile.ALLOWED_PROFILES))
+		exit(errno.EINVAL)
+	if (os.geteuid() != 0):
+		logging.error("You need to have root privileges to run this script. Please try again, this time using 'sudo'. Exiting.")
+		exit(errno.EACCES)
+
+	return options
+
+def force_sw_dependencies(profile):
+	""" Force all needed software are installed on the server.
+	"""
+	# Check general purpose tools
+	output = run_command_warn_when_fail(MST_START, "Please install Mellanox Firmware tools ( mft )")
+	output = run_command_exit_when_fail("%s --version"%(ETHTOOL), "Please install ethtool tool.")
+	output = run_command_exit_when_fail(LSPCI, "Please install lspci tool.")
+	output = run_command_warn_when_fail("%s -V"%DMIDECODE, "It is recommended to install dmidecode tool.")
+	output = run_command_exit_when_fail(LSMOD, "Please install lsmod tool.")
+	# Check profile specific tools
+	if profile in Profile.NEED_IFCONFIG:
+		output = run_command_exit_when_fail(IFCONFIG, "Please install %s tool."%IFCONFIG)
+	if "mlx" not in output:
+		logging.error( "Driver don't exist/not loaded. Please load mellanox driver")
+
+def set_logger(options):
+	""" Force dependencies between input arguments
+	"""
+	if options.verbosity:
+		logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s')
+	else:
+		logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
+
+def mlnx_pci_devices_status(node_info):
+	""" report mellanox pci devices status
+	"""
+	logging.info("Collecting Mellanox devices information")
+	devices = []
+	( rc, pci_devices) = commands.getstatusoutput(LSPCI)
+	assert (not rc), "Unexpected error - cmd: %s bad exit status."%(LSPCI)
+
+	for line in pci_devices.split('\n'):
+		if "Mellanox" in line and "Virtual Function" not in line:
+			device = PciDeviceInfo(line.strip())
+			device.set_core_driver()
+			device.set_pci_width_and_speed()
+			device.set_rdma_device_info(node_info)
+			if not (device.set_mst_info()):
+				logging.warning("Failed to create MST device for the following PCI entry: '%s'"%line)
+			device.set_id()
+			device.set_fw_version(node_info)
+			device.set_closest_numa()
+			device.set_numa_aware_core_list(node_info)
+			device.interfaces = device.get_interfaces(node_info)
+			device.irqs = device.get_irqs()
+			devices.append(device)
+
+	physical_devices = merge_fpp_devices(devices)
+	return physical_devices
+
+def merge_fpp_devices(logical_devices):
+	""" Creates a list of physical devices from logical by
+	    Merging FPP devices to a single device
+	"""
+	if not logical_devices:
+		return logical_devices
+	fpp_device_pers = []
+	devices_to_remove = []
+	# Find devices with simillar PCI pattern like so - xx:xx.A and xx:xx.B
+	pci_pre_pattern = re.compile(r'[\d|a-fA-F][\d|a-fA-F]:[\d|a-fA-F][\d|a-fA-F]')
+	for checked_device in logical_devices:
+		for compared_device in logical_devices:
+			if checked_device is compared_device:
+				continue
+			match = pci_pre_pattern.search(compared_device.pci_slot)
+			if not match:
+				continue
+			compared_pci_slot = match.group(0)
+			if compared_pci_slot in checked_device.pci_slot:
+				fpp_device_pers.append([checked_device, compared_device])
+				devices_to_remove += [checked_device, compared_device]
+	# Create new list withouut FPP devices
+	merged_fpp_device_list = filter(lambda physical_dev: physical_dev not in devices_to_remove, logical_devices)
+	# Add FPP devices
+	for per in fpp_device_pers:
+		fpp_device = FppPciDeviceInfo(per[0], per[1])
+		if fpp_device not in merged_fpp_device_list:
+			merged_fpp_device_list.append(fpp_device)
+
+	return merged_fpp_device_list
+
+def is_one_set_bit_only_in_hex_mask(mask):
+	""" receive hexadecimal mask and return True if only one bit is set in the mask
+	"""
+	mask = mask.replace(',','')
+	mask = bin(int(mask,16))
+	one_indexs = [i for i in range(len(mask)) if mask.startswith('1', i)]
+	if len(one_indexs) == 1:
+		return True
+	return False
+
+def hex_mask_builder(mask_format , indexes):
+	""" Build mask according mask format and given indexes.
+	    indexes can be array of integers or one integer.
+	"""
+	comma_indexes	= [i for i in range(len(mask_format)) if mask_format.startswith(',', i)]
+	mask_format	= mask_format.replace(',','')
+	zero_mask_hex	= ''
+	for i in range(len(mask_format)):
+		zero_mask_hex += '0'
+	zero_mask_bin = bin(int(zero_mask_hex,16))
+	zero_mask_bin = zero_mask_bin.replace('0b','')
+	for i in range(len(mask_format)*4 - len(zero_mask_bin)):
+		zero_mask_bin = '0' + zero_mask_bin
+	mask_bin = zero_mask_bin
+	if type(indexes).__name__ == 'int':
+		indexes = [indexes]
+	for ix in indexes:
+		ix_be = len(mask_bin) - ix
+		s1 = mask_bin[0:ix_be]
+		s2 = mask_bin[ix_be:]
+		mask_bin = s1 + '1' + s2
+	mask_hex = hex(int(mask_bin,2))
+	mask_hex = mask_hex.replace('0x','')
+	# Weird issue on PPC - hex string has an 'L' char at the end.
+	mask_hex = mask_hex.replace('L','')
+	for i in range(len(mask_format) - len(mask_hex)):
+		mask_hex = '0' + mask_hex
+	for comma in comma_indexes:
+		mask_hex = mask_hex[0:comma] + ',' + mask_hex[comma:]
+
+	return mask_hex
+
+def set_multicast_profile(node_info):
+	""" Sets multicast profile
+	"""
+
+	logging.info("Applying multicast profile.")
+
+	for device in node_info.pci_devices:
+		if device.type in Devices.MLX4_CONSUMERS:
+			for interface in device.interfaces:
+				if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
+					interface.apply_network_parameter_value('set-priv-flags', 'on', 'disable_mc_loopback')
+
+	node_info = requery_node()
+	return node_info
+
+
+def set_vma_low_latency_profile(node_info):
+	""" Sets low latency VMA profile
+	"""
+
+	logging.info("Applying low latency VMA profile.")
+
+	logging.info("Optimizing OS.")
+	node_info.os.optimize(node_info, Profile.LOW_LATENCY_VMA)
+
+	logging.info("Optimizing CPU.")
+	node_info.cpu.set_high_performance()
+	node_info.cpu.stop_monitoring_services()
+
+	logging.info("Optimizing memory.")
+	node_info.memory.disable_operations(node_info)
+
+	logging.info("Stopping Services.")
+	node_info.irq_balancer.stop(node_info)
+	node_info.firewall.stop(node_info)
+	node_info.firewall.flush(node_info)
+	node_info.firewall.delete_chain(node_info)
+	for service in Service.DISABLE_FOR_VMA:
+		Service(service, node_info).stop(node_info)
+	logging.info("Unloading kernel modules.")
+	for module in KernelModule.REMOVE_FOR_VMA:
+		KernelModule(module).unload()
+
+	logging.info("Setting IRQ affinity.")
+	for device in node_info.pci_devices:
+		device.set_affinity_to_first_local_core(node_info)
+		device.apply_and_set_irq_affinity_wanted_mask()
+
+	node_info = requery_node()
+	return node_info
+
+
+def set_high_throughput_profile(node_info):
+	""" Sets out of box profile
+	"""
+
+	logging.info("Applying High Throughput profile.")
+
+	node_info.cpu.set_high_performance()
+	node_info.irq_balancer.stop(node_info)
+	for device in node_info.pci_devices:
+		device.set_wanted_affinity_hint_like(node_info)
+		device.apply_and_set_irq_affinity_wanted_mask()
+		set_high_throughput_profile_network_parameters(device)
+		if node_info.cpu.vendor == CPUVendor.IBM:
+			set_high_throughput_profile_ppc_network_parameters(device)
+
+	node_info = requery_node()
+	return node_info
+
+def set_high_throughput_profile_network_parameters(device):
+	""" Sets general netwrok parameters
+	"""
+	for interface in device.interfaces:
+		if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
+			interface.apply_network_parameter_value('K', 'off', 'tx-nocache-copy')
+			if device.type in Devices.HW_LRO_SUPPORTING_DEVICES:
+				interface.apply_network_parameter_value('set-priv-flags', 'on', 'hw_lro')
+
+def set_high_throughput_profile_ppc_network_parameters(device):
+	""" Sets netwrok parameters unique to PPC systems
+	"""
+	for interface in device.interfaces:
+		if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
+			interface.apply_network_parameter_value('K', 'on', 'lro', 'large-receive-offload')
+			set_xor_hash_rc = interface.apply_network_parameter_value('set-priv-flags', 'on', 'mlx4_rss_xor_hash_function')
+			if not set_xor_hash_rc:
+				set_xor_hash_rc = interface.apply_network_parameter_value('X', '1', 'equal')
+
+def set_ip_forwarding_dualport_profile(device, node_info):
+	""" set IP forwarding profile for dual port device.
+	    Aimed for single stream,
+	    where traffic flow from port1 to port2 (or vice versa) on the same device.
+	"""
+	device.set_wanted_affinity_2interfaces_to_oposites_cores_on_numa_node(node_info)
+	device.apply_and_set_irq_affinity_wanted_mask()
+	device.set_wanted_rps_2interfaces_to_same_affinity_cores_sides_on_numa_node(node_info)
+	device.apply_and_set_rps_affinity_wanted_mask()
+	device.set_wanted_xps_2interfaces_to_same_affinity_cores_sides_on_numa_node(node_info)
+	device.apply_and_set_xps_affinity_wanted_mask()
+
+
+def set_ip_forwarding_single_port_profile(device, node_info):
+	""" set IP forwarding profile for single port devices.
+	    Aimed for single stream,
+	    where traffic flow is to and from port1 only on the same device.
+	"""
+	device.set_wanted_irq_affinity_for_single_interface_to_cores_on_same_numa_node(node_info)
+	device.apply_and_set_irq_affinity_wanted_mask()
+	device.set_wanted_rps_for_single_interface_to_cores_on_same_numa_node(node_info)
+	device.apply_and_set_rps_affinity_wanted_mask()
+	device.set_wanted_xps_for_single_interface_to_cores_on_same_numa_node(node_info)
+	device.apply_and_set_xps_affinity_wanted_mask()
+
+
+def set_ip_forwarding_profile_multi_stream(node_info, use_all_cores, zero_loss):
+	""" set IP forwarding profile settings for multi stream traffic
+	"""
+	logging.info("Applying IP forwarding multi stream profile.")
+
+	node_info.cpu.set_high_performance()
+	node_info.irq_balancer.stop(node_info)
+	node_info.firewall.stop(node_info)
+	node_info.ip_forwarding.start()
+
+	if not any(node_info.pci_devices):
+		return
+
+	need_limit = any(node_info.cpu.vendor == v for v in CPUVendor.LIMIT_TO_32_QUEUES)
+
+	for device in node_info.pci_devices:
+		if use_all_cores:
+			wanted_number_of_rings = len(node_info.cpu.all_cores)
+		else:
+			wanted_number_of_rings = len(device.closest_core_list)
+
+		if need_limit and device.type in Devices.NEED_32_QUEUES_LIMIT_DEVICES:
+			wanted_number_of_rings = min(wanted_number_of_rings, 32)
+
+		for interface in device.interfaces:
+			if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
+				interface.disable_qdisc_tx(node_info)
+				if device.type in Devices.MLX4_CONSUMERS:
+					interface.apply_network_parameter_value('A', 'off', 'tx')
+					interface.apply_network_parameter_value('A', 'off', 'rx')
+					interface.apply_network_parameter_value('C', 'off', 'adaptive-rx', 'adaptive rx')
+					interface.apply_network_parameter_value('C', 64, 'tx-frames')
+					interface.apply_network_parameter_value('C', 0, 'rx-usecs')
+				else:
+					interface.apply_network_parameter_value('A', 'off', ['rx', 'tx'])
+					interface.apply_network_parameter_value(
+						'G', 8192, ['rx', 'tx'], appearance_index=2)
+					interface.apply_network_parameter_value('L', wanted_number_of_rings, 'combined', appearance_index = 2)
+					interface.apply_network_parameter_value('C', 'on', 'adaptive-rx', 'adaptive rx')
+					interface.apply_network_parameter_value('C', 'off', 'adaptive-tx', 'adaptive tx')
+					interface.apply_network_parameter_value('set-priv-flags', 'off', 'tx_cqe_moder')
+					if zero_loss:
+						interface.optimize_qdisc_tx_len(ratio=1.5)
+						interface.apply_network_parameter_value(
+							'C', 8, 'tx-frames')
+						interface.apply_network_parameter_value(
+							'C', 8, 'tx-usecs')
+
+				interface.apply_network_parameter_value('K', 'off', 'gro', 'generic-receive-offload')
+
+	node_info = requery_node()
+
+	for device in node_info.pci_devices:
+		for interface in device.interfaces:
+			if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
+				interface.enforce_rings_amount(wanted_number_of_rings)
+		if use_all_cores:
+			device.set_wanted_irq_affinity_all_cores(node_info)
+		else:
+			device.set_wanted_irq_affinity_all_close_cores()
+
+		device.apply_and_set_irq_affinity_wanted_mask()
+
+	return node_info
+
+def set_ip_forwarding_profile_single_stream(node_info, force_single = False, zero_loss = False):
+	""" set IP forwarding profile settings common for single stream IP forwarding profiles.
+	"""
+	logging.info("Applying IP forwarding single stream profile.")
+
+	node_info.cpu.set_high_performance()
+	node_info.irq_balancer.stop(node_info)
+	node_info.firewall.stop(node_info)
+	node_info.ip_forwarding.start()
+
+	wanted_number_of_rings = 2
+
+	if not any(node_info.pci_devices):
+		return
+
+	for device in node_info.pci_devices:
+		number_of_active_ethernet_interfaces = 0
+		for interface in device.interfaces:
+			if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
+				number_of_active_ethernet_interfaces += 1
+
+				interface.disable_qdisc_tx(node_info)
+				if device.type in Devices.MLX4_CONSUMERS:
+					set_xor_hash_rc = interface.apply_network_parameter_value('set-priv-flags', 'on', 'mlx4_rss_xor_hash_function')
+					if not set_xor_hash_rc:
+						set_xor_hash_rc = interface.apply_network_parameter_value('X', '1', 'equal')
+
+					interface.apply_network_parameter_value('A', 'off', 'tx')
+					interface.apply_network_parameter_value('A', 'off', 'rx')
+					interface.apply_network_parameter_value('L', wanted_number_of_rings, 'rx', appearance_index = 2)
+					interface.apply_network_parameter_value('L', wanted_number_of_rings, 'tx', appearance_index = 2)
+				else:
+					if zero_loss:
+						interface.optimize_qdisc_tx_len(ratio=0.25)
+					interface.apply_network_parameter_value('A', 'off', ['rx', 'tx'])
+					interface.apply_network_parameter_value('L', wanted_number_of_rings, 'combined', appearance_index = 2)
+					interface.apply_network_parameter_value('X', 1, 'equal')
+
+				interface.apply_network_parameter_value('C', 'off', 'adaptive-rx', 'adaptive rx')
+				interface.apply_network_parameter_value('C', 'off', 'adaptive-tx', 'adaptive tx')
+				interface.apply_network_parameter_value('K', 'off', 'gro', 'generic-receive-offload')
+				interface.apply_network_parameter_value('C', 64, 'tx-frames')
+				interface.apply_network_parameter_value('C', 0, 'rx-usecs')
+				interface.enforce_rings_amount(wanted_number_of_rings)
+
+		# Apply settings by number of active ports:
+		if number_of_active_ethernet_interfaces == 0:
+			continue
+		elif force_single or number_of_active_ethernet_interfaces == 1:
+			set_ip_forwarding_single_port_profile(device, node_info)
+		else:
+			set_ip_forwarding_dualport_profile(device, node_info)
+
+	node_info = requery_node()
+
+	return node_info
+
+def write_info_to_file(file_path, node_info):
+	""" print system info to file
+	"""
+	log = open(file_path, 'w')
+	log.write(str(node_info))
+	log.close()
+
+def set_profile (options, node_info):
+	""" setting user profile
+	"""
+	force_single	= options.profile == Profile.IP_FORWARDING_SINGLE_STREAM_SINGLE_PORT
+	use_all_cores	= options.profile == Profile.IP_FORWARDING_MULTI_STREAM_PACKET_RATE
+	zero_loss	= options.profile in Profile.IP_FORWARDING_0_LOSS_PROFILES
+
+	if (options.profile == Profile.HIGH_THROUGHPUT):
+		node_info = set_high_throughput_profile(node_info)
+	elif (options.profile in Profile.IP_FORWARDING_SINGLE_STREAM_PROFILES):
+		node_info = set_ip_forwarding_profile_single_stream(node_info, force_single, zero_loss)
+	elif (options.profile in Profile.IP_FORWARDING_MULTI_STREAM_PROFILES):
+		node_info = set_ip_forwarding_profile_multi_stream(node_info, use_all_cores, zero_loss)
+	elif (options.profile == Profile.LOW_LATENCY_VMA):
+		node_info = set_vma_low_latency_profile(node_info)
+	elif (options.profile == Profile.MULTICAST):
+		node_info = set_multicast_profile(node_info)
+	else:
+		assert (False), "Unexpected error - Unsupported profile."
+
+	return node_info
+
+def requery_node():
+	""" Requery the system, usually to take new changes into consideration
+	"""
+	logging.info("Some devices' properties might have changed - re-query system information.")
+	return NodeInfo()
+
+def status_ok_string_colored():
+	""" Returns a colored 'OK' string for status report.
+	"""
+	return "\033[92m" + "OK" + "\033[0m"
+
+def status_ok_string_monochromed():
+	""" Returns a monochromed 'OK' string for status report.
+	"""
+	return "OK"
+
+def status_warning_string_colored():
+	""" Returns a colored 'Warning' string for status report.
+	"""
+	return "\033[93m" + "Warning" + "\033[0m"
+
+def status_warning_string_monochromed():
+	""" Returns a monochromed 'OK' string for status report.
+	"""
+	return "Warning"
+
+
+if __name__ == '__main__':
+	parser = OptionParser()
+	add_options(parser)
+	(options, args) = parser.parse_args()
+	set_logger(options)
+	if options.version:
+		logging.info("Version: {major}.{minor}-{build}".format(
+			major=VERSION_MAJOR, minor=VERSION_MINOR, build=VERSION_BUILD))
+		exit(0)
+	if options.list_os:
+		logging.info("Supported OS: %s"%OS.SUPPORTED_OS)
+		exit(0)
+	options = force_dependencies(options)
+	force_sw_dependencies(options.profile)
+
+	# Create the system's information tree. The information is automatically collected on creation.
+	node_info = NodeInfo()
+	if options.debug_info:
+		print str(node_info)
+		exit(0)
+
+	if options.profile:
+		node_info = set_profile(options, node_info)
+
+	if options.report:
+		status_ok_string = (status_ok_string_monochromed, status_ok_string_colored)[options.colored]
+		status_warning_string = (status_warning_string_monochromed, status_warning_string_colored)[options.colored]
+		node_info.report_status(options.profile)
+
+	write_info_to_file(options.info_file_path, node_info)
+	logging.info("System info file: %s"%(options.info_file_path))
+	exit(0)

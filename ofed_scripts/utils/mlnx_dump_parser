@@ -1,33 +1,26 @@
 #!/usr/bin/python
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
 #
-# Copyright (c) 2017 Mellanox Technologies. All rights reserved.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Library General Public License for more details.
 #
-# This Software is licensed under one of the following licenses:
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #
-# 1) under the terms of the "Common Public License 1.0" a copy of which is
-#    available from the Open Source Initiative, see
-#    http://www.opensource.org/licenses/cpl.php.
+# See the COPYING file for license information.
 #
-# 2) under the terms of the "The BSD License" a copy of which is
-#    available from the Open Source Initiative, see
-#    http://www.opensource.org/licenses/bsd-license.php.
-#
-# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
-#    copy of which is available from the Open Source Initiative, see
-#    http://www.opensource.org/licenses/gpl-license.php.
-#
-# Licensee has the right to choose one of the above licenses.
-#
-# Redistributions of source code must retain the above copyright
-# notice and one of the license notices.
-#
-# Redistributions in binary form must reproduce both the above copyright
-# notice, one of the license notices in the documentation
-# and/or other materials provided with the distribution.
-#
+# Copyright (c) 2011 Mellanox Technologies. All rights reserved
+# Add support for parsing driver diagnostic dump
 
 # Author: Parvi Kaustubhi <parvik@mellanox.com>
 
+from __future__ import print_function
 import struct
 from optparse import OptionParser
 import os, sys
@@ -103,46 +96,46 @@ def read_binary(dump, mst_dump_file, ring_dump_file):
 	num_blocks = struct.unpack('I', f.read(4))[0]
 
 	length = struct.unpack('I', f.read(4))[0]
-	print 'Version: %s Flag: %s Number of blocks: %s Length %s' % (version, flag, num_blocks, length)
+	print(('Version: %s Flag: %s Number of blocks: %s Length %s' % (version, flag, num_blocks, length)))
 
 	module_no = struct.unpack('I', f.read(4))[0]
 
 	module_status = struct.unpack('I', f.read(4))[0]
 
-	print "MCION module number:",
-	print module_no,
-	print "status:",
+	print("MCION module number:", end=' ')
+	print(module_no, end=' ')
+	print("status:", end=' ')
 
 	if (module_status & MLX5_MCION_STATUS_PRESENT):
-		print "| present |",
+		print("| present |", end=' ')
 	else:
-		print "| non-present |",
+		print("| non-present |", end=' ')
 
 	if (module_status & MLX5_MCION_STATUS_RX_LOS):
-		print "| rx los |",
+		print("| rx los |", end=' ')
 
 	if (module_status & MLX5_MCION_STATUS_TX_FAULT):
-		print "| tx fault |",
+		print("| tx fault |", end=' ')
 
-	print ''
+	print('')
 
 	blk_type = struct.unpack('I', f.read(4))[0]
 	blk_len = struct.unpack('I', f.read(4))[0]
 	if (blk_type == 0):
-		drv_version = struct.unpack('64s', f.read(64))[0]
-		print 'DRIVER VERSION: %s' % drv_version
+		drv_version = struct.unpack('64s', f.read(64))[0].decode('utf8')
+		print('DRIVER VERSION: %s' % drv_version)
 	blk_type = struct.unpack('I', f.read(4))[0]
 	blk_len = struct.unpack('I', f.read(4))[0]
 	if (blk_type == 1):
-		dev_name = struct.unpack('64s', f.read(64))[0]
-		print 'DEVICE NAME %s' % dev_name
+		dev_name = struct.unpack('64s', f.read(64))[0].decode('utf8')
+		print(('DEVICE NAME %s' % dev_name))
 
-	for x in xrange(0, num_blocks - 2):
+	for x in range(0, num_blocks - 2):
 		diag_blk.blk_type = struct.unpack('I', f.read(4))[0]
 		diag_blk.length = struct.unpack('I', f.read(4))[0]
 		if (diag_blk.blk_type == MLX5_DIAG_MST):
 			mst = open(mst_dump_file, 'w')
-			for i in xrange(0, diag_blk.length, 8):
+			for i in range(0, diag_blk.length, 8):
 				off = struct.unpack('I', f.read(4))[0]
 				data = struct.unpack('I', f.read(4))[0]
 				mst.write("0x%.8lx 0x%.8lx\n" %(off, data))
@@ -199,7 +192,7 @@ def read_binary(dump, mst_dump_file, ring_dump_file):
 			diag_eq.group_id = struct.unpack('I', f.read(4))[0]
 			ring.write('EQ TYPE: %d, CI: %d, SIZE: %d, IRQN: %d, EQN: %d, NENT: %d, MASK: %d, INDEX: %d, GROUP_ID: %d\n' %(diag_eq.eq_type, diag_eq.ci, diag_eq.size, diag_eq.irqn, diag_eq.eqn, diag_eq.nent, diag_eq.mask, diag_eq.index, diag_eq.group_id))
 		else:
-			print 'Unknown block type'
+			print('Unknown block type')
 	ring.close()
 	f.close()
 	if os.stat(ring_dump_file).st_size == 0:
@@ -219,9 +212,9 @@ parser.add_option("-r", "--ring_dump_file", dest="ring_dump_file", default='ring
 (options, args) = parser.parse_args()
 
 if (options.dump_file == None):
-	print "Name of dump file is required"
+	print("Name of dump file is required")
 	parser.print_usage()
 	sys.exit(1)
 
 str = read_binary(options.dump_file, options.mst_dump_file, options.ring_dump_file)
-print "%s" % str
+print(("%s" % str))

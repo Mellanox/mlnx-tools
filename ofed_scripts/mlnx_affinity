@@ -1,0 +1,300 @@
+#!/bin/bash
+# mlnx_affinity, version 2.0
+# This version is supported in MLNX_OFED-2.0.x driver verions only
+#
+#
+# Copyright (c) 2017 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+
+ACTION=$1
+ISSUE=$(cat /etc/issue | head -1)
+IRQBALANCER=""
+if [[ "$(echo $ISSUE | grep -i ubuntu)" != "" || "$(echo $ISSUE | grep -i debian)" != "" ]]; then
+	echo "INFO - This utility does not support irqbalance control in $ISSUE"
+	echo "INFO - irqbalance status will not change"
+else
+	if [[ -f /bin/systemctl ]]; then
+		IRQBALANCER=$( /bin/systemctl list-unit-files --type=service 2>/dev/null | grep irq | grep balance | cut -d " " -f 1 )
+	fi
+	if [[ -z "$IRQBALANCER" && -f /sbin/chkconfig ]]; then
+		IRQBALANCER=$( /sbin/chkconfig --list 2>/dev/null | grep irq | grep balance | cut -d " " -f 1 )
+	fi
+	if [[ -z "$IRQBALANCER" ]]; then
+		echo "INFO - irqbalancer not found"
+		echo "INFO - irqbalance status will not change"
+	fi
+fi
+LSCPU_CMD="cat /proc/cpuinfo"
+IBDEV2NETDEV="ibdev2netdev"
+IFCONFIG="ifconfig"
+NUMA_SUPPORT_PREFIX="/sys/class/net/"
+NUMA_SUPPORT_SUFFIX="/device/numa_node"
+PCI_SLOT_PREFIX="/sys/class/net/"
+FATHER_PCI_SLOT_SUFFIX="/device/../uevent"
+SET_IRQ_AFIINITY_BY_NODE="set_irq_affinity_bynode.sh"
+SET_IRQ_AFIINITY_ALL="set_irq_affinity.sh"
+
+#########################################################################
+# Get a sane screen width
+[ -z "${COLUMNS:-}" ] && COLUMNS=80
+
+[ -z "${CONSOLETYPE:-}" ] && [ -x /sbin/consoletype ] && CONSOLETYPE="`/sbin/consoletype`"
+
+if [ -f /etc/sysconfig/i18n -a -z "${NOLOCALE:-}" ] ; then
+  . /etc/sysconfig/i18n
+  if [ "$CONSOLETYPE" != "pty" ]; then
+        case "${LANG:-}" in
+                ja_JP*|ko_KR*|zh_CN*|zh_TW*)
+                        export LC_MESSAGES=en_US
+                        ;;
+                *)
+                        export LANG
+                        ;;
+        esac
+  else
+        export LANG
+  fi
+fi
+
+# Read in our configuration
+if [ -z "${BOOTUP:-}" ]; then
+  if [ -f /etc/sysconfig/init ]; then
+      . /etc/sysconfig/init
+  else
+    # This all seem confusing? Look in /etc/sysconfig/init,
+    # or in /usr/doc/initscripts-*/sysconfig.txt
+    BOOTUP=color
+    RES_COL=60
+    MOVE_TO_COL="echo -en \\033[${RES_COL}G"
+    SETCOLOR_SUCCESS="echo -en \\033[1;32m"
+    SETCOLOR_FAILURE="echo -en \\033[1;31m"
+    SETCOLOR_WARNING="echo -en \\033[1;33m"
+    SETCOLOR_NORMAL="echo -en \\033[0;39m"
+    LOGLEVEL=1
+  fi
+  if [ "$CONSOLETYPE" = "serial" ]; then
+      BOOTUP=serial
+      MOVE_TO_COL=
+      SETCOLOR_SUCCESS=
+      SETCOLOR_FAILURE=
+      SETCOLOR_WARNING=
+      SETCOLOR_NORMAL=
+  fi
+fi
+
+if [ "${BOOTUP:-}" != "verbose" ]; then
+   INITLOG_ARGS="-q"
+else
+   INITLOG_ARGS=
+fi
+
+
+
+echo_success() {
+  echo -n $@
+  [ "$BOOTUP" = "color" ] && $MOVE_TO_COL
+  echo -n "[  "
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_SUCCESS
+  echo -n $"OK"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "  ]"
+  echo -e "\r"
+  return 0
+}
+
+echo_done() {
+  echo -n $@
+  [ "$BOOTUP" = "color" ] && $MOVE_TO_COL
+  echo -n "[  "
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n $"done"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "  ]"
+  echo -e "\r"
+  return 0
+}
+
+echo_failure() {
+  echo -n $@
+  [ "$BOOTUP" = "color" ] && $MOVE_TO_COL
+  echo -n "["
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_FAILURE
+  echo -n $"FAILED"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "]"
+  echo -e "\r"
+  return 1
+}
+
+echo_warning() {
+  echo -n $@
+  [ "$BOOTUP" = "color" ] && $MOVE_TO_COL
+  echo -n "["
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_WARNING
+  echo -n $"WARNING"
+  [ "$BOOTUP" = "color" ] && $SETCOLOR_NORMAL
+  echo -n "]"
+  echo -e "\r"
+  return 1
+}
+
+
+
+start()
+{
+	echo -n "mlnx_affinity started"
+	ECHO=0
+	#check if the machine arch is sandy bridge
+	CPU_family=$($LSCPU_CMD | grep -i "CPU family" -m 1 | awk '{print $NF}' )
+	Model=$($LSCPU_CMD | grep -i "Model" -m 1 | awk '{print $NF}' )
+	if [ $CPU_family -eq 6 ] && [ $Model -eq 45 ] ; then
+		is_sandy_bridge="true"
+	else
+		is_sandy_bridge="false"
+	fi
+	which numactl &> /dev/null
+	if [ $? != 0 ]; then
+		NUMA_NUMBER=$(lscpu | grep NUMA | grep CPU | wc -l)
+	else
+		NUMA_NUMBER=$(numactl --hardware | grep -i available | awk '{print $2}')
+	fi
+
+
+	if [ $IRQBALANCER ]; then
+		/sbin/chkconfig $IRQBALANCER off
+		if [ $? -gt 0 ]; then
+			echo "Warning - can't disable $IRQBALANCER service"
+		fi
+	fi
+
+	declare -a   interfaces=( `$IBDEV2NETDEV | awk '{print $5 }'` )
+	declare -a   interfaces_status=( `$IBDEV2NETDEV | awk '{print $6 }'` )
+	declare -a   interfaces_numa=()
+	#echo "Discovered Mellanox interfaces: ${interfaces[*]}"
+	#echo ${interfaces_status[*]}
+
+	for i in ${!interfaces[*]} ; do
+		INTERFACE=${interfaces[$i]}
+		INTERFACE_STATUS=${interfaces_status[$i]}
+
+		if [ "$(ls $NUMA_SUPPORT_PREFIX$INTERFACE/device/ | grep numa_node )" == "numa_node" ]; then
+			NUMA_NODE=`cat $NUMA_SUPPORT_PREFIX$INTERFACE$NUMA_SUPPORT_SUFFIX`
+		else
+			NUMA_NODE='-1'
+		fi
+
+		#set interface up ( if it's status is down)
+		case "$INTERFACE_STATUS" in
+			*"Down"*)
+				  #echo INFO - interface $INTERFACE status is down, running: $IFCONFIG $INTERFACE up
+				  $IFCONFIG $INTERFACE up
+				  ;;
+		esac
+
+		#check for BIOS support
+		if [ $NUMA_NODE -eq -1 ] ; then #no BIOS support
+			#echo "INFO - No numa node BIOS support for interface $INTERFACE , detecting noma node using pci device"
+			BIOS_SUPPORT="false"
+		else
+			BIOS_SUPPORT="true"
+		fi
+
+		if [ "$BIOS_SUPPORT" = "true" ] ; then
+			interfaces_numa[$i]=$NUMA_NODE
+			continue
+		else
+			if [  "$is_sandy_bridge" = "false" ] ; then
+				interfaces_numa[$i]=-1   #set_irq to all cores
+				continue
+			else #is father pci bus and slot is 0000:00
+				cat $PCI_SLOT_PREFIX$INTERFACE$FATHER_PCI_SLOT_SUFFIX > /dev/null 2>&1
+				if [ $? ]; then
+					FATHER_PCI=$( ls -l $PCI_SLOT_PREFIX$INTERFACE/device  | tr "/" " " | awk '{ print $NF}' | cut -b -7 )
+				else
+					FATHER_PCI=$( cat $PCI_SLOT_PREFIX$INTERFACE$FATHER_PCI_SLOT_SUFFIX | grep PCI_SLOT_NAME | awk -F "=" '{print $2}' )
+				fi
+				FATHER_PCI_BUS=`echo $FATHER_PCI | awk -F ":" '{print $1}'`
+				FATHER_PCI_SLOT=`echo $FATHER_PCI | awk -F ":" '{print $2}'`
+				if [ $FATHER_PCI_BUS = "0000" ] && [ $( printf "%d" 0x$FATHER_PCI_SLOT ) -lt 32 ]  ; then
+					interfaces_numa[$i]=0
+				elif [ $NUMA_NUMBER -eq 2 ] ; then
+					#echo "INFO - setting interface $INTERFACE affinity to numa 1"
+					interfaces_numa[$i]=1
+				else
+					echo_warning
+					echo "WARNING - can't detect numa node for interface $INTERFACE, setting affinity to node 1."
+					interfaces_numa[$i]=1
+					ECHO=1
+				fi
+			fi
+		fi
+	done
+
+	#run set irq affinity scripts
+	for i in ${!interfaces[*]} ; do
+		INTERFACE=${interfaces[$i]}
+		INTERFACE_NUMA=${interfaces_numa[$i]}
+
+		if [ $INTERFACE_NUMA -eq -1 ] ; then
+			rc=`$SET_IRQ_AFIINITY_ALL $INTERFACE`
+		else
+			rc=`$SET_IRQ_AFIINITY_BY_NODE $INTERFACE_NUMA $INTERFACE`
+		fi
+
+	done
+
+	if [ !$ECHO ]; then
+		echo_success
+	fi
+}
+
+stop()
+{
+	if [ $IRQBALANCER ]; then
+		/sbin/chkconfig $IRQBALANCER on
+	fi
+	echo -n "mlnx_affinity stopped"
+	echo_success
+}
+
+
+case $ACTION in
+        start)
+                start
+                ;;
+        stop)
+                stop
+                ;;
+        restart)
+                stop
+                start
+                ;;
+        *)
+                echo
+                echo "Usage: `basename $0` {start|stop|restart}"
+                echo
+                exit 1
+esac

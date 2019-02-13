@@ -1,0 +1,75 @@
+#!/bin/bash
+#
+# Copyright (c) 2006 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+
+# Save original sysctl values
+sysctl_orig=/var/cache/sysctl_perf_tuning
+
+load()
+{
+	if [ -f $sysctl_orig ]; then
+		/bin/rm -f $sysctl_orig
+	fi
+
+	umask 022
+	touch $sysctl_orig
+	/sbin/sysctl net.ipv4.tcp_timestamps		>> $sysctl_orig
+	/sbin/sysctl net.ipv4.tcp_sack			>> $sysctl_orig
+	/sbin/sysctl net.core.netdev_max_backlog	>> $sysctl_orig
+	/sbin/sysctl net.core.rmem_max			>> $sysctl_orig
+	/sbin/sysctl net.core.wmem_max			>> $sysctl_orig
+	/sbin/sysctl net.core.rmem_default		>> $sysctl_orig
+	/sbin/sysctl net.core.wmem_default		>> $sysctl_orig
+	/sbin/sysctl net.core.optmem_max		>> $sysctl_orig
+	/sbin/sysctl net.ipv4.tcp_rmem			>> $sysctl_orig
+	/sbin/sysctl net.ipv4.tcp_wmem			>> $sysctl_orig
+	/sbin/sysctl net.ipv4.tcp_low_latency		>> $sysctl_orig
+
+	/sbin/sysctl -q -w net.ipv4.tcp_timestamps=0
+	/sbin/sysctl -q -w net.ipv4.tcp_sack=1
+	/sbin/sysctl -q -w net.core.netdev_max_backlog=250000
+	/sbin/sysctl -q -w net.core.rmem_max=4194304
+	/sbin/sysctl -q -w net.core.wmem_max=4194304
+	/sbin/sysctl -q -w net.core.rmem_default=4194304
+	/sbin/sysctl -q -w net.core.wmem_default=4194304
+	/sbin/sysctl -q -w net.core.optmem_max=4194304
+	/sbin/sysctl -q -w net.ipv4.tcp_rmem="4096 87380 4194304"
+	/sbin/sysctl -q -w net.ipv4.tcp_wmem="4096 65536 4194304"
+	/sbin/sysctl -q -w net.ipv4.tcp_low_latency=1
+}
+
+unload()
+{
+	if [ ! -f $sysctl_orig ]; then
+		return
+	fi
+
+	/sbin/sysctl -q -p $sysctl_orig
+	/bin/rm -f $sysctl_orig
+}
+
+$1

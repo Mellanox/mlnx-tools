@@ -53,13 +53,13 @@ def get_stats(intf, keys = None):
 		rc = process.wait()
 		stdout_pipe.seek(0)
 		if (rc):
-			print "error running ethtool(%d):" % (process.returncode)
+			print(("error running ethtool(%d):" % (process.returncode)))
 			sys.exit(0)
 
 		map = {}
 		output = stdout_pipe.readlines()[1:]
 	for line in output:
-		key, val = line.strip().split(":")
+		key, val = line.strip().decode('utf8').split(":")
 
 		if not keys == None:
 			keys += [key]
@@ -81,11 +81,11 @@ parser.add_option("-c", "--count", dest="count", default=-1, type="int",
 (options, args) = parser.parse_args()
 
 if (options.intf == None):
-	print "Interface name is required"
+	print("Interface name is required")
 	parser.print_usage()
 	sys.exit(1)
 
-print "Initializing mlnx_perf..."
+print("Initializing mlnx_perf...")
 
 # keys must be ordered, so can't use 'for key in map'
 keys = []
@@ -99,10 +99,10 @@ for key in keys:
 count = int(options.count)
 
 if count < -1 or count == 0:
-	print "Error, please use positive value for \"count\" or \"-1\" for no exit "
+	print("Error, please use positive value for \"count\" or \"-1\" for no exit ")
 	sys.exit(1)
 
-print "Sampling started."
+print("Sampling started.")
 
 while count != 0:
 	time.sleep(float(options.interval))
@@ -110,7 +110,7 @@ while count != 0:
 
 	curr = get_stats(options.intf)
 
-	if (curr.has_key('timestamp') and prev.has_key('timestamp')):
+	if ('timestamp' in curr and 'timestamp' in prev):
 		secs = float(curr['timestamp'] - prev['timestamp']) / 1000
 	else:
 		secs = float(options.interval)
@@ -126,12 +126,13 @@ while count != 0:
 
 		bw = (curr[key]-prev[key]) / secs
 		if (bw > 0):
-			if "bytes" in key:
+			if "bytes" in key and not "_to_" in key:
 				# Calculate throughput rate in Mbps from the Bytes counter
-				print "%30s: %-20s = %-20s" % (key, thous(bw) + " Bps",
-					thous(bw * 8 / 1000000) + " Mbps")
+				# Make sure to not include rx_XXX_to_XXX_bytes_phy counters
+				print(("%30s: %-20s = %-20s" % (key, thous(bw) + " Bps",
+					thous(bw * 8 / 1000000) + " Mbps")))
 			else:
-				print "%30s: %s" % (key, thous(bw))
+				print(("%30s: %s" % (key, thous(bw))))
 				something_printed = True
 
 			m = re.match("tx_prio_?(\d+)_bytes", key)
@@ -150,10 +151,10 @@ while count != 0:
 	if something_printed:
 		for up in up_bw:
 			# Calculate throughput rate in Mbps from the Bytes counter
-			print "%30s: %-20s Mbps = %-2.2f%%" % ("UP " + str(up), thous(up_bw[up] *
-				8 / 1000000), 100.0 * up_bw[up] / total_bw)
+			print(("%30s: %-20s Mbps = %-2.2f%%" % ("UP " + str(up), thous(up_bw[up] *
+				8 / 1000000), 100.0 * up_bw[up] / total_bw)))
 		for up in up_packets:
-			print "%30s: %-20s Tran/sec = %-2.2f%%" % ("UP " + str(up), thous(up_packets[up]), 100.0 * up_packets[up] / total_packets)
+			print(("%30s: %-20s Tran/sec = %-2.2f%%" % ("UP " + str(up), thous(up_packets[up]), 100.0 * up_packets[up] / total_packets)))
 
-		print "--------"
+		print("--------")
 		sys.stdout.flush()

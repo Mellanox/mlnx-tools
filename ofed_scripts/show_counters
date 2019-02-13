@@ -1,0 +1,61 @@
+#!/bin/bash
+
+#This script dumps hw_counters and cm counters of
+#all ports of the given rdma device.
+
+function read_hw_counters()
+{
+	if [ ! -d /sys/class/infiniband/$device ] ; then
+		echo "Device $device not found"
+		exit 1
+	fi
+
+	ports=$(ls /sys/class/infiniband/$device/ports/)
+	for port in $ports; do
+		echo "Port $port hw counters:"
+		counters_files=$(ls /sys/class/infiniband/$device/ports/$port/hw_counters/)
+
+		for file in $counters_files; do
+			value=$(cat /sys/class/infiniband/$device/ports/$port/hw_counters/$file)
+			echo "$file: $value"
+		done
+	done
+}
+
+function read_cm_counters()
+{
+	if [ ! -d /sys/class/infiniband_cm/$device ] ; then
+		return
+	fi
+
+	dirs=$(ls /sys/class/infiniband_cm/$device/)
+	for port in $dirs; do
+		if [ -z "${port##*[!0-9]*}" ]; then
+			#if this is not port number, skip.
+			continue
+		fi
+		echo "Port $port cm counters:"
+		counters_dirs=$(ls /sys/class/infiniband_cm/$device/$port/)
+
+		for dir in $counters_dirs; do
+			counters_files=$(ls /sys/class/infiniband_cm/$device/$port/$dir/)
+			for file in $counters_files; do
+				value=$(cat /sys/class/infiniband_cm/$device/$port/$dir/$file)
+				echo "$file: $value"
+			done
+		done
+	done
+
+}
+
+if [ $# -lt 1 ]; then
+	echo "Valid command is: show_rdma_counters <rdma_device_name>"
+	echo "Example:"
+	echo "show_rdma_counters mlx5_0"
+	exit 0
+fi
+
+device=$1
+
+read_hw_counters
+read_cm_counters

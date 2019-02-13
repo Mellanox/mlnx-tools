@@ -1,0 +1,115 @@
+#!/bin/bash
+#
+# Copyright (c) 2016 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+# Author: Majd Dibbiny <majd@mellanox.com>
+#
+
+DEVICE=mlx5_0
+PORT=1
+MODE=-1
+
+usage="Set/Show RoCE default ToS of RDMA_CM applications
+
+Usage:
+	cma_class
+Options:
+ -d <dev>        use IB device <dev> (default mlx5_0)
+ -p <port>       use port <port> of IB device (default 1)
+ -t <tos>  set ToS of RoCE RDMA_CM applications (default 0)"
+
+
+while getopts "d:t:hp:" arg; do
+case $arg in
+		h)
+		echo "$usage"
+		exit
+		;;
+		d)
+		DEVICE=$OPTARG
+		;;
+		p)
+		PORT=$OPTARG
+		;;
+		t)
+		MODE=$OPTARG
+		;;
+	esac
+done
+
+ID=$(id -u)
+if [ $ID -ne 0 ] ; then
+	echo you must be root to run this
+	exit 1
+fi
+
+if (! cat /proc/mounts |grep /sys/kernel/config > /dev/null) ; then
+	if (! mount -t configfs none /sys/kernel/config) ; then
+		echo "Fail to mount configfs"
+		exit 1
+	fi
+fi
+
+if (modinfo configfs &> /dev/null) ; then
+	if (! cat /proc/modules|grep configfs > /dev/null) ; then
+		modprobe configfs
+	fi
+fi
+
+cd /sys/kernel/config/
+
+if [ ! -d rdma_cm ] ; then
+	echo module rdma_cm is not loaded or does not support configfs
+	exit 1
+fi
+
+cd rdma_cm
+
+if [ ! -d $DEVICE ] ; then
+	sudo mkdir $DEVICE
+	if [ $? -ne 0 ] ; then
+		echo failed to creat configuration for $DEVICE
+		exit 1
+	fi
+fi
+
+if [ ! -d $DEVICE/ports/$PORT ] ; then
+	echo device $DEVICE port $PORT does not exist
+	exit 1
+fi
+
+cd $DEVICE/ports/$PORT
+
+if [ $MODE -ge 0 ] ; then
+	echo $MODE |sudo tee default_roce_tos
+else
+	cat default_roce_tos
+fi
+
+cd ../../..
+
+sudo rmdir $DEVICE
+

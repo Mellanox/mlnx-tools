@@ -30,6 +30,8 @@ import sys
 import os
 if os.path.exists('/usr/share/pyshared'):
     sys.path.append('/usr/share/pyshared')
+if os.path.exists('/usr/lib/python2.7/site-packages'):
+    sys.path.append('/usr/lib/python2.7/site-packages')
 import ast
 from optparse import OptionParser
 from dcbnetlink import DcbController
@@ -47,83 +49,83 @@ list_statistics = ["rppp_rp_centiseconds", "rppp_created_rps", "ignored_cnm", "e
 
 
 class QCN:
-    def get(self):
-	raise "Not implemented"
-    def set(self, qcn):
-	raise "Not implemented"
-    def getstats(self):
-	raise "Not implemented"
+	def get(self):
+		raise "Not implemented"
+	def set(self, qcn):
+		raise "Not implemented"
+	def getstats(self):
+		raise "Not implemented"
 
 
 class QCNNL(QCN):
-    def __init__(self,ctrl):
-	self.ctrl = ctrl
-    def get(self):
-	return ctrl.get_ieee_qcn()
+	def __init__(self,ctrl):
+		self.ctrl = ctrl
+	def get(self):
+		return ctrl.get_ieee_qcn()
 
-    def set(self, qcn):
-	ctrl.set_ieee_qcn(qcn)
+	def set(self, qcn):
+		ctrl.set_ieee_qcn(qcn)
 
-    def get_statistics(self):
-	return ctrl.get_ieee_qcnstats()
+	def get_statistics(self):
+		return ctrl.get_ieee_qcnstats()
 
 class QCNSysfs(QCN):
-    def __init__(self, path):
-	self.path = path
+	def __init__(self, path):
+		self.path = path
 
-    def get(self):
-	qcn_params = []
-	f = open(self.path, "r")
-	for item in f.read().split():
-		if (item == "priority" or item == "|priority"):
-			lastItem = item
-			continue
-		elif (item == ":" or item == "|"):
-			continue
-		elif (lastItem == "priority" or lastItem == "|priority"):
-			lastItem = ""
-			continue
-		qcn_params.append(int(item))
-	f.close()
-	return qcn_params
+	def get(self):
+		qcn_params = []
+		f = open(self.path, "r")
+		for item in f.read().split():
+			if (item == "priority" or item == "|priority"):
+				lastItem = item
+				continue
+			elif (item == ":" or item == "|"):
+				continue
+			elif (lastItem == "priority" or lastItem == "|priority"):
+				lastItem = ""
+				continue
+			qcn_params.append(int(item))
+		f.close()
+		return qcn_params
 
-    def set(self, qcn):
-	f = open(self.path, "w")
-	f.write(" ".join(str(r) for r in qcn))
-	f.close()
+	def set(self, qcn):
+		f = open(self.path, "w")
+		f.write(" ".join(str(r) for r in qcn))
+		f.close()
 
 class QCNStatsSysfs(QCN):
-    def __init__(self, path):
-	self.path = path
+	def __init__(self, path):
+		self.path = path
 
-    def get_statistics(self):
-	qcn_stats = []
-	f = open(self.path, "r")
-	for item in f.read().split():
-		if (item == "priority" or item == "|priority"):
-			lastItem = item
-			continue
-		elif (item == ":" or item == "|"):
-			continue
-		elif (lastItem == "priority" or lastItem == "|priority"):
-			lastItem = ""
-			continue
-		qcn_stats.append(int(item))
-	f.close()
-	return qcn_stats
+	def get_statistics(self):
+		qcn_stats = []
+		f = open(self.path, "r")
+		for item in f.read().split():
+			if (item == "priority" or item == "|priority"):
+				lastItem = item
+				continue
+			elif (item == ":" or item == "|"):
+				continue
+			elif (lastItem == "priority" or lastItem == "|priority"):
+				lastItem = ""
+				continue
+			qcn_stats.append(int(item))
+		f.close()
+		return qcn_stats
 
 def pretty_print_qcn(qcn, values):
 	# Deal with an additions of qcn parameters which were not added to the tool #
 	additions = (len(qcn) - (NUMBER_OF_TCS * NUMBER_OF_QCN_PARAMS)) / NUMBER_OF_TCS
 
 	for tc in range(NUMBER_OF_TCS):
-		print "priority %d:" % tc
+		print(("priority %d:" % tc))
 		for val in values:
 			if isinstance(qcn, list):
-				print "\t%s: %d" % (val,qcn[(tc * (len(values) + additions)) + values.index(val)])
+				print(("\t%s: %d" % (val,qcn[int((tc * (len(values) + additions)) + values.index(val))])))
 			else:
-				print "\t%s: %d" % (val,qcn[values.index(val)][tc])
-		print
+				print(("\t%s: %d" % (val,qcn[values.index(val)][tc])))
+		print("")
 
 
 def update_paremeter(qcn, listPerTc, param):
@@ -186,19 +188,19 @@ parser.add_option("--cndd_state_machine", nargs=8, type="int", dest="cndd_state_
 (options, args) = parser.parse_args()
 
 if len(args) > 0:
-    print "Bad arguments"
+    print("Bad arguments")
     parser.print_usage()
     sys.exit(1)
 
 if (options.intf == None):
-	print "Interface name is required"
+	print("Interface name is required")
 	parser.print_usage()
 	sys.exit(1)
 
-tmp_list = ast.literal_eval(options.__str__()).values()
+tmp_list = list(ast.literal_eval(options.__str__()).values())
 
 if (tmp_list.count(None) == len(tmp_list) - 1):
-	print "No action was asked for, choose -h to see options"
+	print("No action was asked for, choose -h to see options")
 	parser.print_usage()
 	sys.exit(1)
 
@@ -268,7 +270,7 @@ try:
 
 
 except:
-        print "QCN is not supported on your system!"
-        qcn = []
+	print("QCN is not supported on your system!")
+	qcn = []
 
 

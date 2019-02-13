@@ -28,12 +28,12 @@
 
 Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
-Version: 1.5.0
+Version: 4.6.0
 Release: 0%{?_dist}
 License: GPLv2
-Url: https://github.com/aron-silverton/mlnx-tools
+Url: https://github.com/Mellanox/mlnx-tools
 Group: Applications/System
-Source: https://github.com/aron-silverton/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tgz
+Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tar.gz
 BuildRoot: %{?build_root:%{build_root}}%{!?build_root:/var/tmp/%{name}}
 Vendor: Mellanox Technologies
 Requires: perl
@@ -69,10 +69,21 @@ fi
 python setup.py install -O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}
 cd -
 
-install -D -m 0755 ofed_scripts/cma_roce_mode %{buildroot}%{_sbindir}/cma_roce_mode
-install -D -m 0755 ofed_scripts/ibdev2netdev %{buildroot}%{_bindir}/ibdev2netdev
-install -D -m 0755 ofed_scripts/show_gids %{buildroot}%{_sbindir}/show_gids
-install -D -m 0755 roce_config.sh %{buildroot}%{_bindir}/roce_config
+install -d %{buildroot}/sbin
+install -d %{buildroot}%{_sbindir}
+install -d %{buildroot}%{_bindir}
+install -d %{buildroot}%{_sysconfdir}/udev/rules.d
+install -m 0755 ofed_scripts/sysctl_perf_tuning %{buildroot}/sbin
+install -m 0755 ofed_scripts/cma_roce_mode      %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/cma_roce_tos       %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/*affinity*         %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/setup_mr_cache.sh  %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/odp_stat.sh        %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/show_counters      %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/show_gids          %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/ibdev2netdev       %{buildroot}%{_bindir}
+install -m 0755 ofed_scripts/roce_config.sh     %{buildroot}%{_bindir}/roce_config
+install -m 0644 kernel-boot/91-tmfifo_net.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -89,8 +100,10 @@ rm -rf %{buildroot}
 
 %files -f mlnx-tools-files
 %defattr(-,root,root,-)
+/sbin/sysctl_perf_tuning
 %{_sbindir}/*
 %{_bindir}/*
+%{_sysconfdir}/udev/rules.d/91-tmfifo_net.rules
 
 %changelog
 * Wed Nov 1 2017 Vladimir Sokolovsky <vlad@mellanox.com>

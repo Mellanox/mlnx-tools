@@ -52,6 +52,8 @@ import glob
 import subprocess
 import argparse
 import traceback
+import socket
+import struct
 from enum import Enum
 from argparse import RawTextHelpFormatter
 try:
@@ -71,88 +73,99 @@ entryList = []
 color = 1
 
 ftb_type = ["NIC_RX", "NIC_TX", "ESW_EGRESS_ACL","ESW_INGRESS_ACL", "ESW_FDB", "SNIFFER_RX", "SNIFFER_TX", "TX_RDMA", "TX_RDMA"]
-fte_action = ["", "ALLOW", "DROP", "", "FWD"]
-fte_match = ["OUT_HDR", "MISC", "IN_HDR", "", ""]
+fte_action = ["ALLOW", "DROP", "FWD", "FLOW_COUNT", "ENCAP", "DECAP", "MODIFY_HDR", "POP_VLAN", "PUSH_VLAN", "FPGA_ACC", "POP_VLAN_2", "PUSH_VLAN_2"]
+fte_match = ["OUT_HDR", "MISC", "IN_HDR", "MISC_2"]
 dest_type = ["VPORT", "FLOW_TABLE", "TIR", "QP"]
 
 # Dict to rename the long name to short one
 match_criteria = {
-	"outer_headers.smac_47_16"		:	"out.smac_47_16",
-	"outer_headers.ethertype"		:	"out.ethtype",
-	"outer_headers.smac_15_0"		:	"out.smac_15_0",
-	"outer_headers.dmac_47_16"		:	"out.dmac_47_16",
-	"outer_headers.first_vid"		:	"out.1st_vid",
-	"outer_headers.first_cfi"		:	"out.1st_cfi",
-	"outer_headers.first_prio"		:	"out.1st_prio",
-	"outer_headers.dmac_15_0"		:	"out.dmac_15_0",
-	"outer_headers.tcp_flags"		:	"out.tcp_flags",
-	"outer_headers.frag"			:	"out.frag",
-	"outer_headers.svlan_tag"		:	"out.svlan_tag",
-	"outer_headers.cvlan_tag"		:	"out.cvlan_tag",
-	"outer_headers.ip_ecn"			:	"out.ip_ecn",
-	"outer_headers.ip_dscp"			:	"out.ip_dscp",
-	"outer_headers.ip_protocol"		:	"out.ip_prot",
-	"outer_headers.tcp_dport"		:	"out.tcp_dport",
-	"outer_headers.tcp_sport"		:	"out.tcp_sport",
-	"outer_headers.udp_dport"		:	"out.udp_dport",
-	"outer_headers.udp_sport"		:	"out.udp_sport",
-	"outer_headers.src_ip_127_96"		:	"out.src_ip_127_96",
-	"outer_headers.src_ip_95_64"		:	"out.src_ip_95_64",
-	"outer_headers.src_ip_63_32"		:	"out.src_ip_63_32",
-	"outer_headers.src_ip_31_0"		:	"out.src_ip_31_0",
-	"outer_headers.dst_ip_127_96"		:	"out.dst_ip_127_96",
-	"outer_headers.dst_ip_95_64"		:	"out.dst_ip_95_64",
-	"outer_headers.dst_ip_63_32"		:	"out.dst_ip_63_32",
-	"outer_headers.dst_ip_31_0"		:	"out.dst_ip_31_0",
+	"outer_headers.smac_47_16"		:	"smac_47_16",
+	"outer_headers.smac_15_0"		:	"smac_15_0",
+	"outer_headers.dmac_47_16"		:	"dmac_47_16",
+	"outer_headers.dmac_15_0"		:	"dmac_15_0",
+	"outer_headers.ethertype"		:	"ethtype",
+	"outer_headers.first_prio"		:	"1st_prio",
+	"outer_headers.first_cfi"		:	"1st_cfi",
+	"outer_headers.first_vid"		:	"1st_vid",
+	"outer_headers.ip_protocol"		:	"ip_prot",
+	"outer_headers.ip_dscp"			:	"ip_dscp",
+	"outer_headers.ip_ecn"			:	"ip_ecn",
+	"outer_headers.cvlan_tag"		:	"cvlan_tag",
+	"outer_headers.svlan_tag"		:	"svlan_tag",
+	"outer_headers.frag"			:	"frag",
+	"outer_headers.ip_version"		:	"ip_ver",
+	"outer_headers.tcp_flags"		:	"tcp_flags",
+	"outer_headers.tcp_sport"		:	"tcp_sport",
+	"outer_headers.tcp_dport"		:	"tcp_dport",
+	"outer_headers.ttl_hoplimit"		:	"ttl_hoplimit",
+	"outer_headers.udp_sport"		:	"udp_sport",
+	"outer_headers.udp_dport"		:	"udp_dport",
+	"outer_headers.src_ip_127_96"		:	"src_ip_127_96",
+	"outer_headers.src_ip_95_64"		:	"src_ip_95_64",
+	"outer_headers.src_ip_63_32"		:	"src_ip_63_32",
+	"outer_headers.src_ip_31_0"		:	"src_ip_31_0",
+	"outer_headers.dst_ip_127_96"		:	"dst_ip_127_96",
+	"outer_headers.dst_ip_95_64"		:	"dst_ip_95_64",
+	"outer_headers.dst_ip_63_32"		:	"dst_ip_63_32",
+	"outer_headers.dst_ip_31_0"		:	"dst_ip_31_0",
+
 	"misc_parameters.source_sqn"		:	"src_sqn",
+	"misc_parameters.src_esw_owner_vhca_id"	:	"src_esw_vhca_id",
 	"misc_parameters.source_port"		:	"src_port",
-	"misc_parameters.inner_second_vid"	:	"in_2nd_vid",
-	"misc_parameters.inner_second_cfi"	:	"in_2nd_cfi",
-	"misc_parameters.inner_second_prio"	:	"in_2nd_prio",
-	"misc_parameters.outer_second_vid"	:	"out_2nd_vid",
-	"misc_parameters.outer_second_cfi"	:	"out_2nd_cfi",
-	"misc_parameters.outer_second_prio"	:	"out_2nd_prio",
+	"misc_parameters.outer_second_vid"	:	"o_2nd_vid",
+	"misc_parameters.outer_second_cfi"	:	"o_2nd_cfi",
+	"misc_parameters.outer_second_prio"	:	"o_2nd_prio",
+	"misc_parameters.inner_second_vid"	:	"i_2nd_vid",
+	"misc_parameters.inner_second_cfi"	:	"i_2nd_cfi",
+	"misc_parameters.inner_second_prio"	:	"i_2nd_prio",
+	"misc_parameters.inner_second_svlan_ta"	:	"i_2nd_svlan_tag",
+	"misc_parameters.outer_second_svlan_ta"	:	"o_2nd_svlan_tag",
+	"misc_parameters.inner_second_cvlan_ta"	:	"i_2nd_cvlan_tag",
+	"misc_parameters.outer_second_cvlan_ta"	:	"o_2nd_cvlan_tag",
+	"misc_parameters.outer_emd_tag"		:	"o_emd_tag",
 	"misc_parameters.gre_protocol"		:	"gre_protocol",
-	"misc_parameters.inner_second_svlan_ta"	:	"in_2nd_svlan_ta",
-	"misc_parameters.outer_second_svlan_ta"	:	"out_2nd_svlan_ta",
-	"misc_parameters.inner_second_cvlan_ta"	:	"in_2nd_cvlan_ta",
-	"misc_parameters.outer_second_cvlan_ta"	:	"out_2nd_cvlan_ta",
-	"misc_parameters.gre_key_l"		:	"gre_key_l",
 	"misc_parameters.gre_key_h"		:	"gre_key_h",
+	"misc_parameters.gre_key_l"		:	"gre_key_l",
 	"misc_parameters.vxlan_vni"		:	"vxlan_vni",
 	"misc_parameters.geneve_oam"		:	"geneve_oam",
 	"misc_parameters.geneve_vni"		:	"geneve_vni",
-	"misc_parameters.outer_ipv6_flow_label"	:	"out_ipv6_flow_label",
-	"misc_parameters.inner_ipv6_flow_label"	:	"in_ipv6_flow_label",
+	"misc_parameters.outer_ipv6_flow_label"	:	"o_ipv6_flow_label",
+	"misc_parameters.inner_ipv6_flow_label"	:	"i_ipv6_flow_label",
 	"misc_parameters.geneve_protocol_type"	:	"geneve_prot_type",
 	"misc_parameters.bth_dst_qp"		:	"bth_dst_qp",
-	"inner_headers.smac_47_16"		:	"in.smac_47_16",
-	"inner_headers.ethertype"		:	"in.ethtype",
-	"inner_headers.smac_15_0"		:	"in.smac_15_0",
-	"inner_headers.dmac_47_16"		:	"in.dmac_47_16",
-	"inner_headers.first_vid"		:	"in.1st_vid",
-	"inner_headers.first_cfi"		:	"in.1st_cfi",
-	"inner_headers.first_prio"		:	"in.1st_prio",
-	"inner_headers.dmac_15_0"		:	"in.dmac_15_0",
-	"inner_headers.tcp_flags"		:	"in.tcp_flags",
-	"inner_headers.frag"			:	"in.frag",
-	"inner_headers.svlan_tag"		:	"in.svlan_tag",
-	"inner_headers.cvlan_tag"		:	"in.cvlan_tag",
-	"inner_headers.ip_ecn"			:	"in.ip_ecn",
-	"inner_headers.ip_dscp"			:	"in.ip_dscp",
-	"inner_headers.ip_protocol"		:	"in.ip_prot",
-	"inner_headers.tcp_dport"		:	"in.tcp_dport",
-	"inner_headers.tcp_sport"		:	"in.tcp_sport",
-	"inner_headers.udp_dport"		:	"in.udp_dport",
-	"inner_headers.udp_sport"		:	"in.udp_sport",
-	"inner_headers.src_ip_127_96"		:	"in.src_ip_127_96",
-	"inner_headers.src_ip_95_64"		:	"in.src_ip_95_64",
-	"inner_headers.src_ip_63_32"		:	"in.src_ip_63_32",
-	"inner_headers.src_ip_31_0"		:	"in.src_ip_31_0",
-	"inner_headers.dst_ip_127_96"		:	"in.dst_ip_127_96",
-	"inner_headers.dst_ip_95_64"		:	"in.dst_ip_95_64",
-	"inner_headers.dst_ip_63_32"		:	"in.dst_ip_63_32",
-	"inner_headers.dst_ip_31_0"		:	"in.dst_ip_31_0"
+	"misc_parameters.inner_esp_spi"		:	"i_esp_spi",
+	"misc_parameters.outer_esp_spi"		:	"o_esp_spi",
+	"misc_parameters.outer_emd_tag_data"	:	"o_emd_tag_data",
+
+	"inner_headers.smac_47_16"		:	"smac_47_16",
+	"inner_headers.smac_15_0"		:	"smac_15_0",
+	"inner_headers.dmac_47_16"		:	"dmac_47_16",
+	"inner_headers.dmac_15_0"		:	"dmac_15_0",
+	"inner_headers.ethertype"		:	"ethtype",
+	"inner_headers.first_prio"		:	"1st_prio",
+	"inner_headers.first_cfi"		:	"1st_cfi",
+	"inner_headers.first_vid"		:	"1st_vid",
+	"inner_headers.ip_protocol"		:	"ip_prot",
+	"inner_headers.ip_dscp"			:	"ip_dscp",
+	"inner_headers.ip_ecn"			:	"ip_ecn",
+	"inner_headers.cvlan_tag"		:	"cvlan_tag",
+	"inner_headers.svlan_tag"		:	"svlan_tag",
+	"inner_headers.frag"			:	"frag",
+	"inner_headers.ip_version"		:	"ip_ver",
+	"inner_headers.tcp_flags"		:	"tcp_flags",
+	"inner_headers.tcp_sport"		:	"tcp_sport",
+	"inner_headers.tcp_dport"		:	"tcp_dport",
+	"inner_headers.ttl_hoplimit"		:	"ttl_hoplimit",
+	"inner_headers.udp_sport"		:	"udp_sport",
+	"inner_headers.udp_dport"		:	"udp_dport",
+	"inner_headers.src_ip_127_96"		:	"src_ip_127_96",
+	"inner_headers.src_ip_95_64"		:	"src_ip_95_64",
+	"inner_headers.src_ip_63_32"		:	"src_ip_63_32",
+	"inner_headers.src_ip_31_0"		:	"src_ip_31_0",
+	"inner_headers.dst_ip_127_96"		:	"dst_ip_127_96",
+	"inner_headers.dst_ip_95_64"		:	"dst_ip_95_64",
+	"inner_headers.dst_ip_63_32"		:	"dst_ip_63_32",
+	"inner_headers.dst_ip_31_0"		:	"dst_ip_31_0",
 }
 
 # Dict to find the ethType name
@@ -176,6 +189,12 @@ ip_proto = {
 	50 : "ESP",
 	51 : "AH",
 }
+
+def ip2int(addr):
+	return struct.unpack("!I", socket.inet_aton(addr))[0]
+
+def int2ip(addr):
+	return socket.inet_ntoa(struct.pack("!I", addr))
 
 def test_bit(node=[], bit=None):
 	try:
@@ -217,7 +236,19 @@ class flow_group(NodeMixin):
 		self.table_id = table_id
 		self.group_id = group_id
 		self.match_enable = match_enable
-		self.match_cr = match_cr
+		self.cr_found = []
+
+		for i, cr in enumerate(match_cr):
+			# Only check the cr name
+			if not i % 2:
+				try:
+					cr_rename = match_criteria[cr]
+				except KeyError:
+					continue
+				# Save cr name
+				self.cr_found.append(cr_rename)
+				# Save cr value
+				self.cr_found.append(match_cr[i+1])
 
 class flow_entry(NodeMixin):
 	def __init__(self, parent=None, table_id=None,\
@@ -248,10 +279,21 @@ def printFt(node):
 	return ("level: %s, type: %s" % (node.level, node.type))
 
 def printFg(node):
-	return ("%s" % (node.match_enable))
+	ret = node.match_enable
+	pad = ": |"
+
+	for i, cr in enumerate(node.cr_found):
+		# Only print cr with none 0 value
+		if (i % 2) and (cr is not "0"):
+			cr_name = node.cr_found[i-1]
+			ret += pad + cr_name + "|"
+			pad = ""
+
+	return ret
 
 def printFte(node):
 	ret = " "
+	is_ipv4 = False
 
 	if node.dst_type is not "0":
 		ret += "to (" + node.dst_type + ":" + node.dst_value + ") "
@@ -263,6 +305,8 @@ def printFte(node):
 			if "ethtype" in cr_name:
 				try:
 					cr = eth_type[cr]
+					if cr is "IPv4":
+						is_ipv4 = True
 				except KeyError:
 					pass
 			elif "ip_prot" in cr_name:
@@ -270,10 +314,10 @@ def printFte(node):
 					cr = ip_proto[int(cr, 0)]
 				except KeyError:
 					pass
-			elif "out.dmac_47_16" in cr_name:
-				cr_name = "out.dmac"
+			elif "dmac_47_16" in cr_name:
+				cr_name = "dmac"
 				try:
-					index = node.cr_found.index("out.dmac_15_0")
+					index = node.cr_found.index("dmac_15_0")
 				except ValueError:
 					index = -1
 
@@ -281,10 +325,10 @@ def printFte(node):
 					cr = cr.zfill(8) + node.cr_found[index+1].lstrip("0x").zfill(4)
 					node.cr_found[index] = "0"
 					node.cr_found[index+1] = "0"
-			elif "out.smac_47_16" in cr_name:
-				cr_name = "out.smac"
+			elif "smac_47_16" in cr_name:
+				cr_name = "smac"
 				try:
-					index = node.cr_found.index("out.smac_15_0")
+					index = node.cr_found.index("smac_15_0")
 				except ValueError:
 					index = -1
 
@@ -292,7 +336,11 @@ def printFte(node):
 					cr = cr.zfill(8) + node.cr_found[index+1].lstrip("0x").zfill(4)
 					node.cr_found[index] = "0"
 					node.cr_found[index+1] = "0"
-
+			elif ("_ip_31_0" in cr_name) and is_ipv4:
+				try:
+					cr = int2ip(int(cr, 16))
+				except KeyError:
+					pass
 
 			ret += cr_name + ":" + cr + " "
 
@@ -320,6 +368,7 @@ class fancy_dump():
 			'-'*65,
 			formatter_class=RawTextHelpFormatter)
 		# Add arguments
+		parser.add_argument('-d', help='Device name from #mst status, currently supports ConnectX-4 (/dev/mst/mt4115_pciconf) and ConnectX-4 LX (/dev/mst/mt4117_pciconf)', dest='device', required=True, default=None)
 		parser.add_argument('-g', type=int, help='Gvmi number', dest='gvmi', required=False, default=0)
 		parser.add_argument('-c', type=int, help='Print with color', dest='color', required=False, default=1)
 		parser.add_argument('-f', help='Parse a file from mlxdump', dest='in_file', required=False, default=None)
@@ -327,12 +376,13 @@ class fancy_dump():
 		arg = parser.parse_args()
 		self.gvmi = arg.gvmi
 		color = arg.color
+		self.device = arg.device
 		self.in_file = arg.in_file
 
 	def run(self):
 		if self.in_file is None:
 			#run fsdump command
-			self.cmd = "sudo mlxdump -d /dev/mst/mt4115_pciconf0 fsdump --type FT --no_zero=true" + " --gvmi " + str(self.gvmi)
+			self.cmd = "sudo mlxdump -d " + str(self.device) + " fsdump --type FT --no_zero" + " --gvmi " + str(self.gvmi)
 
 			p = subprocess.Popen(self.cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
 			out, err = p.communicate()
@@ -366,19 +416,32 @@ class fancy_dump():
 				tableList.append(flow_table(None, table_id, level, type, table_miss_id, 1))
 
 			if node[0] == "FG":
-				match_enable = test_bit(node, "match_criteria_enable")
+				match_enable_int = int(test_bit(node, "match_criteria_enable"), 0)
+				match_enable = "NO_MATCH"
+				pad = ""
 
-				if int(match_enable, 0):
+				if match_enable_int:
 					match_cr = node[node.index("match_criteria_enable") + 2:]
 				else:
 					match_cr = []
 
-				match_enable = fte_match[int(match_enable, 0)]
+				for i in range(0, len(fte_match)):
+					if (match_enable_int & (1 << i)):
+						if match_enable is "NO_MATCH":
+							match_enable = ""
+						match_enable  = match_enable + pad + fte_match[i]
+						pad = " "
 
 				groupList.append(flow_group(None, table_id, group_id, match_enable, match_cr))
 
 			if node[0] == "FTE":
-				action = fte_action[int(test_bit(node, "action"), 0)]
+				action_int = int(test_bit(node, "action"), 0)
+				action = ""
+				pad = ""
+				for i in range(0, len(fte_action)):
+					if (action_int & (1 << i)):
+						action = action + pad + fte_action[i]
+						pad = " "
 				valid = test_bit(node,"valid")
 				flow_index = test_bit(node,"flow_index")
 				dst_value = test_bit(node,"destination[0].destination_id")

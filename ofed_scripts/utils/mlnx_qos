@@ -29,14 +29,16 @@
 import sys
 import os
 import subprocess
+import array
 
 if os.path.exists('/usr/share/pyshared'):
 	sys.path.append('/usr/share/pyshared')
+if os.path.exists('/usr/lib/python2.7/site-packages'):
+	sys.path.append('/usr/lib/python2.7/site-packages')
 from optparse import OptionParser
 from dcbnetlink import DcbController
 from collections import defaultdict
 from subprocess import Popen, PIPE
-from dcbnetlink import DcbApp, DcbAppTable
 
 DCB_CAP_DCBX_HOST = 0x1
 DCB_CAP_DCBX_LLD_MANAGED = 0x2
@@ -54,6 +56,92 @@ IEEE_8021QAZ_APP_SEL_STREAM	= 2
 IEEE_8021QAZ_APP_SEL_DGRAM	= 3
 IEEE_8021QAZ_APP_SEL_ANY	= 4
 IEEE_8021QAZ_APP_SEL_DSCP       = 5
+
+parser = OptionParser(usage="%prog -i <interface> [options]", version="%prog 1.2")
+
+parser.add_option("-f", "--pfc", dest="pfc",
+		  help="Set priority flow control for each priority. LIST is " +
+			"comma separated value for each priority starting from 0 to 7. " +
+			"Example: 0,0,0,0,1,1,1,1 enable PFC on TC4-7",
+		  metavar="LIST")
+parser.add_option("-p", "--prio_tc", dest="prio_tc",
+		  help="maps UPs to TCs. LIST is 8 comma separated TC numbers. " +
+			"Example: 0,0,0,0,1,1,1,1 maps UPs 0-3 to TC0, and UPs 4-7 to " +
+			"TC1",
+		  metavar="LIST")
+parser.add_option("-s", "--tsa", dest="tsa",
+		  help="Transmission algorithm for " +
+			"each TC. LIST is comma separated algorithm names for each TC. " +
+			"Possible algorithms: strict, ets and vendor. " +
+			"Example: vendor,strict,ets,ets,ets,ets,ets,ets sets " +
+			"TC0 to vendor, TC1 to strict, TC2-7 to ets.",
+		  metavar="LIST")
+parser.add_option("-t", "--tcbw", dest="tc_bw",
+		  help="Set minimal guaranteed %BW for ETS TCs. LIST is comma " +
+			"separated percents for each TC. Values set to TCs that are " +
+			"not configured to ETS algorithm must be zero. " +
+			"Example: if TC0,TC2 are set to ETS, then 10,0,90,0,0,0,0,0 " +
+			"will set TC0 to 10% and TC2 to 90%. Percents must sum to " +
+			"100.",
+		  metavar="LIST")
+parser.add_option("-r", "--ratelimit", dest="ratelimit",
+		  help="Rate limit for TCs (in Gbps). LIST is a comma separated " +
+			"Gbps limit for each TC. Example: 1,8,8 will limit TC0 to " +
+			"1Gbps, and TC1,TC2 to 8 Gbps each.",
+		  metavar="LIST")
+parser.add_option("-d", "--dcbx", dest="dcbx",
+		  help="set dcbx mode to firmware controlled(fw) or " +
+		       "OS controlled(os). Note, when in OS mode, mlnx_qos should not be used " +
+		       "in parallel with other dcbx tools such as lldptool")
+parser.add_option("--trust", dest="trust",
+                  help="set priority trust state to pcp or dscp")
+parser.add_option("--dscp2prio", dest="dscp2prio",
+                  help="set/del a (dscp,prio) mapping. Example 'set,30,2' maps dscp 30 to priority 2. " +
+                       "'del,30,2' deletes the mapping and resets the dscp 30 mapping back to the default setting priority 0.")
+parser.add_option("--cable_len", dest="cable_len",
+                  help="set cable_len for buffer's xoff and xon thresholds")
+parser.add_option("--prio2buffer", dest="prio2buffer",
+		  help="maps priority to receive buffer. " +
+			"Example: 0,2,5,7,1,2,3,6 maps priorities 0,1,2,3,4,5,6,7 to receive buffer " +
+			"0,2,5,7,1,2,3,6",
+		  metavar="LIST")
+parser.add_option("--buffer_size", dest="buffer_size",
+		  help="Set receive buffer size LIST is comma separated percents for each buffer." +
+			"For pfc enabled buffer, the buffer size must be larger than the xoff_threshold. " +
+			"Example: 87296,87296,0,87296,0,0,0,0 sets receive buffer size for buffer " +
+			"0,1,2,3,4,5,6,7 respectively" ,
+		  metavar="LIST")
+parser.add_option("-i", "--interface", dest="intf",
+		  help="Interface name")
+
+parser.add_option("-a", action="store_true", dest="printall", default=False,
+		  help="Show all interface's TCs")
+
+(options, args) = parser.parse_args()
+
+if len(args) > 0:
+	print("Bad arguments")
+	parser.print_usage()
+	sys.exit(1)
+
+if (options.intf == None):
+	print("Interface name is required")
+	parser.print_usage()
+
+	sys.exit(1)
+
+ratelimit_path = "/sys/class/net/" + options.intf + "/qos/maxrate"
+trust_path = "/sys/class/net/" + options.intf + "/qos/trust"
+dscp2prio_path = "/sys/class/net/" + options.intf + "/qos/dscp2prio"
+buffer_size_path = "/sys/class/net/" + options.intf + "/qos/buffer_size"
+prio2buffer_path = "/sys/class/net/" + options.intf + "/qos/prio2buffer"
+
+is_trust_sysfs = os.path.exists(trust_path);
+is_buffer_sysfs = os.path.exists(buffer_size_path);
+
+
+if (not is_trust_sysfs):
+	from dcbnetlink import DcbApp, DcbAppTable
 
 class Maxrate:
 	def get(self):
@@ -100,25 +188,97 @@ class Trust:
 		self.trust = "none"
 
 	def getTrust(self, ctrl):
-		appTable = ctrl.get_ieee_app_table()
-
-		if appTable.countAppSelector(IEEE_8021QAZ_APP_SEL_DSCP) == 0:
-			self.trust = "pcp"
+		if (is_trust_sysfs):
+			f = open(trust_path, "r")
+			self.trust = f.read().replace('\n', '')
+			f.close()
 		else:
-			self.trust = "dscp"
+			appTable = ctrl.get_ieee_app_table()
+			if appTable.countAppSelector(IEEE_8021QAZ_APP_SEL_DSCP) == 0:
+				self.trust = "pcp"
+			else:
+				self.trust = "dscp"
 
 	def setTrust(self, ctrl, optionTrust):
 		if self.trust == optionTrust:
 			return
+		if (is_trust_sysfs):
+			f = open(trust_path, "w")
+			f.write(optionTrust)
+			f.close()
+		else:
+			appTable = ctrl.get_ieee_app_table()
+			if optionTrust == "pcp":
+				appTable.delAppEntry(ctrl, IEEE_8021QAZ_APP_SEL_DSCP)
+			elif optionTrust == "dscp":
+				appTable.setDefaultAppEntry(ctrl, IEEE_8021QAZ_APP_SEL_DSCP, 64)
 
-		appTable = ctrl.get_ieee_app_table()
+def get_prio2buffer_sysfs():
+	f = open(prio2buffer_path, "r")
+	buffer = array.array('B', [0,0,0,0,0,0,0,0])
+	next(f)
+	for line in f:
+		data = line.split()
+		prio = int(data[0])
+		buf = int(data[1])
+		buffer[prio] = buf
+	f.close()
+	return buffer
 
-		if optionTrust == "pcp":
-			appTable.delAppEntry(ctrl, IEEE_8021QAZ_APP_SEL_DSCP)
-		elif optionTrust == "dscp":
-			appTable.setDefaultAppEntry(ctrl, IEEE_8021QAZ_APP_SEL_DSCP, 64)
+def set_prio2buffer_sysfs(buffer):
+	f = open(prio2buffer_path, "w")
+	msg = ""
+	for prio in range(8):
+		msg += "%1d," % (buffer[prio])
+	f.write("%s" % (msg))
+	f.close()
 
-def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, appTable, pfc_delay):
+def get_buffer_size_sysfs():
+	f = open(buffer_size_path, "r")
+	buffer = array.array('I', [0,0,0,0,0,0,0,0])
+	next(f)
+	next(f)
+	next(f)
+	for line in f:
+		data = line.split()
+		buf = int(data[0])
+		size = int(data[1])
+		buffer[buf] = size
+	f.close()
+	return buffer
+
+def set_buffer_size_sysfs(buffer):
+	f = open(buffer_size_path, "w")
+	msg = ""
+	for buf in range(8):
+		msg += "%1d," % (buffer[buf])
+	f.write("%s" % (msg))
+	f.close()
+
+def print_dscp2prio_sysfs():
+	f = open(dscp2prio_path, "r")
+	s = ["","","","","","","",""]
+
+	next(f)
+	for line in f:
+		data = line.split()
+		dscp = int(data[0])
+		prio = int(data[1])
+		s[prio] += '%02d,' % dscp
+
+	for i in range(8):
+		temp = ""
+		pad = "\tprio:%d dscp:" % i
+		while (len(s[i]) > 24):
+			temp += pad + s[i][:24] + "\n"
+			s[i] = s[i][24:]
+		if s[i] != "":
+			temp += pad + s[i]
+		if temp != "":
+			print(temp)
+	f.close()
+
+def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer_size, prio2buffer):
 	if (ctrl.get_dcbx() & DCB_CAP_DCBX_HOST):
 		print("DCBX mode: OS controlled")
 	else:
@@ -127,7 +287,16 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, appTable, pfc_del
 	print ("Priority trust state: " + trust)
 	if trust == "dscp":
 		print("dscp2prio mapping:")
-		appTable.printAppSelector(IEEE_8021QAZ_APP_SEL_DSCP)
+		if (is_trust_sysfs):
+			print_dscp2prio_sysfs()
+		else:
+			appTable.printAppSelector(IEEE_8021QAZ_APP_SEL_DSCP)
+
+	if (not buffer_error):
+		msg = "Receive buffer size (bytes): "
+		for buf in range(8):
+			msg += "%1d," % (buffer_size[buf])
+		print(msg)
 
 	tc2up = defaultdict(list)
 
@@ -142,6 +311,10 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, appTable, pfc_del
 	msg = "\tenabled     "
 	for up in range(8):
 		msg += "%1d   " % ((pfc_en >> up) & 0x01)
+	if (not buffer_error):
+		msg += "\n\tbuffer      "
+		for up in range(8):
+			msg += "%1d   " % (prio2buffer[up])
 	print(msg)
 
 	for up in range(len(prio_tc)):
@@ -191,68 +364,6 @@ def parse_int(str, min, max, description):
 		parser.print_usage()
 		sys.exit(1)
 
-parser = OptionParser(usage="%prog -i <interface> [options]", version="%prog 1.2")
-
-parser.add_option("-f", "--pfc", dest="pfc",
-		  help="Set priority flow control for each priority. LIST is " +
-			"comma separated value for each priority starting from 0 to 7. " +
-			"Example: 0,0,0,0,1,1,1,1 enable PFC on TC4-7",
-		  metavar="LIST")
-parser.add_option("-p", "--prio_tc", dest="prio_tc",
-		  help="maps UPs to TCs. LIST is 8 comma seperated TC numbers. " +
-			"Example: 0,0,0,0,1,1,1,1 maps UPs 0-3 to TC0, and UPs 4-7 to " +
-			"TC1",
-		  metavar="LIST")
-parser.add_option("-s", "--tsa", dest="tsa",
-		  help="Transmission algorithm for " +
-			"each TC. LIST is comma seperated algorithm names for each TC. " +
-			"Possible algorithms: strict, etc. Example: ets,strict,ets sets " +
-			"TC0,TC2 to ETS and TC1 to strict. The rest are unchanged.",
-		  metavar="LIST")
-parser.add_option("-t", "--tcbw", dest="tc_bw",
-		  help="Set minimal guaranteed %BW for ETS TCs. LIST is comma " +
-			"seperated percents for each TC. Values set to TCs that are " +
-			"not configured to ETS algorithm are ignored, but must be " +
-			"present. Example: if TC0,TC2 are set to ETS, then 10,0,90 " +
-			"will set TC0 to 10% and TC2 to 90%. Percents must sum to " +
-			"100.",
-		  metavar="LIST")
-parser.add_option("-r", "--ratelimit", dest="ratelimit",
-		  help="Rate limit for TCs (in Gbps). LIST is a comma seperated " +
-			"Gbps limit for each TC. Example: 1,8,8 will limit TC0 to " +
-			"1Gbps, and TC1,TC2 to 8 Gbps each.",
-		  metavar="LIST")
-parser.add_option("-d", "--dcbx", dest="dcbx",
-		  help="set dcbx mode to firmware controlled(fw) or " +
-		       "OS controlled(os). Note, when in OS mode, mlnx_qos should not be used " +
-		       "in parallel with other dcbx tools such as lldptool")
-parser.add_option("--trust", dest="trust",
-                  help="set priority trust state to pcp or dscp")
-parser.add_option("--dscp2prio", dest="dscp2prio",
-                  help="set/del a (dscp,prio) mapping. Example 'set,30,2' maps dscp 30 to priority 2. " +
-                       "'del,30,2' resets the dscp 30 mapping back to the default setting priority 0.")
-parser.add_option("--cable_len", dest="cable_len",
-                  help="set cable_len for buffer's xoff and xon thresholds")
-parser.add_option("-i", "--interface", dest="intf",
-		  help="Interface name")
-
-parser.add_option("-a", action="store_true", dest="printall", default=False,
-		  help="Show all interface's TCs")
-
-(options, args) = parser.parse_args()
-
-if len(args) > 0:
-	print("Bad arguments")
-	parser.print_usage()
-	sys.exit(1)
-
-if (options.intf == None):
-	print("Interface name is required")
-	parser.print_usage()
-	
-	sys.exit(1)
-
-ratelimit_path = "/sys/class/net/" + options.intf + "/qos/maxrate"
 
 pfc_en = 0
 pfc_delay = 0
@@ -278,6 +389,35 @@ if (options.dcbx != None):
 		print ("Invalid dcbx mode command. Refer to the help.")
 		sys.exit(1)
 
+# ********* pfc command ******************************
+if options.cable_len:
+	pfc_delay = parse_int(options.cable_len, 0, 1000, "cable_len")
+
+if options.pfc:
+	i = 0
+	pfc_en = 0
+
+	for t in options.pfc.split(","):
+		if i >= 8:
+			print("Too many items for PFC")
+			sys.exit(1)
+
+		temp = parse_int(t, 0, 1, "PFC")
+		pfc_en |= (temp << i)
+
+		i += 1
+
+	if i != 8:
+		print("pfc list must have 8 items")
+		sys.exit(1)
+
+if options.cable_len or options.pfc:
+	try:
+		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
+	except OSError as e:
+		print(e)
+		sys.exit(1)
+
 # ********* dscp2prio command ******************************
 if options.dscp2prio and options.trust:
 	print ("trust and dscp2prio commands cannot be used at the same time.")
@@ -299,18 +439,26 @@ except:
 try:
 	if options.dscp2prio:
 		if action == "set":
-			ctrl.set_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
+			if (is_trust_sysfs):
+				f = open(dscp2prio_path, "w")
+				f.write("%d %d " % (dscp, prio))
+				f.close()
+			else:
+				ctrl.set_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
 		elif action == "del":
-			ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
+			if (not is_trust_sysfs):
+				ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
 
-	appTable = ctrl.get_ieee_app_table()
+	if (not is_trust_sysfs):
+		appTable = ctrl.get_ieee_app_table()
 
 except:
 	if options.dscp2prio:
 		print("dscp2prio command failed")
 		sys.exit(1)
 	else:
-		appTable = DcbAppTable()
+		if (not is_trust_sysfs):
+			appTable = DcbAppTable()
 
 # ********* trust command ******************************
 if options.trust:
@@ -324,7 +472,8 @@ try:
 	if options.trust:
 		trustObj.setTrust(ctrl, options.trust)
 		trustObj.getTrust(ctrl)
-		appTable = ctrl.get_ieee_app_table()
+		if (not is_trust_sysfs):
+			appTable = ctrl.get_ieee_app_table()
 
 except:
 	print ("Priority trust state is not supported on your system")
@@ -332,6 +481,62 @@ except:
 		sys.exit(1)
 	else:
 		trustObj.trust = "none"
+
+# ********* buffer_size and prio2buffer command ************
+buffer_error = 0
+
+try:
+	if (is_buffer_sysfs):
+		prio2buffer = get_prio2buffer_sysfs()
+		buffer_size = get_buffer_size_sysfs()
+	else:
+		prio2buffer, buffer_size = ctrl.get_ieee_dcb_buffer()
+
+except:
+	buffer_error = 1
+	buffer_size = [0, 0, 0, 0, 0, 0, 0, 0]
+	prio2buffer = [0, 0, 0, 0, 0, 0, 0, 0]
+	print ("Buffers commands are not supported on your system")
+	if options.buffer_size or options.prio2buffer:
+		sys.exit(1)
+
+try:
+	if options.prio2buffer:
+		i = 0
+
+		for t in options.prio2buffer.split(","):
+			if i >= 8:
+				print("Too many items for prio2buffer")
+				sys.exit(1)
+
+			prio2buffer[i] = parse_int(t, 0, 7, "prio buffer")
+			i += 1
+
+	if options.buffer_size:
+		i = 0
+
+		for t in options.buffer_size.split(","):
+			if i >= 8:
+				print("Too many items for buffer_size")
+				sys.exit(1)
+
+			buffer_size[i] = int(t)
+			i += 1
+
+	if options.buffer_size or options.prio2buffer:
+		if (is_buffer_sysfs):
+			set_prio2buffer_sysfs(prio2buffer)
+			set_buffer_size_sysfs(buffer_size)
+			prio2buffer = get_prio2buffer_sysfs()
+			buffer_size = get_buffer_size_sysfs()
+		else:
+			ctrl.set_dcb_buffer(_prio2buffer = prio2buffer, _buffer_size = buffer_size)
+			prio2buffer, buffer_size = ctrl.get_ieee_dcb_buffer()
+except:
+	buffer_error = 1
+	if options.buffer_size or options.prio2buffer:
+		print ("Buffers commands error")
+		sys.exit(1)
 
 # ********* ratelimit command ******************************
 try:
@@ -341,7 +546,7 @@ try:
 		maxrate = MaxrateNL(ctrl)
 	else:
 		maxrate = MaxrateSysfs(ratelimit_path)
-	
+
 	if options.ratelimit:
 		i = 0
 		for r in options.ratelimit.split(","):
@@ -380,38 +585,10 @@ try:
 
 except:
 	print("ETS features are not supported on your system")
+	sys.exit(1)
 
 if options.printall:
 	printall = True
-
-# ********* pfc command ******************************
-if options.cable_len:
-	pfc_delay = parse_int(options.cable_len, 0, 1000, "cable_len")
-
-if options.pfc:
-	i = 0
-	pfc_en = 0
-
-	for t in options.pfc.split(","):
-		if i >= 8:
-			print("Too many items for PFC")
-			sys.exit(1)
-
-		temp = parse_int(t, 0, 1, "PFC")
-		pfc_en |= (temp << i)
-
-		i += 1
-
-	if i != 8:
-		print("pfc list must have 8 items")
-		sys.exit(1)
-
-if options.cable_len or options.pfc:
-	try:
-		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
-	except OSError as e:
-		print(e)
-		sys.exit(1)
 
 # ********* ets (tsa, tc_bw, prio_tc) command ******************************
 if (options.tsa):
@@ -425,6 +602,8 @@ if (options.tsa):
 			tsa[i] = IEEE_8021QAZ_TSA_STRICT
 		elif (t == 'ets'):
 			tsa[i] = IEEE_8021QAZ_TSA_ETS
+		elif (t == 'vendor'):
+			tsa[i] = IEEE_8021QAZ_TSA_VENDOR
 		else:
 			print(("Bad TSA value: ", t))
 			parser.print_usage()
@@ -444,8 +623,8 @@ if options.tc_bw:
 
 		bw = parse_int(t, 0, 100, "ETS BW")
 
-		if tsa[i] == IEEE_8021QAZ_TSA_STRICT and bw != 0:
-			print("ETS BW for a strict TC must be 0")
+		if tsa[i] != IEEE_8021QAZ_TSA_ETS and bw != 0:
+			print("ETS BW for a strict/vendor TC must be 0")
 			parser.print_usage()
 			sys.exit(1)
 
@@ -477,4 +656,4 @@ if options.tsa or options.tc_bw or options.prio_tc:
 		print(e)
 		sys.exit(1)
 
-pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trustObj.trust, appTable, pfc_delay)
+pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trustObj.trust, pfc_delay, buffer_size, prio2buffer)

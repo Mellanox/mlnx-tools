@@ -78,7 +78,7 @@ class skprio2up:
 		for i, up in enumerate(new):
 			_up = int(up)
 			if (_up > 8 or _up < 0):
-				print "Bad user prio: %s - should be in the range: 0-7" % up
+				print(("Bad user prio: %s - should be in the range: 0-7" % up))
 				sys.exit(1)
 
 			self.map.append(up)
@@ -140,7 +140,7 @@ class tcnum_mqprio(tcnum):
 					bufsize=4096, stdout=PIPE).stdout
 
 		except:
-			print "QoS is not supported via mqprio"
+			print("QoS is not supported via mqprio")
 			sys.exit(1)
 
 	def get(self):
@@ -175,7 +175,7 @@ if __name__ == "__main__":
 	(options, args) = parser.parse_args()
 
 	if (options.intf == None):
-		print "Interface name is required"
+		print("Interface name is required")
 		parser.print_usage()
 
 		sys.exit(1)
@@ -185,12 +185,12 @@ if __name__ == "__main__":
 
 	mlx_dev = None
 	for line in output:
-		m = re.search(r'mlx\d_\d', line)
+		m = re.search(r'mlx\d_\d', line.decode('utf8'))
 		if m:
 			mlx_dev = m.group(0)
 
 	if not mlx_dev and options.skprio_up:
-		print "Couldn't find RDMA device for %s. Can't set skprio."%options.intf
+		print(("Couldn't find RDMA device for %s. Can't set skprio." % options.intf))
 		sys.exit(1)
 
 	empty = True
@@ -198,13 +198,13 @@ if __name__ == "__main__":
 			bufsize=4096, stdout=PIPE).stdout
 
 	for line in output:
-		m = re.search(r'port (\d+) ==> (\w+)', line)
+		m = re.search(r'port (\d+) ==> (\w+)', line.decode('utf8'))
 		if m:
 			if (m.group(2) == options.intf):
 				empty = False
 				port_num = m.group(1)
 	if (empty):
-		print "Could not find interface %s in ibdev2netdev output"%options.intf
+		print(("Could not find interface %s in ibdev2netdev output" % options.intf))
 		sys.exit(1)
 
 	# try using sysfs - if not exist fallback to tc tool
@@ -217,8 +217,8 @@ if __name__ == "__main__":
 		else:
 			tcnum = tcnum_mqprio(options.intf)
 
-	except Exception, e:
-		print e
+	except Exception as e:
+		print(e)
 		sys.exit(1)
 
 	tcnum.set(max_tc_num)
@@ -230,22 +230,22 @@ if __name__ == "__main__":
 			skprio2up.set(options.skprio_up.split(","))
 		else:
 			if (options.skprio_up is not None):
-				print "skprio2up is available only for RoCE in kernels that don't support set_egress_map"
+				print("skprio2up is available only for RoCE in kernels that don't support set_egress_map")
 
-	except Exception, e:
-		print e
+	except Exception as e:
+		print(e)
 		sys.exit(1)
 
 	if options.show_tc_num:
-		print tcnum.tc_num
+		print((tcnum.tc_num))
 		sys.exit(0)
 
 	tcnum.get()
-	print "Traffic classes are set to %s"%tcnum.tc_num
+	print(("Traffic classes are set to %s" % tcnum.tc_num))
 
 	skprio2up.refresh()
 
 	for up in range(8):
-		print "UP ", up
+		print(("UP  %s" % up))
 		for skprio in skprio2up.up2skprio[int(up)]:
-			print "\tskprio: " + skprio
+			print(("\tskprio: " + skprio))

@@ -1,0 +1,5 @@
+mlnx-tools (4.6.0-0) unstable; urgency=low
+
+  * Initial release synchronized with MLNX_OFED_LINUX-4.6 mlnx-ofed-kernel-utils package
+
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Wed, 13 Feb 2019 15:38:53 -0600

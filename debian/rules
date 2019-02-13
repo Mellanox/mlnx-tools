@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+# -*- mode: makefile; coding: utf-8 -*-
+
+export DH_OPTIONS
+pname:=mlnx-tools
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	dh_installdirs -p$(pname) sbin
+	dh_installdirs -p$(pname) usr/bin
+	dh_installdirs -p$(pname) usr/sbin
+	dh_installdirs -p$(pname) etc/udev/rules.d
+
+	install -m 0644 kernel-boot/91-tmfifo_net.rules debian/$(pname)/etc/udev/rules.d
+
+	install -m 0755 ofed_scripts/sysctl_perf_tuning debian/$(pname)/sbin
+	install -m 0755 ofed_scripts/show_gids          debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/cma_roce_mode      debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/cma_roce_tos       debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/*affinity*         debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/setup_mr_cache.sh  debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/odp_stat.sh        debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/show_counters      debian/$(pname)/usr/sbin
+	install -m 0755 ofed_scripts/roce_config.sh     debian/$(pname)/usr/bin/roce_config
+
+	cd ofed_scripts/utils;	python ./setup.py install --prefix=/usr --root=../../debian/$(pname)

@@ -126,7 +126,7 @@ function print_verbose_info()
 	if [ -f $filepath_vpd ]; then
 		tmp=$IFS
 		IFS=":"
-		vpd_content=`cat $filepath_vpd`
+		vpd_content=`cat $filepath_vpd | strings`
 		devdesc=$(printf "%-15s" $(echo $vpd_content | strings | head -1))
 		partid=$(printf "%-11s" $(echo $vpd_content | strings | head -4 | tail -1 | awk '{print $1}'))
 		IFS=$tmp
@@ -134,6 +134,8 @@ function print_verbose_info()
 		devdesc=""
 		partid="NA"
 	fi
+
+	x=$(find_pdev $d)
 	echo "$x $d ($devid - $partid) $devdesc fw $fwver port $port ($ibstate) ==> $eth ($link_state)"
 }
 
@@ -145,11 +147,11 @@ function get_link_state()
 		filepath_carrier=/sys/class/net/$eth/carrier
 		if [ -f $filepath_carrier ]; then
 			link_state=$(cat $filepath_carrier 2> /dev/null)
-        	        if (( link_state == 1 )); then
-        	                link_state="Up"
-        	        else
-        	                link_state="Down"
-		        fi
+			if (( link_state == 1 )); then
+				link_state="Up"
+			else
+				link_state="Down"
+			fi
 		else
 			link_state="NA"
 		fi
@@ -157,15 +159,58 @@ function get_link_state()
 	echo -n $link_state
 }
 
+function find_matching_ndev_for_gid()
+{
+	gid=$1
+	gid_without_prefix=${gid#"fe80:0000:0000:0000:"}
+	gid_without_colon=${gid_without_prefix//:}
+
+	ip_link_output=$(ip link show)
+	IFS=$'\n' read -rd '' -a array <<<"$ip_link_output"
+
+	for index in "${!array[@]}"
+	do
+		#search for infiniband address
+		if [[ ${array[index]} =~ .*infiniband.* ]]; then
+			ib_addr=${array[index]}
+			#retain string after link/infiniband
+			ib_addr=${ib_addr##*infiniband}
+			#retain string before brd
+			ib_addr=${ib_addr%brd*}
+			#extract 8 bytes of hw address
+			ib_addr=${ib_addr:37:25}
+			#remove : from the address, have only alphanumeric
+			ib_addr=${ib_addr//:}
+
+			ib_ndev_name=${array[index-1]}
+			#retain string before :
+			ib_ndev_name=${ib_ndev_name%:*}
+			#retain string after :
+			ib_ndev_name=${ib_ndev_name#*:}
+
+			if [ $gid_without_colon == $ib_addr ]; then
+				echo -n $ib_ndev_name
+				break
+			fi
+		fi
+	done
+}
+
 if [ "x$oldstyle" == "xn" ]; then
 	for d in $ibdevs; do
 		ports=$(ls /sys/class/infiniband/$d/ports/)
 		for port in $ports; do
-			#Honor ndev given by the kernel in the gid table for RoCE, soft RoCE
-			#if kernel doesn't expose it (for IB), try the different method of
-			#resource match.
-			ethdev=$(cat /sys/class/infiniband/$d/ports/$port/gid_attrs/ndevs/0 2> /dev/null)
-			if [ "$ethdev" == "" ]; then
+			link_layer=$(cat /sys/class/infiniband/$d/ports/$port/link_layer)
+			if [ "x$link_layer" == "xInfiniBand" ]; then
+				gid=$(cat /sys/class/infiniband/$d/ports/$port/gids/0)
+				ethdev=$(find_matching_ndev_for_gid $gid)
+			else
+				ethdev=$(cat /sys/class/infiniband/$d/ports/$port/gid_attrs/ndevs/0 2> /dev/null)
+				#Honor ndev given by the kernel in the gid table for RoCE, soft RoCE
+				#if kernel doesn't expose it (for IB), try the different method of
+				#resource match.
+			fi
+			if [[ -z $ethdev ]]; then
 				ibrsc=$(cat /sys/class/infiniband/$d/device/resource)
 				eths=$(ls /sys/class/net/)
 				for eth in $eths; do
@@ -252,7 +297,7 @@ for ifc in $ifcs; do
 		guid=$(cat /sys/class/net/$ifc/address | cut -b 37- | sed -e 's/://g')
 		find_guid $guid $ifc
 	elif (( len == 6)); then
-		mac=$(cat /sys/class/net/$ifc/address | sed -e 's/://g')	
+		mac=$(cat /sys/class/net/$ifc/address | sed -e 's/://g')
 		find_mac $mac $ifc
 	fi
 done
