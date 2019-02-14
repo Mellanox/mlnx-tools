@@ -1,0 +1,10 @@
+[Unit]
+Description=Job that runs your user script
+
+[Service]
+ExecStart=/sbin/mlnx_eswitch_set.sh
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

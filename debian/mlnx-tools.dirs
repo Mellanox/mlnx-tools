@@ -3,3 +3,6 @@ usr/sbin
 usr/bin
 usr/lib
 etc/udev
+etc/modprobe.d
+etc/systemd/system
+lib/udev

@@ -72,18 +72,25 @@ cd -
 install -d %{buildroot}/sbin
 install -d %{buildroot}%{_sbindir}
 install -d %{buildroot}%{_bindir}
+install -d %{buildroot}%{_sysconfdir}/lib/udev
 install -d %{buildroot}%{_sysconfdir}/udev/rules.d
-install -m 0755 ofed_scripts/sysctl_perf_tuning %{buildroot}/sbin
-install -m 0755 ofed_scripts/cma_roce_mode      %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/cma_roce_tos       %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/*affinity*         %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/setup_mr_cache.sh  %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/odp_stat.sh        %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/show_counters      %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/show_gids          %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/ibdev2netdev       %{buildroot}%{_bindir}
-install -m 0755 ofed_scripts/roce_config.sh     %{buildroot}%{_bindir}/roce_config
-install -m 0644 kernel-boot/91-tmfifo_net.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
+install -d %{buildroot}%{_sysconfdir}/modprobe.d
+install -m 0755 ofed_scripts/sysctl_perf_tuning     %{buildroot}/sbin
+install -m 0755 ofed_scripts/cma_roce_mode          %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/cma_roce_tos           %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/*affinity*             %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/setup_mr_cache.sh      %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/odp_stat.sh            %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/show_counters          %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/show_gids              %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/ibdev2netdev           %{buildroot}%{_bindir}
+install -m 0755 ofed_scripts/roce_config.sh         %{buildroot}%{_bindir}/roce_config
+install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}%{_sysconfdir}/lib/udev/
+install -m 0644 kernel-boot/82-net-setup-link.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
+install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/udev/rules.d/
+install -m 0644 kernel-boot/mlnx-eswitch.service    %{buildroot}%{_sysconfdir}/systemd/system/
+install -m 0644 kernel-boot/mlnx-eswitch.conf       %{buildroot}%{_sysconfdir}/modprobe.d/
+install -m 0755 kernel-boot/mlnx_eswitch_set.sh     %{buildroot}/sbin
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -98,12 +105,24 @@ find %{buildroot}${mlnx_python_sitelib} -type f -print | sed -e 's@%{buildroot}@
 %clean
 rm -rf %{buildroot}
 
+%preun
+/usr/bin/systemctl disable mlnx-eswitch.service >/dev/null 2>&1 || :
+
+%post
+/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
+/usr/bin/systemctl enable mlnx-eswitch.service >/dev/null 2>&1 || :
+
 %files -f mlnx-tools-files
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
+/sbin/mlnx_eswitch_set.sh
 %{_sbindir}/*
 %{_bindir}/*
+/lib/udev/vf-net-link-name.sh
+%{_sysconfdir}/udev/rules.d/82-net-setup-link.rules
 %{_sysconfdir}/udev/rules.d/91-tmfifo_net.rules
+%{_sysconfdir}/systemd/system/mlnx-eswitch.service
+%{_sysconfdir}/modprobe.d/mlnx-eswitch.conf
 
 %changelog
 * Wed Nov 1 2017 Vladimir Sokolovsky <vlad@mellanox.com>
