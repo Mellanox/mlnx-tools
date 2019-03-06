@@ -2,7 +2,7 @@ Source: mlnx-tools
 Section: net
 Priority: optional
 Maintainer: Vladimir Sokolovsky <vlad@mellanox.com>
-Build-Depends: debhelper (>= 8.0.0), python
+Build-Depends: debhelper (>= 8.0.0), python, lsb-release
 Standards-Version: 3.9.2
 Homepage: http://www.mellanox.com/Mellanox/mlnx-tools
 
