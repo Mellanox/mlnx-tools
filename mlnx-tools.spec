@@ -72,9 +72,10 @@ cd -
 install -d %{buildroot}/sbin
 install -d %{buildroot}%{_sbindir}
 install -d %{buildroot}%{_bindir}
-install -d %{buildroot}%{_sysconfdir}/lib/udev
+install -d %{buildroot}/lib/udev
 install -d %{buildroot}%{_sysconfdir}/udev/rules.d
 install -d %{buildroot}%{_sysconfdir}/modprobe.d
+install -d %{buildroot}%{_sysconfdir}/systemd/system/
 install -m 0755 ofed_scripts/sysctl_perf_tuning     %{buildroot}/sbin
 install -m 0755 ofed_scripts/cma_roce_mode          %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/cma_roce_tos           %{buildroot}%{_sbindir}
@@ -85,7 +86,7 @@ install -m 0755 ofed_scripts/show_counters          %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/show_gids              %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/ibdev2netdev           %{buildroot}%{_bindir}
 install -m 0755 ofed_scripts/roce_config.sh         %{buildroot}%{_bindir}/roce_config
-install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}%{_sysconfdir}/lib/udev/
+install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}/lib/udev/
 install -m 0644 kernel-boot/82-net-setup-link.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
 install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/udev/rules.d/
 install -m 0644 kernel-boot/mlnx-eswitch.service    %{buildroot}%{_sysconfdir}/systemd/system/
