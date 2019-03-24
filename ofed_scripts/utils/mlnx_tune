@@ -488,16 +488,22 @@ class Devices:
 	ConnectX5VF			= DeviceType("4120", "ConnectX-5VF")
 	ConnectX5EX			= DeviceType("4121", "ConnectX-5EX")
 	ConnectX5EXVF			= DeviceType("4122", "ConnectX-5EXVF")
+	ConnectX6			= DeviceType("4123", "ConnectX-6")
+	ConnectX6VF			= DeviceType("4124", "ConnectX-6VF")
+	BlueField			= DeviceType("41682", "BlueField")
 	UNDEFINED			= DeviceType(NA, NA)
 	MLX4_CONSUMERS			= [ConnectX2, ConnectX3, ConnectX3Pro, ConnectX3VF, ConnectX3ProVF]
 	MLX5_CONSUMERS			= [
-						ConnectX5, ConnectX5EX, ConnectX4, ConnectX4LX, ConnectIB,
-						ConnectX5VF, ConnectX5EXVF, ConnectX4VF, ConnectX4LXVF, ConnectIBVF
+						BlueField, ConnectX6, ConnectX5, ConnectX5EX,
+						ConnectX4, ConnectX4LX, ConnectIB, ConnectX6VF,
+						ConnectX5VF, ConnectX5EXVF, ConnectX4VF,
+						ConnectX4LXVF, ConnectIBVF
 					  ]
 	SUPPORTED_CONSUMERS		= MLX4_CONSUMERS + MLX5_CONSUMERS
 	HW_LRO_SUPPORTING_DEVICES	= [
-						ConnectX5, ConnectX5EX, ConnectX4, ConnectX4LX,
-						ConnectX5VF, ConnectX5EXVF, ConnectX4VF, ConnectX4LXVF
+						BlueField, ConnectX6, ConnectX5, ConnectX5EX,
+						ConnectX4, ConnectX4LX, ConnectX6VF, ConnectX5VF,
+						ConnectX5EXVF, ConnectX4VF, ConnectX4LXVF
 					  ]
 	NEED_32_QUEUES_LIMIT_DEVICES	= [ConnectX4LX]
 
@@ -2329,7 +2335,7 @@ class PciDeviceInfo:
 		""" set device ID and Type
 		"""
 		( rc, output ) = commands.getstatusoutput(GET_DEV_ID_FROM_PCI_BUS_CMD%self.pci_slot)
-		dev_id_pattern = re.compile(r'0x\d+')
+		dev_id_pattern = re.compile(r'0x[a-f\d]+')
 		match = dev_id_pattern.search(output)
 		if rc or not match:
 			logging.error("Could not find device ID for %s"%self.pci_slot)
