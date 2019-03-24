@@ -502,8 +502,7 @@ class Devices:
 	SUPPORTED_CONSUMERS		= MLX4_CONSUMERS + MLX5_CONSUMERS
 	HW_LRO_SUPPORTING_DEVICES	= [
 						BlueField, ConnectX6, ConnectX5, ConnectX5EX,
-						ConnectX4, ConnectX4LX, ConnectX6VF, ConnectX5VF,
-						ConnectX5EXVF, ConnectX4VF, ConnectX4LXVF
+						ConnectX6VF, ConnectX5VF, ConnectX5EXVF
 					  ]
 	NEED_32_QUEUES_LIMIT_DEVICES	= [ConnectX4LX]
 
