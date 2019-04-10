@@ -376,7 +376,7 @@ printall = False
 
 res = subprocess.Popen(["ps", "-e"], stdout=subprocess.PIPE)
 output = res.communicate()[0]
-if 'lldpad' in output:
+if b'lldpad' in output:
 	print('****** WARNING: lldpad service is running and may overwrite your settings ******\n')
 
 ctrl = DcbController(options.intf)
