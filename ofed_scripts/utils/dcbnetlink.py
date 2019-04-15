@@ -139,7 +139,8 @@ class DcbNlMessage(Message):
 class DcbController:
 	def __init__(self, intf):
 		self.conn = Connection(NETLINK_ROUTE)
-		self.intf = intf
+		self.intf = intf.encode()
+
 
 	def check_err(self, m, attr_type):
 		if m.attrs[attr_type].u8():
