@@ -36,17 +36,19 @@
 import pdb
 import os
 import sys
-import commands
 import logging
 import errno
 import datetime
 import re
 import platform
+import glob
+import subprocess as sp
 from optparse 					import OptionParser
+from threading import Timer
 
 VERSION_MAJOR					= "4"
 VERSION_MINOR					= "6"
-VERSION_BUILD					= "0"
+VERSION_BUILD					= "1"
 
 INDENT						= 1
 NA						= "N/A"
@@ -100,22 +102,22 @@ XPS_AFFINITY_MASK_CMD				= "cat /sys/class/net/%s/queues/tx-%s/xps_cpus"
 FIND_INTERFACES_FROM_PCI_BUS_CMD		= "ls /sys/bus/pci/devices/*%s/net/"
 GET_DEV_ID_FROM_PCI_BUS_CMD			= "cat /sys/bus/pci/devices/*%s/device"
 GET_DEV_FW_FROM_MLX_DEVICE			= "cat /sys/class/infiniband/%s/fw_ver"
-FW_VERSION_FROM_PCI				= "cat /sys/bus/pci/devices/0000\:%s\:%s/infiniband/mlx*_*/fw_ver"
-FW_VERSION_FROM_PCI_PPC				= "cat /sys/bus/pci/devices/%s\:%s\:%s/infiniband/mlx*_*/fw_ver"
-FW_VERSION_FROM_PCI_PPC_NEW_FORMAT		= "cat /sys/bus/pci/devices/0000\:%s\:%s.%s/infiniband/mlx*_*/fw_ver"
-RDMA_DEVICE_FROM_PCI				= "ls /sys/bus/pci/devices/0000\:%s\:%s/infiniband/"
-RDMA_DEVICE_FROM_PCI_PPC			= "ls /sys/bus/pci/devices/%s\:%s\:%s/infiniband/"
-RDMA_DEVICE_FROM_PCI_PPC_NEW_FORMAT		= "ls /sys/bus/pci/devices/0000\:%s\:%s.%s/infiniband/"
-INTERFACE_STATUS_CMD				= "cat /sys/class/net/%s/carrier 2>/dev/null"
-INTERFACE_MTU_CMD				= "cat /sys/class/net/%s/mtu 2>/dev/null"
-INTERFACE_PORT_CMD				= "cat /sys/class/net/%s/dev_id 2>/dev/null"
-INTERFACE_INDEX_CMD				= "cat /sys/class/net/%s/ifindex 2>/dev/null"
-INTERFACE_SPEED_CMD				= "cat /sys/class/net/%s/speed 2>/dev/null"
-GET_PORT_LINK_TYPE_CMD_MLX4			= "cat /sys/bus/pci/drivers/mlx4_core/0000\:%s\:%s/mlx4_port%s"
-GET_PORT_LINK_TYPE_CMD_MLX4_PPC			= "cat /sys/bus/pci/drivers/mlx4_core/%s\:%s\:%s/mlx4_port%s"
-IS_PORT_LINK_TYPE_IB_CMD_MLX5			= "ls /sys/bus/pci/drivers/mlx5_core/0000\:%s\:%s/net/%s/mode"
-IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC		= "ls /sys/bus/pci/drivers/mlx5_core/%s\:%s\:%s/net/%s/mode"
-IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC_NEW_FORMAT	= "ls /sys/bus/pci/drivers/mlx5_core/0000\:%s\:%s.%s/net/%s/mode"
+FW_VERSION_FROM_PCI				= "cat /sys/bus/pci/devices/0000:%s:%s/infiniband/mlx*_*/fw_ver"
+FW_VERSION_FROM_PCI_PPC				= "cat /sys/bus/pci/devices/%s:%s:%s/infiniband/mlx*_*/fw_ver"
+FW_VERSION_FROM_PCI_PPC_NEW_FORMAT		= "cat /sys/bus/pci/devices/0000:%s:%s.%s/infiniband/mlx*_*/fw_ver"
+RDMA_DEVICE_FROM_PCI				= "ls /sys/bus/pci/devices/0000:%s:%s/infiniband/"
+RDMA_DEVICE_FROM_PCI_PPC			= "ls /sys/bus/pci/devices/%s:%s:%s/infiniband/"
+RDMA_DEVICE_FROM_PCI_PPC_NEW_FORMAT		= "ls /sys/bus/pci/devices/0000:%s:%s.%s/infiniband/"
+INTERFACE_STATUS_CMD				= "cat /sys/class/net/%s/carrier"
+INTERFACE_MTU_CMD				= "cat /sys/class/net/%s/mtu"
+INTERFACE_PORT_CMD				= "cat /sys/class/net/%s/dev_id"
+INTERFACE_INDEX_CMD				= "cat /sys/class/net/%s/ifindex"
+INTERFACE_SPEED_CMD				= "cat /sys/class/net/%s/speed"
+GET_PORT_LINK_TYPE_CMD_MLX4			= "cat /sys/bus/pci/drivers/mlx4_core/0000:%s:%s/mlx4_port%s"
+GET_PORT_LINK_TYPE_CMD_MLX4_PPC			= "cat /sys/bus/pci/drivers/mlx4_core/%s:%s:%s/mlx4_port%s"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5			= "ls /sys/bus/pci/drivers/mlx5_core/0000:%s:%s/net/%s/mode"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC		= "ls /sys/bus/pci/drivers/mlx5_core/%s:%s:%s/net/%s/mode"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC_NEW_FORMAT	= "ls /sys/bus/pci/drivers/mlx5_core/0000:%s:%s.%s/net/%s/mode"
 
 NUMA_SUPPORT_CMD				= "cat /sys/bus/pci/devices/*%s/numa_node"
 LOCAL_CPUS_CMD					= "cat /sys/bus/pci/devices/*%s/local_cpulist"
@@ -1695,7 +1697,7 @@ class IrqInfo:
 		""" Extract irq affinity mask by irq number
 		"""
 		cmd = IRQ_AFFINITY_MASK_CMD%(self.number)
-		( rc, mask ) = commands.getstatusoutput(cmd)
+		( rc, mask ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		return mask
 
@@ -1703,7 +1705,7 @@ class IrqInfo:
 		""" Extract irq affinity hint mask by irq number
 		"""
 		cmd = IRQ_AFFINITY_HINT_MASK_CMD%(self.number)
-		( rc, mask ) = commands.getstatusoutput(cmd)
+		( rc, mask ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		return mask
 
@@ -1745,7 +1747,7 @@ class RingInfo:
 		""" set ring rps number
 		"""
 		cmd = RPS_AFFINITY_MASK_CMD%(interface_name, self.number)
-		( rc, mask ) = commands.getstatusoutput(cmd)
+		( rc, mask ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		self.rps_mask = mask
 
@@ -1753,7 +1755,7 @@ class RingInfo:
 		""" set ring xps number
 		"""
 		cmd = XPS_AFFINITY_MASK_CMD%(interface_name, self.number)
-		( rc, mask ) = commands.getstatusoutput(cmd)
+		( rc, mask ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		self.xps_mask = mask
 
@@ -1765,7 +1767,7 @@ class RingInfo:
 		    Disregard interrupts bounded directly to the device.
 		"""
 		irqs = []
-		( rc, interrupts ) = commands.getstatusoutput(PROC_INTERRUPT_CMD)
+		( rc, interrupts ) = getstatusoutput(PROC_INTERRUPT_CMD)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(PROC_INTERRUPT_CMD)
 		for line in interrupts.split('\n'):
 			if (interface_name in line) and ring_number and \
@@ -1848,7 +1850,7 @@ class InterfaceInfo( object ):
 		""" Set interface status. Up/Down.
 		"""
 		cmd = INTERFACE_STATUS_CMD%(self.name)
-		( rc, output ) = commands.getstatusoutput(cmd)
+		( rc, output ) = getstatusoutput(cmd)
 		if rc: #command failed upon port down
 			self.status = InterfaceInfo.DOWN
 		elif '1' in output.strip():
@@ -1860,7 +1862,7 @@ class InterfaceInfo( object ):
 		""" Set interface MTU size.
 		"""
 		cmd = INTERFACE_MTU_CMD%(self.name)
-		( rc, output ) = commands.getstatusoutput(cmd)
+		( rc, output ) = getstatusoutput(cmd)
 		if rc or (not output):
 			logging.warning("Failed to get MTU size for interface '%s'"%self.name)
 			return
@@ -1870,7 +1872,7 @@ class InterfaceInfo( object ):
 		""" Set interface speed.
 		"""
 		cmd = INTERFACE_SPEED_CMD%(self.name)
-		( rc, output ) = commands.getstatusoutput(cmd)
+		( rc, output ) = getstatusoutput(cmd)
 		if rc or (not output):
 			logging.warning("Failed to get speed for interface '%s'"%self.name)
 			return
@@ -1891,7 +1893,7 @@ class InterfaceInfo( object ):
 		"""
 		rings = []
 		cmd = RINGS_CMD%(self.name)
-		( rc, output ) = commands.getstatusoutput(cmd)
+		( rc, output ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		for line in output.split('\n'):
 			if ("rx-" in line ):
@@ -1942,13 +1944,13 @@ class InterfaceInfo( object ):
 		""" Resets XPS for all tx queues.
 		"""
 		cmd = RINGS_CMD%(self.name)
-		( rc, output ) = commands.getstatusoutput(cmd)
+		( rc, output ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		for line in output.split('\n'):
 			if ("tx-" in line ):
 				tx_num = line.split('tx-')[1]
 				cmd = XPS_AFFINITY_MASK_SET_CMD%(0, self.name, tx_num)
-				( rc, output ) = commands.getstatusoutput(cmd)
+				( rc, output ) = getstatusoutput(cmd)
 				assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 
 	def set_xps(self, core_list, create_one_mask_from_core_list):
@@ -2258,7 +2260,7 @@ class PciDeviceInfo:
 		""" set device pci width and speed
 		"""
 		cmd = "%s -vvv -s %s"%(LSPCI, self.pci_slot)
-		( rc, pci_device_parameters) = commands.getstatusoutput(cmd)
+		( rc, pci_device_parameters) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
 		pci_width_pattern		= re.compile("Width x\d+")
 		pci_speed_pattern		= re.compile("Speed \d+")
@@ -2298,7 +2300,7 @@ class PciDeviceInfo:
 				cmd = RDMA_DEVICE_FROM_PCI_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2])
 		else:
 			cmd = RDMA_DEVICE_FROM_PCI%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1])
-		( rc, output ) = commands.getstatusoutput(cmd)
+		( rc, output ) = getstatusoutput(cmd)
 		if rc:
 			logging.debug("Couldn't get RDMA device information from PCI device - '%s' failed"%cmd)
 		else:
@@ -2309,7 +2311,7 @@ class PciDeviceInfo:
 		""" set device mst information
 		"""
 		mst_dev_found = False
-		( rc, output ) = commands.getstatusoutput(MST_STATUS)
+		( rc, output ) = getstatusoutput(MST_STATUS)
 		if rc:
 			logging.debug("Couldn't run MST - '%s' failed"%MST_STATUS)
 			return mst_dev_found
@@ -2333,7 +2335,7 @@ class PciDeviceInfo:
 	def set_id(self):
 		""" set device ID and Type
 		"""
-		( rc, output ) = commands.getstatusoutput(GET_DEV_ID_FROM_PCI_BUS_CMD%self.pci_slot)
+		( rc, output ) = getstatusoutput(GET_DEV_ID_FROM_PCI_BUS_CMD%self.pci_slot)
 		dev_id_pattern = re.compile(r'0x[a-f\d]+')
 		match = dev_id_pattern.search(output)
 		if rc or not match:
@@ -2353,14 +2355,14 @@ class PciDeviceInfo:
 		rc = 0
 		if self.rdma_device != NA:
 			cmd = GET_DEV_FW_FROM_MLX_DEVICE%(self.rdma_device)
-			( rc, output ) = commands.getstatusoutput(cmd)
+			( rc, output ) = getstatusoutput(cmd)
 			if rc:
 				logging.debug("Couldn't get Firmware version from RDMA device - '%s' failed"%cmd)
 			else:
 				self.firmware_version = output
 		if self.rdma_device == NA or rc and self.mst_device != NA:
 			cmd = FLINT%(self.mst_device)
-			( rc, output ) = commands.getstatusoutput(cmd)
+			( rc, output ) = getstatusoutput(cmd)
 			if rc:
 				logging.debug("Couldn't get Firmware version from MST device - '%s' failed"%cmd)
 			else:
@@ -2375,7 +2377,7 @@ class PciDeviceInfo:
 					cmd = FW_VERSION_FROM_PCI_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2])
 			else:
 				cmd = FW_VERSION_FROM_PCI%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1])
-			( rc, output ) = commands.getstatusoutput(cmd)
+			( rc, output ) = getstatusoutput(cmd)
 			if rc:
 				logging.debug("Couldn't get Firmware version from PCI device - '%s' failed"%cmd)
 			else:
@@ -2433,7 +2435,7 @@ class PciDeviceInfo:
 					cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2], interface_name)
 			else:
 				cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], interface_name)
-			( rc, output ) = commands.getstatusoutput(cmd)
+			( rc, output ) = getstatusoutput(cmd)
 			if rc:
 				return 'eth'
 			else:
@@ -2479,7 +2481,7 @@ class PciDeviceInfo:
 		    Disregard interrupts bounded to an interface.
 		"""
 		irqs = []
-		( rc, all_interrupts ) = commands.getstatusoutput(PROC_INTERRUPT_CMD)
+		( rc, all_interrupts ) = getstatusoutput(PROC_INTERRUPT_CMD)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(PROC_INTERRUPT_CMD)
 		cmd = DEVICE_INTERRUPTS_CMD%(self.pci_slot)
 		( rc, device_irqs ) = run_command_warn_when_fail(cmd, "Can't find interrupts for Mellanox pci device %s. Please make sure %s is loaded."\
@@ -2493,7 +2495,7 @@ class PciDeviceInfo:
 				if not (irq_number + ":") in line or any(interface_name in line for interface_name in interfaces_names):
 					continue
 				cmd = IRQ_EXISTS_CMD%(irq_number)
-				( rc, exists ) = commands.getstatusoutput(cmd)
+				( rc, exists ) = getstatusoutput(cmd)
 				if rc:
 					continue
 				irq = IrqInfo(irq_number)
@@ -2900,12 +2902,34 @@ class FppPciDeviceInfo(PciDeviceInfo):
 
 
 # Command execution functions
+DEFAULT_TIMEOUT = 60  # Seconds
+FAILED_RC = 1
+def getstatusoutput(cmd, timeout=DEFAULT_TIMEOUT):
+	""" A simillar implementation to the depricated commands.getstatusoutput()
+	    Run the command and returns output and RC.
+	"""
+	cmd_args = cmd.split()
+	# Process wildcard chars
+	cmd_args = [glob.glob(arg)[0] if "*" in arg else arg for arg in cmd_args]
+	try:
+		process = sp.Popen(cmd_args, shell=False, stdout=sp.PIPE, stderr=sp.PIPE)
+	except OSError as err:
+		return FAILED_RC, ""
+	else:
+		timer = Timer(timeout, process.kill)
+		timer.start()
+		stdout, stderr = process.communicate()
+		stdout = stdout.rstrip()
+		is_timeout = not timer.is_alive()
+		timer.cancel()
+		return process.returncode, stdout
+
 def run_command_debug_when_fail(cmd, debug_message=False, prnt=False):
 	""" run command and print debug message when failed
 	"""
 	if prnt:
 		logging.debug("Run cmd: %s"%cmd)
-	( rc, output) = commands.getstatusoutput(cmd)
+	( rc, output) = getstatusoutput(cmd)
 	if rc:
 		logging.debug("Failed to run cmd: %s"%cmd)
 		if debug_message:
@@ -2919,7 +2943,7 @@ def run_command_warn_when_fail(cmd, warning_message=False, prnt=False):
 		logging.info("Run cmd: %s"%cmd)
 	else:
 		logging.debug("Run cmd: %s"%cmd)
-	( rc, output) = commands.getstatusoutput(cmd)
+	( rc, output) = getstatusoutput(cmd)
 	if rc:
 		logging.warning("Failed to run cmd: %s"%cmd)
 		if warning_message:
@@ -2933,7 +2957,7 @@ def run_command(cmd, prnt=False):
 		logging.info("Run cmd: %s"%cmd)
 	else:
 		logging.debug("Run cmd: %s"%cmd)
-	( rc, output) = commands.getstatusoutput(cmd)
+	( rc, output) = getstatusoutput(cmd)
 	return (rc, output)
 
 def run_command_exit_when_fail(cmd, error_message=False, prnt=False):
@@ -2943,7 +2967,7 @@ def run_command_exit_when_fail(cmd, error_message=False, prnt=False):
 		logging.info("Run cmd: %s"%(cmd))
 	else:
 		logging.debug("Run cmd: %s"%cmd)
-	( rc, output) = commands.getstatusoutput(cmd)
+	( rc, output) = getstatusoutput(cmd)
 	if rc:
 		logging.error("Failed to run cmd: %s"%(cmd))
 		if error_message:
@@ -3005,7 +3029,7 @@ def mlnx_pci_devices_status(node_info):
 	"""
 	logging.info("Collecting Mellanox devices information")
 	devices = []
-	( rc, pci_devices) = commands.getstatusoutput(LSPCI)
+	( rc, pci_devices) = getstatusoutput(LSPCI)
 	assert (not rc), "Unexpected error - cmd: %s bad exit status."%(LSPCI)
 
 	for line in pci_devices.split('\n'):
