@@ -48,7 +48,7 @@ from threading import Timer
 
 VERSION_MAJOR					= "4"
 VERSION_MINOR					= "6"
-VERSION_BUILD					= "1"
+VERSION_BUILD					= "2"
 
 INDENT						= 1
 NA						= "N/A"
@@ -300,6 +300,7 @@ class OS:
 	RH7_4				= "RH7.4"
 	RH7_5				= "RH7.5"
 	RH7_6				= "RH7.6"
+	RH8_0				= "RH8.0"
 	FEDORA				= "FEDORA"
 	SLES11_3			= "SLES11.3"
 	SLES11_4			= "SLES11.4"
@@ -326,22 +327,22 @@ class OS:
 	ALL				= "ALL"
 	SUPPORTED_OS			= [
 						RH6_4, RH6_5, RH6_6, RH6_7, RH7_0, RH7_1, RH7_2,
-						RH7_3, RH7_4, RH7_5, RH7_6, SLES11_3, SLES11_4,
-						SLES12, UBUNTU14_04, UBUNTU14_10, UBUNTU15_04,
-						UBUNTU15_10, UBUNTU16_04, UBUNTU16_10, UBUNTU17_04,
-						UBUNTU17_10, UBUNTU18_04, XENSERVER7_0,
+						RH7_3, RH7_4, RH7_5, RH7_6, RH8_0, SLES11_3,
+						SLES11_4, SLES12, UBUNTU14_04, UBUNTU14_10,
+						UBUNTU15_04, UBUNTU15_10, UBUNTU16_04, UBUNTU16_10,
+						UBUNTU17_04, UBUNTU17_10, UBUNTU18_04, XENSERVER7_0,
 						XENSERVER7_2, CENTOS7_0, CENTOS7_1, CENTOS7_2,
 						CENTOS7_3, CENTOS7_4, CENTOS7_5
 					  ]
 	SYSTEMCTL_ACCESS_OS		= [
 						RH7_0, RH7_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6,
-						CENTOS7_0, CENTOS7_1, CENTOS7_2, CENTOS7_3,
+						RH8_0, CENTOS7_0, CENTOS7_1, CENTOS7_2, CENTOS7_3,
 						CENTOS7_4, CENTOS7_5, XENSERVER7_0, XENSERVER7_2
 					  ]
 	SUSE				= [SLES11_3, SLES11_4, SLES12]
-	PPC_DEVICE_NEW_FORMAT_OS	= [RH7_0, RH7_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6]
+	PPC_DEVICE_NEW_FORMAT_OS	= [RH7_0, RH7_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH8_0]
 	NO_IPV6_FORWARDING_SUPPORT_OS	= [UBUNTU14_04]
-	TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS = [RH7_3, RH7_4, RH7_5, RH7_6]
+	TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS = [RH7_3, RH7_4, RH7_5, RH7_6, RH8_0]
 
 	def get_os(self):
 		""" Return local OS Type (one of the list OS_ALL)
@@ -386,6 +387,8 @@ class OS:
 					return OS.RH7_5
 				if os_version == '7.6':
 					return OS.RH7_6
+				if os_version == '8.0':
+					return OS.RH8_0
 			if linux_dist == 'fedora':
 				return OS.FEDORA
 			if 'suse' in linux_dist:
