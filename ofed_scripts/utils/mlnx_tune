@@ -2565,7 +2565,7 @@ class PciDeviceInfo:
 				for core in output.split(','):
 					if '-' in core:
 						values = core.split('-')
-						cores = range(int(values[0]),int(values[1]))
+						cores = range(int(values[0]), int(values[1]) + 1)
 						numa_aware_cores += cores
 					else:
 						numa_aware_cores += core
@@ -2581,7 +2581,7 @@ class PciDeviceInfo:
 					self.closest_core_list = range(0,node_info.cpu.total_cores)
 					self.numa_aware_cores = range(0,node_info.cpu.total_cores)
 
-		if node_info.cpu.vendor != CPUVendor.IBM:
+		if node_info.cpu.vendor != CPUVendor.IBM and self.numa != -1:
 			numa_aware_cores += non_numa_cores
 		self.numa_aware_core_list = numa_aware_cores
 
