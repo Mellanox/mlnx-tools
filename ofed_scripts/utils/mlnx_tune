@@ -48,7 +48,7 @@ from threading import Timer
 
 VERSION_MAJOR					= "4"
 VERSION_MINOR					= "6"
-VERSION_BUILD					= "2"
+VERSION_BUILD					= "3"
 
 INDENT						= 1
 NA						= "N/A"
@@ -363,7 +363,10 @@ class OS:
 
 		if os_platform == "linux":
 			linux_dist = platform.linux_distribution()[0].lower()
-			os_version = platform.platform().split('-with-')[1].split('-')[1]
+			try:
+				os_version = platform.platform().split('-with-')[1].split('-')[1]
+			except IndexError as err:
+				os_version = ""
 			if any(dist in linux_dist for dist in ['redhat', 'red hat']):
 				if os_version == '6.4':
 					return OS.RH6_4
