@@ -167,7 +167,7 @@ class Nested(Attr):
         contents = []
         for attr in self.attrs:
             contents.append(attr._dump())
-        contents = ''.join(contents)
+        contents = b''.join(contents)
         length = len(contents)
         hdr = struct.pack("HH", length+4, self.type)
         return hdr + contents

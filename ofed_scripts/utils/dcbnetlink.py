@@ -268,11 +268,11 @@ class DcbController:
 		pfc_cap = 8
 		mbc = 0
 
-		requests = array.array('B', '\0' * 64)
-		indications = array.array('B', '\0' * 64)
+		requests = array.array('B', b'\0' * 64)
+		indications = array.array('B', b'\0' * 64)
 
 		#netlink packet is 64bit alignment
-		pads = array.array('B', '\0' * 3)
+		pads = array.array('B', b'\0' * 3)
 
 		#delay is 16bit value
 		pfc = struct.pack("BBBBBB", pfc_cap, _pfc_en, mbc, 0, _delay & 0xFF , _delay >> 8) + (requests + indications + pads).tostring()
@@ -291,14 +291,14 @@ class DcbController:
 		willing = 0
 		ets_cap = 0
 		cbs = 0
-		tc_rx_bw = array.array('B', '\0' * 8)
-		tc_reco_bw = array.array('B', '\0' * 8)
-		tc_reco_tsa = array.array('B', '\0' * 8)
-		reco_prio_tc = array.array('B', '\0' * 8)
+		tc_rx_bw = array.array('B', b'\0' * 8)
+		tc_reco_bw = array.array('B', b'\0' * 8)
+		tc_reco_tsa = array.array('B', b'\0' * 8)
+		reco_prio_tc = array.array('B', b'\0' * 8)
 
-		tc_tc_bw = array.array('B', '\0' * 8)
-		tc_tsa = array.array('B', '\0' * 8)
-		prio_tc = array.array('B', '\0' * 8)
+		tc_tc_bw = array.array('B', b'\0' * 8)
+		tc_tsa = array.array('B', b'\0' * 8)
+		prio_tc = array.array('B', b'\0' * 8)
 
 		for up in range(len(_prio_tc)): prio_tc[up] = _prio_tc[up]
 		for tc in range(len(_tsa)): tc_tsa[tc] = _tsa[tc]
