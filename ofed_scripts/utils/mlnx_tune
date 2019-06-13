@@ -48,7 +48,7 @@ from threading import Timer
 
 VERSION_MAJOR					= "4"
 VERSION_MINOR					= "6"
-VERSION_BUILD					= "4"
+VERSION_BUILD					= "5"
 
 INDENT						= 1
 NA						= "N/A"
@@ -3331,8 +3331,8 @@ def set_ip_forwarding_profile_single_stream(node_info, force_single = False, zer
 		for interface in device.interfaces:
 			if interface.status == InterfaceInfo.UP and interface.link_type == 'eth':
 				number_of_active_ethernet_interfaces += 1
-
-				interface.disable_qdisc_tx(node_info)
+				if not zero_loss:
+					interface.disable_qdisc_tx(node_info)
 				if device.type in Devices.MLX4_CONSUMERS:
 					set_xor_hash_rc = interface.apply_network_parameter_value('set-priv-flags', 'on', 'mlx4_rss_xor_hash_function')
 					if not set_xor_hash_rc:
