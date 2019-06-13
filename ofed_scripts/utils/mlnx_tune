@@ -48,7 +48,7 @@ from threading import Timer
 
 VERSION_MAJOR					= "4"
 VERSION_MINOR					= "6"
-VERSION_BUILD					= "3"
+VERSION_BUILD					= "4"
 
 INDENT						= 1
 NA						= "N/A"
@@ -64,7 +64,7 @@ FIREWALL_IPTABLES_SERVICE			= "iptables"
 FIREWALL_IP6TABLES_SERVICE			= "ip6tables"
 
 CPU_MAX_PERFORMANCE_CMD				= "echo performance > /sys/devices/system/cpu/cpu%s/cpufreq/scaling_governor"
-NUMA_NODES_CMD			 		= "ls /sys/devices/system/node/ | grep node"
+NUMA_NODES_CMD			 		= "ls /sys/devices/system/node/"
 CPUINFO_CMD					= "cat /proc/cpuinfo"
 GET_ARCHITECTURE_INFO_CMD			= "uname -m"
 LSCPU_CMD					= "lscpu"
@@ -779,7 +779,8 @@ class Cpu:
 		(rc, output) = run_command_warn_when_fail(NUMA_NODES_CMD, "Unable to collect NUMA node info.")
 		if not rc:
 			for line in output.split("\n"):
-				arr.append(int(line.replace('node','').strip()))
+				if "node" in line:
+					arr.append(int(line.replace('node','').strip()))
 			self.sockets = len(arr)
 
 		socket_dict = {}
