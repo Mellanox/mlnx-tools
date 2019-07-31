@@ -1,0 +1,17 @@
+#!/bin/bash
+
+net_if=$1
+shift
+
+APP=`basename $0`
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
+
+if [ $is_bf -eq 1 ]; then
+    logger -i "$APP: Bringing up interface $net_if"
+    /sbin/ip link set dev $net_if up
+    /sbin/ethtool -L $net_if combined 4
+fi
+

@@ -1,3 +1,4 @@
 SUBSYSTEM=="net", ACTION=="add", ATTR{phys_switch_id}!="", ATTR{phys_port_name}!="", \
 	IMPORT{program}="/lib/udev/vf-net-link-name.sh $attr{phys_switch_id} $attr{phys_port_name}" \
-	NAME="$env{NAME}"
+	NAME="$env{NAME}", RUN+="/sbin/mlnx_net_rules '%k'"
+SUBSYSTEM=="net", ACTION=="add", RUN+="/sbin/mlnx_net_rules '%k'"

@@ -92,6 +92,7 @@ install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/u
 install -m 0644 kernel-boot/mlnx-eswitch.service    %{buildroot}%{_sysconfdir}/systemd/system/
 install -m 0644 kernel-boot/mlnx-eswitch.conf       %{buildroot}%{_sysconfdir}/modprobe.d/
 install -m 0755 kernel-boot/mlnx_eswitch_set.sh     %{buildroot}/sbin
+install -m 0755 kernel-boot/mlnx_net_rules          %{buildroot}/sbin
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -117,6 +118,7 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_eswitch_set.sh
+/sbin/mlnx_net_rules
 %{_sbindir}/*
 %{_bindir}/*
 /lib/udev/vf-net-link-name.sh
