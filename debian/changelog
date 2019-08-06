@@ -1,5 +1,45 @@
-mlnx-tools (4.6.0-0) unstable; urgency=low
+mlnx-tools (4.6.1-0) UNRELEASED; urgency=medium
+
+  [ Alfonso Sánchez-Beato ]
+  * Add lsb-release dependency
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-eswitch.conf: Configure switchdev mode after mlx5_ib being loaded
+  * Added mlnx_net_rules
+
+  [ Parav Pandit ]
+  * ibdev2netdev: Revert ibdev2netdev: Improve script for dual port RoCE
+
+  [ Talat Batheesh ]
+  * ofed-scripts: mlnx_qos python3 TypeError
+  * ofed_scripts: dcbnetlink, convert ifname string into bytes
+
+  [ Ali Jayousi ]
+  * ofed-scripts: dcbnetlink, netlink python3 TypeError
+
+  [ Tzafrir Cohen ]
+  * ofed_scripts: fix python3 syntax
+
+  [ Tal Gilboa ]
+  * ofed_scripts/utils/mlnx_tune: Add RH7.6 support
+  * ofed_scripts/utils/mlnx_tune: Add support for new NICs
+  * ofed_scripts/utils/mlnx_tune: Remove ConnectX-4/Lx from HW LRO supporting device list
+  * ofed_scripts/utils/mlnx_tune: Use subprocess for execution instead of commands
+  * ofed_scripts/utils/mlnx_tune: Add RH8.0 support
+  * ofed_scripts/utils/mlnx_tune: Handle exception on platform detection fail
+  * ofed_scripts/utils/mlnx_tune: Fix CPU detection
+
+  [ Bar Tuaf ]
+  * ofed_scripts/utils/mlnx_tune: Fix error when trying to read node information
+  * ofed_scripts/utils/mlnx_tune: Only disable qdisc tx for zero loss profiles
+
+  [ Vladimir Sokolovsky ]
+  * 82-net-setup-link.rules: Use the new interface name for mlnx_net_rules
+
+ -- Vladimir Sokolovsky <vlad@sw-mtx-042.lab.mtl.com>  Tue, 06 Aug 2019 15:14:19 -0500
+
+mlnx-tools (4.6.0-0) unstable; urgency=medium
 
   * Initial release synchronized with MLNX_OFED_LINUX-4.6 mlnx-ofed-kernel-utils package
 
- -- Vladimir Sokolovsky <vlad@mellanox.com>  Wed, 13 Feb 2019 15:38:53 -0600
+ -- Vladimir Sokolovsky <vlad@sw-mtx-042.lab.mtl.com>  Tue, 06 Aug 2019 15:13:18 -0500
