@@ -1,3 +1,10 @@
+mlnx-tools (4.6.2-0) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * mlnx_net_rules: Handle case when interface names are empty
+
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Mon, 07 Oct 2019 17:31:19 -0600
+
 mlnx-tools (4.6.1-0) UNRELEASED; urgency=medium
 
   [ Alfonso Sánchez-Beato ]
@@ -36,10 +43,10 @@ mlnx-tools (4.6.1-0) UNRELEASED; urgency=medium
   [ Vladimir Sokolovsky ]
   * 82-net-setup-link.rules: Use the new interface name for mlnx_net_rules
 
- -- Vladimir Sokolovsky <vlad@sw-mtx-042.lab.mtl.com>  Tue, 06 Aug 2019 15:14:19 -0500
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Tue, 06 Aug 2019 15:14:19 -0500
 
 mlnx-tools (4.6.0-0) unstable; urgency=medium
 
   * Initial release synchronized with MLNX_OFED_LINUX-4.6 mlnx-ofed-kernel-utils package
 
- -- Vladimir Sokolovsky <vlad@sw-mtx-042.lab.mtl.com>  Tue, 06 Aug 2019 15:13:18 -0500
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Tue, 06 Aug 2019 15:13:18 -0500
