@@ -1,4 +1,32 @@
 #!/bin/bash
+#
+# Copyright (c) 2019 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+# Author: Vladimir Sokolovsky <vlad@mellanox.com>
+#
 
 net_if=$1
 shift
@@ -9,9 +37,32 @@ PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 
+configure_if()
+{
+	case "$net_if" in
+		lo)
+			return
+			;;
+	esac
+
+	logger -i "$APP: Bringing up interface $1"
+	/sbin/ip link set dev $1 up
+	if [ "$1" != "tmfifo_net0" ]; then
+		/sbin/ethtool -L $1 combined 4
+	fi
+}
+
 if [ $is_bf -eq 1 ]; then
-    logger -i "$APP: Bringing up interface $net_if"
-    /sbin/ip link set dev $net_if up
-    /sbin/ethtool -L $net_if combined 4
+	if [[ -z "$net_if" || ! -d /sys/class/net/$net_if ]]; then
+		# Interface was renamed or empty
+		cd /sys/class/net
+		for net_if in *
+		do
+			configure_if $net_if
+		done
+
+		exit 0
+	fi
+	configure_if $net_if
 fi
 
