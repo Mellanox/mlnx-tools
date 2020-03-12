@@ -26,8 +26,8 @@
 # and/or other materials provided with the distribution.
 #
 if [ -z $1 ]; then
-        echo "usage: $0 <interface or IB device> "
-        exit 1
+	echo "usage: $0 <interface or IB device> [show_cpu_number]"
+	exit 1
 fi
 
 source common_irq_affinity.sh
@@ -38,8 +38,10 @@ if [ -z "$IRQS" ] ; then
         exit 1
 fi
 
+show_cpu=$2
+
 for irq in $IRQS
 do
-	show_irq_affinity $irq
+	show_irq_affinity $irq $show_cpu
 done
 
