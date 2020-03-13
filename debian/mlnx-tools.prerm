@@ -1,1 +1,5 @@
-systemctl disable mlnx-eswitch.service >/dev/null  2>&1 || true
+#!/bin/sh -e
+
+deb-systemd-helper disable mlnx-eswitch.service >/dev/null  2>&1 || true
+
+#DEBHELPER#

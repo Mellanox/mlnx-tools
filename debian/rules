@@ -16,19 +16,11 @@ override_dh_auto_build:
 override_dh_auto_test:
 
 override_dh_auto_install:
-	dh_installdirs -p$(pname) sbin
-	dh_installdirs -p$(pname) usr/bin
-	dh_installdirs -p$(pname) usr/sbin
-	dh_installdirs -p$(pname) lib/udev
-	dh_installdirs -p$(pname) etc/udev/rules.d
-	dh_installdirs -p$(pname) etc/systemd/system
-	dh_installdirs -p$(pname) etc/modprobe.d
-
-	install -m 0644 kernel-boot/91-tmfifo_net.rules     debian/$(pname)/etc/udev/rules.d
-	install -m 0644 kernel-boot/82-net-setup-link.rules debian/$(pname)/etc/udev/rules.d
+	install -m 0644 kernel-boot/91-tmfifo_net.rules     debian/$(pname)/lib/udev/rules.d
+	install -m 0644 kernel-boot/82-net-setup-link.rules debian/$(pname)/lib/udev/rules.d
 	install -m 0755 kernel-boot/vf-net-link-name.sh     debian/$(pname)/lib/udev
 	install -m 0755 kernel-boot/mlnx_eswitch_set.sh     debian/$(pname)/sbin
-	install -m 0644 kernel-boot/mlnx-eswitch.service    debian/$(pname)/etc/systemd/system/
+	install -m 0644 kernel-boot/mlnx-eswitch.service    debian/$(pname)/lib/systemd/system/
 	install -m 0755 kernel-boot/mlnx_net_rules          debian/$(pname)/sbin
 
 	install -m 0755 ofed_scripts/ibdev2netdev       debian/$(pname)/usr/bin
@@ -41,6 +33,7 @@ override_dh_auto_install:
 	install -m 0755 ofed_scripts/odp_stat.sh        debian/$(pname)/usr/sbin
 	install -m 0755 ofed_scripts/show_counters      debian/$(pname)/usr/sbin
 	install -m 0755 ofed_scripts/roce_config.sh     debian/$(pname)/usr/bin/roce_config
-	install -m 0644 kernel-boot/mlnx-eswitch.conf   debian/$(pname)/etc/modprobe.d
+	install -m 0644 kernel-boot/mlnx-eswitch.conf   debian/$(pname)/lib/modprobe.d
 
 	cd ofed_scripts/utils;	python ./setup.py install --prefix=/usr --root=../../debian/$(pname)
+	find debian/$(pname)/ -name \*.pyc | xargs rm
