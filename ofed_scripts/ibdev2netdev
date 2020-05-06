@@ -90,91 +90,152 @@ for d in $devs; do
 	fi
 done
 
+function print_verbose_info()
+{
+	d=$1
+	port=$2
+	eth=$3
+	link_state=$4
+	filepath_portstate=/sys/class/infiniband/$d/ports/$port/state
+	filepath_deviceid=/sys/class/infiniband/$d/device/device
+	filepath_fwver=/sys/class/infiniband/$d/fw_ver
+	filepath_vpd=/sys/class/infiniband/$d/device/vpd
+
+	# read port state
+	if [ -f $filepath_portstate ]; then
+		ibstate=$(printf "%-6s" $(cat $filepath_portstate | awk '{print $2}'))
+	else
+		ibstate="NA"
+	fi
+
+	# read device
+	if [ -f $filepath_deviceid ]; then
+		devid=$(printf "MT%d" $(cat $filepath_deviceid))
+	else
+		devid="NA"
+	fi
+
+	# read FW version
+	if [ -f $filepath_fwver ]; then
+		fwver=$(cat $filepath_fwver)
+	else
+		fwver="NA"
+	fi
+
+	# read device description and part ID from the VPD
+	if [ -f $filepath_vpd ]; then
+		tmp=$IFS
+		IFS=":"
+		vpd_content=`cat $filepath_vpd | strings`
+		devdesc=$(printf "%-15s" $(echo $vpd_content | strings | head -1))
+		partid=$(printf "%-11s" $(echo $vpd_content | strings | head -4 | tail -1 | awk '{print $1}'))
+		IFS=$tmp
+	else
+		devdesc=""
+		partid="NA"
+	fi
+
+	x=$(find_pdev $d)
+	echo "$x $d ($devid - $partid) $devdesc fw $fwver port $port ($ibstate) ==> $eth ($link_state)"
+}
+
+function get_link_state()
+{
+	eth=$1
+	filepath_devid=/sys/class/net/$eth/dev_id
+	if [ -f $filepath_devid ]; then
+		filepath_carrier=/sys/class/net/$eth/carrier
+		if [ -f $filepath_carrier ]; then
+			link_state=$(cat $filepath_carrier 2> /dev/null)
+			if (( link_state == 1 )); then
+				link_state="Up"
+			else
+				link_state="Down"
+			fi
+		else
+			link_state="NA"
+		fi
+	fi
+	echo -n $link_state
+}
+
+function find_matching_ndev_for_gid()
+{
+	gid=$1
+	gid_without_prefix=${gid#"fe80:0000:0000:0000:"}
+	gid_without_colon=${gid_without_prefix//:}
+
+	ip_link_output=$(ip link show)
+	IFS=$'\n' read -rd '' -a array <<<"$ip_link_output"
+
+	for index in "${!array[@]}"
+	do
+		#search for infiniband address
+		if [[ ${array[index]} =~ .*infiniband.* ]]; then
+			ib_addr=${array[index]}
+			#retain string after link/infiniband
+			ib_addr=${ib_addr##*infiniband}
+			#retain string before brd
+			ib_addr=${ib_addr%brd*}
+			#extract 8 bytes of hw address
+			ib_addr=${ib_addr:37:25}
+			#remove : from the address, have only alphanumeric
+			ib_addr=${ib_addr//:}
+
+			ib_ndev_name=${array[index-1]}
+			#retain string before :
+			ib_ndev_name=${ib_ndev_name%:*}
+			#retain string after :
+			ib_ndev_name=${ib_ndev_name#*:}
+
+			if [ $gid_without_colon == $ib_addr ]; then
+				echo -n $ib_ndev_name
+				break
+			fi
+		fi
+	done
+}
+
 if [ "x$oldstyle" == "xn" ]; then
 	for d in $ibdevs; do
-		ibrsc=$(cat /sys/class/infiniband/$d/device/resource)
-		eths=$(ls /sys/class/net/)
-		for eth in $eths; do
-			filepath_resource=/sys/class/net/$eth/device/resource
+		ports=$(ls /sys/class/infiniband/$d/ports/)
+		for port in $ports; do
+			link_layer=$(cat /sys/class/infiniband/$d/ports/$port/link_layer)
+			if [ "x$link_layer" == "xInfiniBand" ]; then
+				gid=$(cat /sys/class/infiniband/$d/ports/$port/gids/0)
+				ethdev=$(find_matching_ndev_for_gid $gid)
+			else
+				ethdev=$(cat /sys/class/infiniband/$d/ports/$port/gid_attrs/ndevs/0 2> /dev/null)
+				#Honor ndev given by the kernel in the gid table for RoCE, soft RoCE
+				#if kernel doesn't expose it (for IB), try the different method of
+				#resource match.
+			fi
+			if [[ -z $ethdev ]]; then
+				ibrsc=$(cat /sys/class/infiniband/$d/device/resource)
+				eths=$(ls /sys/class/net/)
+				for eth in $eths; do
+					filepath_resource=/sys/class/net/$eth/device/resource
 
-			if [ -f $filepath_resource ]; then
-				ethrsc=$(cat $filepath_resource)
-				if [ "x$ethrsc" == "x$ibrsc" ]; then
-					filepath_devid=/sys/class/net/$eth/dev_id
-					filepath_devport=/sys/class/net/$eth/dev_port
-					if [ -f $filepath_devid ]; then
-						port1=0
-						if [ -f $filepath_devport ]; then
-							port1=$(cat $filepath_devport)
-							port1=$(printf "%d" $port1)
-						fi
-
-						port=$(cat $filepath_devid)
-						port=$(printf "%d" $port)
-						if [ $port1 -gt $port ]; then
-							port=$port1
-						fi
-
-						port=$(( port + 1 ))
-
-						filepath_carrier=/sys/class/net/$eth/carrier
-
-						if [ -f $filepath_carrier ]; then
-							link_state=$(cat $filepath_carrier 2> /dev/null)
-        	                                        if (( link_state == 1 )); then
-                	                                        link_state="Up"
-                        	                        else
-                                	                        link_state="Down"
-                                        	        fi
-						else
-							link_state="NA"
-						fi
-
-						x=$(find_pdev $d)
-						if [ "$1" == "-v" ]; then
-							filepath_portstate=/sys/class/infiniband/$d/ports/$port/state
-							filepath_deviceid=/sys/class/infiniband/$d/device/device
-							filepath_fwver=/sys/class/infiniband/$d/fw_ver
-							filepath_vpd=/sys/class/infiniband/$d/device/vpd
-
-							# read port state
-							if [ -f $filepath_portstate ]; then
-								ibstate=$(printf "%-6s" $(cat $filepath_portstate | awk '{print $2}'))
-							else
-								ibstate="NA"
-							fi
-
-							# read device
-							if [ -f $filepath_deviceid ]; then
-								devid=$(printf "MT%d" $(cat $filepath_deviceid))
-							else
-								devid="NA"
-							fi
-
-							# read FW version
-							if [ -f $filepath_fwver ]; then
-								fwver=$(cat $filepath_fwver)
-							else
-								fwver="NA"
-							fi
-
-							# read device description and part ID from the VPD
-							if [ -f $filepath_vpd ]; then
-								tmp=$IFS
-								IFS=":"
-								vpd_content=`cat $filepath_vpd | strings`
-								devdesc=$(printf "%-15s" $(echo $vpd_content | head -1))
-								partid=$(printf "%-11s" $(echo $vpd_content | head -4 | tail -1 | awk '{print $1}'))
-								IFS=$tmp
-							else
-								devdesc=""
-								partid="NA"
-							fi
-							echo "$x $d ($devid - $partid) $devdesc fw $fwver port $port ($ibstate) ==> $eth ($link_state)"
-						else
-							echo "$d port $port ==> $eth ($link_state)"
+					if [ -f $filepath_resource ]; then
+						ethrsc=$(cat $filepath_resource)
+						if [ "x$ethrsc" == "x$ibrsc" ]; then
+								link_state=$(get_link_state $eth)
+								x=$(find_pdev $d)
+								if [ "$1" == "-v" ]; then
+									print_verbose_info $d $port $eth $link_state
+								else
+									echo "$d port $port ==> $eth ($link_state)"
+								fi
+								break
 						fi
 					fi
+				done
+			else
+				link_state=$(get_link_state $ethdev)
+				if [ "$1" == "-v" ]; then
+					print_verbose_info $d $port $ethdev $link_state
+				else
+					echo "$d port $port ==> $ethdev ($link_state)"
 				fi
 			fi
 		done
@@ -236,7 +297,7 @@ for ifc in $ifcs; do
 		guid=$(cat /sys/class/net/$ifc/address | cut -b 37- | sed -e 's/://g')
 		find_guid $guid $ifc
 	elif (( len == 6)); then
-		mac=$(cat /sys/class/net/$ifc/address | sed -e 's/://g')	
+		mac=$(cat /sys/class/net/$ifc/address | sed -e 's/://g')
 		find_mac $mac $ifc
 	fi
 done
