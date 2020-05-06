@@ -1,3 +1,22 @@
+mlnx-tools (5.1.0-0) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * Added mlnx-bf-ctl.service
+  * Added SF management tool
+  * Updated BlueField configuration environmen
+  * mlnx_tune: Added support for new OSes and BlueField2
+
+  [ Bodong Wang ]
+  * mlx_fs_dump: Add support for metadata and vhca ID
+
+  [ Parav Pandit ]
+  * ofed_scripts/ibdev2netdev: Fix printing device name and warning
+
+  [ Guy Twig ]
+  * ofed_scripts/show_irq_affinity.sh: Add CPU number to the script output
+
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Wed, 06 May 2020 12:26:28 -0600
+
 mlnx-tools (4.6.3-0) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
