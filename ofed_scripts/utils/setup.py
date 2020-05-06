@@ -47,7 +47,7 @@ except OSError:
 
 
 setup(name='mlnx-tools',
-      version='4.6.0',
+      version='5.1.0',
       author='Vladimir Sokolovsky',
       author_email='vlad@mellanox.com',
       url='https://github.com/Mellanox',
