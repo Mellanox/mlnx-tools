@@ -31,7 +31,7 @@ This is a tool to parse the flow steering information.
 
 It can either parse the output from command:
 
-	sudo mlxdump -d /dev/mst/mt4115_pciconf0 fsdump --type FT --no_zero=true > fs_log
+	sudo mlxdump -d /dev/mst/mt4115_pciconf0 fsdump --type FT --no_zero > fs_log
 
 by doing: mlx_fs_dump.py -f fs_log
 
@@ -166,6 +166,9 @@ match_criteria = {
 	"inner_headers.dst_ip_95_64"		:	"dst_ip_95_64",
 	"inner_headers.dst_ip_63_32"		:	"dst_ip_63_32",
 	"inner_headers.dst_ip_31_0"		:	"dst_ip_31_0",
+
+	"misc_2_parameters.metadata_reg_c_0"	:	"metadata_reg_c_0",
+	"modify_header_id"			:	"modify_header_id"
 }
 
 # Dict to find the ethType name
@@ -253,7 +256,9 @@ class flow_group(NodeMixin):
 class flow_entry(NodeMixin):
 	def __init__(self, parent=None, table_id=None,\
 			group_id=None, action=None, flow_index=None,\
-			dst_type=None, dst_value=None, match_cr=[]):
+			dst_type=None, dst_value=None,\
+			dst_vhca_id_valid=None, dst_vhca_id=None,\
+			match_cr=[]):
 		self.parent = parent
 		self.table_id = table_id
 		self.group_id = group_id
@@ -261,6 +266,8 @@ class flow_entry(NodeMixin):
 		self.flow_index = flow_index
 		self.dst_type = dst_type
 		self.dst_value = dst_value
+		self.dst_vhca_id_valid = dst_vhca_id_valid
+		self.dst_vhca_id = dst_vhca_id
 		self.cr_found = []
 
 		for i, cr in enumerate(match_cr):
@@ -294,9 +301,18 @@ def printFg(node):
 def printFte(node):
 	ret = " "
 	is_ipv4 = False
+	close_dest = False
 
 	if node.dst_type is not "0":
-		ret += "to (" + node.dst_type + ":" + node.dst_value + ") "
+		ret += "to (" + node.dst_type + ":" + node.dst_value
+		close_dest = True
+
+	if node.dst_vhca_id_valid is not 0:
+		ret += " VHCA:" + node.dst_vhca_id
+		close_dest = True
+
+	if close_dest:
+		ret +=  ") "
 
 	for i, cr in enumerate(node.cr_found):
 		# Only print cr with none 0 value
@@ -447,6 +463,12 @@ class fancy_dump():
 				dst_value = test_bit(node,"destination[0].destination_id")
 				dst_type = test_bit(node, "destination[0].destination_type").\
 						split("(")[0].rstrip('_')
+				dst_vhca_id_valid = int(test_bit(node, \
+					"destination[0].dst_esw_owner_vhca_id_valid"), 0)
+				if dst_vhca_id_valid:
+					dst_vhca_id = test_bit(node, "destination[0].dst_esw_owner_vhca_id")
+				else:
+					dst_vhca_id = 0
 
 				if int(valid, 0):
 					match_cr = node[node.index("valid") + 2:]
@@ -454,7 +476,9 @@ class fancy_dump():
 					match_cr = []
 				entryList.append(flow_entry(None, table_id,\
 						group_id, action, flow_index,\
-						dst_type, dst_value, match_cr))
+						dst_type, dst_value,\
+						dst_vhca_id_valid, dst_vhca_id,\
+						match_cr))
 
 		for ftb_idx, ftb in enumerate(tableList):
                         for fg_idx, fg in enumerate(groupList):
