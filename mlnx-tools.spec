@@ -91,6 +91,7 @@ install -m 0644 kernel-boot/82-net-setup-link.rules %{buildroot}%{_sysconfdir}/u
 install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/udev/rules.d/
 install -m 0644 kernel-boot/mlnx-bf.conf            %{buildroot}%{_sysconfdir}/modprobe.d/
 install -m 0755 kernel-boot/mlnx_bf_configure       %{buildroot}/sbin
+install -m 0755 kernel-boot/mlnx-sf                 %{buildroot}/sbin
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -109,6 +110,7 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
+/sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
 /lib/udev/vf-net-link-name.sh

@@ -1,0 +1,442 @@
+#!/bin/bash
+# ex:ts=4:sw=4:sts=4:et
+# -*- tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*-
+#
+# Copyright (c) 2020 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+
+LANG=en_US.UTF_8
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+export prog=`readlink -f $0`
+export version="0.1"
+export verbose=0
+export dryrun=0
+export device=""
+export devpath=""
+export spath=""
+export uuid=""
+export uuid_path=""
+export mac=""
+export permanent=0
+export conf="/etc/mellanox/mlnx-sf.conf"
+
+usage() {
+cat << EOF
+Usage: `basename $0` [ OPTIONS ]
+OPTIONS:
+-a, -action,    --action <action>               Perform action
+    action:	{ enable | create | configure | remove | show | set_max_mdevs | query_mdevs_num }
+
+-d, -device,    --device <device>               PCI device <domain>:<bus>:<device>.<func> (E.g.: 0000:03:00.0)
+-m, -max_mdevs, --max_mdevs <max mdevs number>  Set maximum number of MDEVs
+-u, -uuid,      --uuid <uuid>                   UUID to create SF with
+-M, -mac,       --mac <MAC>                     MAC to create SF with
+-p, -permanent, --permanent [<conf file>]       Store configuration to be used after reboot and/or driver restart. Default ($conf).
+-V, -version,   --version                       Display script version and exit
+-D, -dryrun,    --dryrun                        Display commands only.
+-v, -verbose,   --verbose                       Run script in verbose mode. Will print out each step of execution.
+-h, -help,      --help                          Display help
+
+
+EOF
+}
+
+info() {
+	echo >&2 ":: $*"
+}
+
+note() {
+	echo >&2 "NOTE: $*"
+}
+
+warn() {
+	echo >&2 "WARNING: $*"
+}
+
+error() {
+	echo >&2 "ERROR: $*"
+	exit 1
+}
+
+ex() {
+	if [ $dryrun -eq 1 ]; then
+		echo "$@"
+	else
+		eval "$@"
+		if [ $? -ne 0 ]; then
+			error "Failed executing $@"
+	        exit 1
+		fi
+	fi
+}
+
+set_max_mdevs() {
+# Action: set_max_mdevs
+	if [ -z "$max_mdevs" ]; then
+		error "max_mdev number is not defined. Use '-m' parameter"
+		exit 1
+	fi
+
+	x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
+	if [ "$x" -ne $max_mdevs ] ;then
+		ex "echo $max_mdevs > ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs"
+	fi
+}
+
+show_sf() {
+	if [ -z "${uuid}" ]; then
+		error "UUID is not set. Use '-u|--uuid <uuid>' parameter"
+		exit 1
+	fi
+
+	pci_dev=`readlink -f ${uuid_path} | cut -d '/' -f 8`
+
+	if [[ ! -z "${device}" && "${pci_dev}" != "${device}" ]]; then
+		return
+	fi
+
+	rdma_dev=`/bin/ls ${uuid_path}/infiniband 2> /dev/null`
+	sf_netdev=`cat ${uuid_path}/infiniband/${rdma_dev}/ports/1/gid_attrs/ndevs/0 2> /dev/null`
+	rep_netdev=`cat ${uuid_path}/devlink-compat-config/netdev 2> /dev/null`
+	mac=`cat ${uuid_path}/devlink-compat-config/mac_addr 2> /dev/null`
+
+	cat << EOF
+
+UUID: ${uuid}
+	PCI dev: ${pci_dev}
+	rdma_dev: ${rdma_dev}
+	REP netdev: ${rep_netdev}
+	MAC: ${mac}
+	SF netdev: ${sf_netdev}
+EOF
+}
+
+show() {
+# Action: show
+	if [ ! -z "${uuid}" ]; then
+		show_sf
+		return 0
+	fi
+
+	for uuid in `cd /sys/bus/mdev/devices/; /bin/ls -1`
+	do
+		export uuid
+		export uuid_path="/sys/bus/mdev/devices/$uuid"
+		show_sf
+	done
+}
+
+query_mdevs_num() {
+# Action: query_mdevs_num
+if [ ! -z "$device" ]; then
+	devices="${device}"
+else
+	devices=`lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
+fi
+
+for device in ${devices}
+do
+	devpath="/sys/bus/pci/devices/${device}"
+	available=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/available_instances)
+	x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
+	cat << EOF_mdev
+PCI device: ${device} max_mdevs: ${x} available_mdevs: ${available}
+EOF_mdev
+done
+}
+
+enable() {
+# Action: enable
+	info "Enabling SF for device: ${device}"
+	ex mstconfig -y -d ${device} s PF_BAR2_SIZE=1 PF_BAR2_ENABLE=True
+	note "Cold reboot the BlueField host system so that the above settings can \
+be applied on subsequent reboot sequences."
+}
+
+set_mac() {
+	ex "echo ${mac} > ${uuid_path}/devlink-compat-config/mac_addr"
+	info "MAC: ${mac} is set for device with UUID: ${uuid}"
+}
+
+remove() {
+# Action: remove
+	if [ -z "${uuid}" ]; then
+		error "UUID is not set. Use '-u|--uuid <uuid>' parameter"
+		exit 1
+	fi
+
+	info "Removing SF for device: ${device} with UUID: ${uuid}"
+	ex "echo 1 > ${uuid_path}/remove"
+}
+
+configure() {
+# Action: configure
+	if [ -z "${uuid}" ]; then
+		error "UUID is not set. Use '-u|--uuid <uuid>' parameter"
+		exit 1
+	fi
+
+	if [ ! -d "${uuid_path}" ]; then
+		error "There is no SF with UUID: ${uuid}"
+		exit 1
+	fi
+
+	ex "echo ${uuid} > `readlink -f /sys/bus/mdev/devices/${uuid}/driver/unbind`"
+
+	if [ ! -z "${mac}" ]; then
+		set_mac
+	fi
+
+	ex "echo ${uuid} > /sys/bus/mdev/drivers/mlx5_core/bind"
+}
+
+create() {
+# Action: create
+	if [ ! -d "${spath}" ]; then
+		error "${spath} does not exist. Check if mlx5_core kernel module is loaded."
+	fi
+
+	available=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/available_instances)
+	if [ "$available" -le 0 ] ;then
+		x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
+		error "Reached the maximum number of SFs: ${x}. Cannot create new SF."
+		exit 1
+	fi
+
+	if [ -z "$uuid" ] ; then
+		uuid=$(uuidgen)
+	fi
+
+	info "Creating SF with UUID: $uuid"
+
+	export uuid_path="/sys/bus/mdev/devices/${uuid}"
+
+	if [ ! -e "$spath/devices/$uuid" ] ; then
+		ex "echo ${uuid} > $spath/create"
+		sleep 1
+	else
+		note "$0: SF $spath/devices/$uuid already exists"
+		return 0
+	fi
+
+	ex "echo ${uuid} > /sys/bus/mdev/drivers/vfio_mdev/unbind"
+
+	if [ ! -z "${mac}" ]; then
+		set_mac
+	fi
+
+	ex "echo ${uuid} > /sys/bus/mdev/drivers/mlx5_core/bind"
+
+	info "Created SF with UUID: ${uuid}"
+}
+
+permanent_change_sf() {
+# Store command in the configuration file
+	if [ ! -e "${conf}" ]; then
+		ex mkdir -p `dirname ${conf}`
+		ex touch ${conf}
+	fi
+
+	ts=`date '+%Y%m%d.%H%M%S'`
+
+	case "${action}" in
+		"set_max_mdevs")
+			ex cp -f ${conf} ${conf}.${ts}
+			cmd="$prog -a set_max_mdevs -d ${device} --max_mdevs ${max_mdevs}"
+			if (grep -wq "set_max_mdevs" ${conf} > /dev/null 2>&1 | grep -w "${device}"); then
+				perl -ni -e "print unless /${uuid}.*${device}/" ${conf}
+			fi
+			sed -i "1i${cmd}" ${conf}
+			;;
+		"remove")
+			if ! (grep -wq "${uuid}" ${conf} > /dev/null 2>&1); then
+				error "There is no SF with UUID: ${uuid} in ${conf}"
+				exit 1
+			fi
+			perl -ni.${ts} -e "print unless /${uuid}/" ${conf}
+			;;
+		"create")
+			if (grep -wq "${uuid}" ${conf} > /dev/null 2>&1); then
+				error "SF with UUID: ${uuid} already exists in ${conf}"
+				exit 1
+			fi
+			cmd="$prog -a create -d ${device} -u ${uuid}"
+			if [ ! -z "${mac}" ]; then
+				cmd="${cmd} --mac ${mac}"
+			fi
+			ex cp -f ${conf} ${conf}.${ts}
+			echo "${cmd}" >> ${conf}
+			;;
+		"configure")
+			if ! (grep -wq "${uuid}" ${conf} > /dev/null 2>&1); then
+				error "There is no SF with UUID: ${uuid} in ${conf}"
+				exit 1
+			fi
+			if [ ! -n "${device}" ]; then
+				device=`grep -w "${uuid}" ${conf} | egrep -o "[[:xdigit:]]{4}:[[:xdigit:]]{2}:[[:xdigit:]]{2}.[[:xdigit:]]{1}"`
+			fi
+			perl -ni.${ts} -e "print unless /${uuid}/" ${conf}
+			cmd="$prog -a create -d ${device} -u ${uuid} --mac ${mac}"
+			echo "${cmd}" >> ${conf}
+			;;
+	esac
+}
+
+options=$(getopt -l "action:,device:,max_mdevs:,permanent::,uuid:,mac:,help,version,verbose,dryrun" -o "a:d:m:p::u:M:hVvD" -a -- "$@")
+
+eval set -- "$options"
+
+while true
+do
+	case $1 in
+		-h|--help)
+		    usage
+		    exit 0
+		    ;;
+		-a|--action)
+		    shift
+			action=$1
+			;;
+		-d|--device)
+		    shift
+			device=$1
+			;;
+		-u|--uuid)
+		    shift
+			uuid=$1
+			;;
+		-M|--mac)
+		    shift
+			mac=$1
+			;;
+		-m|--max_mdevs)
+		    shift
+			max_mdevs=$1
+			;;
+		-p|--permanent)
+			permanent=1
+			if [[ -n $2 && $2 != -* ]]; then
+				conf=$2
+				shift
+			fi
+			;;
+		-V|--version)
+		    echo `basename $0` $version
+			exit 0
+		    ;;
+		-v|--verbose)
+		    export verbose=1
+		    set -xv
+		    ;;
+		-D|--dryrun)
+		    export dryrun=1
+		    ;;
+		--)
+		    shift
+		    break;;
+	esac
+	shift
+done
+
+if [ -z "$action" ]; then
+	error "Action is not defined. Use '-a|--action <action>' parameter"
+	exit 1
+fi
+
+supported_actions=`grep '^\# Action' $0 | cut -d ' ' -f 3`
+if ! echo "${supported_actions}" | grep -q -w "${action}"; then
+	error "Action \"${action}\" is not supported"
+	exit 1
+fi
+
+case "${action}" in
+	"remove")
+		if [ -z "$uuid" ]; then
+			error "UUID is not defined. Use '-u|--uuid <uuid>' parameter"
+			exit 1
+		fi
+	;;
+	"show" | "configure" | "query_mdevs_num")
+	;;
+	*)
+		if [ -z "$device" ]; then
+			error "Device is not defined. Use '-d|--device <device>' parameter"
+			exit 1
+		fi
+	;;
+esac
+
+if [ ! -z "$device" ]; then
+	export devpath="/sys/bus/pci/devices/${device}"
+	if [ ! -d "${devpath}" ]; then
+		error "Device ${device} does not exist."
+		exit 1
+	fi
+
+	export spath="${devpath}/mdev_supported_types/mlx5_core-local"
+fi
+
+if [ ! -z "${uuid}" ]; then
+	export uuid_path="/sys/bus/mdev/devices/${uuid}"
+	if [[ ! -d "${uuid_path}" && "${action}" != "create" ]]; then
+		error "There is no SF with UUID: ${uuid}"
+		exit 1
+	fi
+	if [ -d "${uuid_path}" ]; then
+		pci_dev=`readlink -f ${uuid_path} | cut -d '/' -f 8`
+		if [[ ! -z "$device" && "$device" != "$pci_dev" ]]; then
+			error "UUID: ${uuid} belongs to PCI device $pci_dev and not to $device"
+			exit 1
+		fi
+	fi
+fi
+
+case "${action}" in
+	"create")
+		if [ ! -e "${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs" ]  ; then
+			error "Can't ${action} SF using $device - BAR2 is disabled. Need to enable first."
+			exit 69
+		fi
+	;;
+esac
+
+if [ $dryrun -eq 1 ]; then
+	note "Dry run parameter is set. No action will be taken."
+fi
+
+${action}
+
+if [[ $permanent -eq 1 && $dryrun -ne 1 ]]; then
+	case "${action}" in
+		"create"|"configure"|"remove"|"set_max_mdevs")
+			permanent_change_sf
+			;;
+		*)
+			;;
+	esac
+fi
+
+exit 0
