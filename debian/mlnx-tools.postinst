@@ -1,2 +1,0 @@
-systemctl daemon-reload >/dev/null 2>&1 || true
-systemctl enable mlnx-eswitch >/dev/null  2>&1 || true
