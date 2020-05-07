@@ -1,0 +1,1 @@
+systemctl disable mlnx-bf-ctl.service >/dev/null  2>&1 || true

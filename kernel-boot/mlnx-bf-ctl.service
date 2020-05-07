@@ -1,0 +1,12 @@
+[Unit]
+Description=Configure BlueField device
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+ExecStart=/sbin/mlnx_bf_configure
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

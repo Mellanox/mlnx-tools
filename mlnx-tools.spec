@@ -92,6 +92,7 @@ install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/u
 install -m 0644 kernel-boot/mlnx-bf.conf            %{buildroot}%{_sysconfdir}/modprobe.d/
 install -m 0755 kernel-boot/mlnx_bf_configure       %{buildroot}/sbin
 install -m 0755 kernel-boot/mlnx-sf                 %{buildroot}/sbin
+install -m 0644 kernel-boot/mlnx-bf-ctl.service     %{buildroot}%{_sysconfdir}/systemd/system/
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -106,6 +107,13 @@ find %{buildroot}${mlnx_python_sitelib} -type f -print | sed -e 's@%{buildroot}@
 %clean
 rm -rf %{buildroot}
 
+%preun
+/usr/bin/systemctl disable mlnx-bf-ctl.service >/dev/null 2>&1 || :
+
+%post
+/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
+/usr/bin/systemctl enable mlnx-bf-ctl.service >/dev/null 2>&1 || :
+
 %files -f mlnx-tools-files
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
@@ -116,6 +124,7 @@ rm -rf %{buildroot}
 /lib/udev/vf-net-link-name.sh
 %{_sysconfdir}/udev/rules.d/82-net-setup-link.rules
 %{_sysconfdir}/udev/rules.d/91-tmfifo_net.rules
+%{_sysconfdir}/systemd/system/mlnx-bf-ctl.service
 %{_sysconfdir}/modprobe.d/mlnx-bf.conf
 
 %changelog
