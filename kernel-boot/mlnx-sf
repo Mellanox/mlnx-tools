@@ -42,6 +42,8 @@ export uuid_path=""
 export mac=""
 export permanent=0
 export conf="/etc/mellanox/mlnx-sf.conf"
+export PF_BAR2_SIZE=1
+export LIMIT_MAX_MDEVS=2
 
 usage() {
 cat << EOF
@@ -93,11 +95,35 @@ ex() {
 	fi
 }
 
+get_config_value()
+{
+	mstconfig -d ${device} q 2> /dev/null | grep -w $1 | awk '{print $NF}' | cut -d '(' -f 1
+}
+
 set_max_mdevs() {
 # Action: set_max_mdevs
 	if [ -z "$max_mdevs" ]; then
 		error "max_mdev number is not defined. Use '-m' parameter"
 		exit 1
+	fi
+
+	PF_BAR2_SIZE=`get_config_value PF_BAR2_SIZE`
+	case "X${PF_BAR2_SIZE}" in
+		X1)
+			LIMIT_MAX_MDEVS=2
+			;;
+		X3)
+			LIMIT_MAX_MDEVS=32
+			;;
+		*)
+			error "Enable SFs first, using: $prog -a enable -d ${device}"
+			exit 1
+			;;
+	esac
+
+	if [ $max_mdevs -gt $LIMIT_MAX_MDEVS ]; then
+		max_mdevs=$LIMIT_MAX_MDEVS
+		warn "Maximum number of supported MDEV devices is limited to $LIMIT_MAX_MDEVS"
 	fi
 
 	x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
@@ -171,7 +197,17 @@ done
 enable() {
 # Action: enable
 	info "Enabling SF for device: ${device}"
-	ex mstconfig -y -d ${device} s PF_BAR2_SIZE=1 PF_BAR2_ENABLE=True
+	if (lspci -n -s ${device} | grep -q 'a2d6'); then
+		PF_BAR2_SIZE=3
+	fi
+	current_pf_bar2_size=`get_config_value PF_BAR2_SIZE`
+	current_pf_bar2_enable=`get_config_value PF_BAR2_ENABLE`
+	if [[ "${current_pf_bar2_size}" == "$PF_BAR2_SIZE" && "$current_pf_bar2_enable" == "True" ]]; then
+		info "SFs are enabled already for device: ${device}"
+		return
+	fi
+
+	ex mstconfig -y -d ${device} s PF_BAR2_SIZE=$PF_BAR2_SIZE PF_BAR2_ENABLE=True
 	note "Cold reboot the BlueField host system so that the above settings can \
 be applied on subsequent reboot sequences."
 }
@@ -232,8 +268,6 @@ create() {
 
 	info "Creating SF with UUID: $uuid"
 
-	export uuid_path="/sys/bus/mdev/devices/${uuid}"
-
 	if [ ! -e "$spath/devices/$uuid" ] ; then
 		ex "echo ${uuid} > $spath/create"
 		sleep 1
@@ -251,6 +285,8 @@ create() {
 	ex "echo ${uuid} > /sys/bus/mdev/drivers/mlx5_core/bind"
 
 	info "Created SF with UUID: ${uuid}"
+
+	export uuid_path="/sys/bus/mdev/devices/${uuid}"
 }
 
 permanent_change_sf() {
