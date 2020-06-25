@@ -1,3 +1,13 @@
+mlnx-tools (5.1.1-0) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-sf: Limit max_mdevs number according to BAR2 size
+
+  [ Bodong Wang ]
+  * Adapt link name script for reuse native NIC port
+
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Thu, 25 Jun 2020 14:37:20 -0600
+
 mlnx-tools (5.1.0-0) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
