@@ -1,16 +1,16 @@
 #!/bin/bash
 
-SWID=$1
+SWID=$2
 # might be pf0vf1 so only get vf number
-PORT=${2##*f}
-PORT_NAME=$2
+PORT=${1##*f}
+PORT_NAME=$1
 
 # need the PATH for BF ARM lspci to work
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -eq 1 ]; then
-	echo NAME=`echo ${2} | sed -e "s/vf-1/hpf/;s/\(pf[[:digit:]]\+\)p.*/\1m0/"`
+	echo NAME=`echo ${1} | sed -e "s/\(pf[[:digit:]]\+\)$/\1hpf/"`
 	exit 0
 fi
 
@@ -23,6 +23,10 @@ fi
 if [ -n "$ID_NET_NAME_PATH" ]; then
     echo NAME="${ID_NET_NAME_PATH%%np[[:digit:]]}"
     exit
+fi
+
+if [ -z "$SWID" ]; then
+    exit 0
 fi
 
 # for SF mdev devices
@@ -85,7 +89,9 @@ function get_pci_port_name() {
 
 # for vf rep get parent slot/path.
 parent_phys_port_name=${PORT_NAME%vf*}
-parent_phys_port_name=${parent_phys_port_name//f}
+parent_phys_port_name=${parent_phys_port_name//pf}
+((parent_phys_port_name&=0x7))
+parent_phys_port_name="p$parent_phys_port_name"
 # try at most two times
 for cnt in {1..2}; do
     for pci in `ls -l /sys/class/net/*/device | cut -d "/" -f9-`; do
