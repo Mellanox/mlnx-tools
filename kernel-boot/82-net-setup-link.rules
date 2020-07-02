@@ -1,10 +1,9 @@
 SUBSYSTEM=="net", ACTION=="add", ATTR{phys_switch_id}!="", ATTR{phys_port_name}!="", \
 	IMPORT{program}="/lib/udev/vf-net-link-name.sh $attr{phys_port_name} $attr{phys_switch_id}" \
-	NAME="$env{NAME}", GOTO="net_setup_skip_link_name"
+	NAME="$env{NAME}", RUN+="/sbin/ethtool -L $env{NAME} combined 4", GOTO="net_setup_skip_link_name"
 
 SUBSYSTEM=="net", ACTION=="add", ATTR{phys_port_name}!="", \
         IMPORT{program}="/lib/udev/vf-net-link-name.sh $attr{phys_port_name}" \
-        NAME="$env{NAME}"
+        NAME="$env{NAME}", RUN+="/sbin/ethtool -L $env{NAME} combined 4"
 
 LABEL="net_setup_skip_link_name"
-RUN+="/sbin/ethtool -L $env{NAME} combined 4"
