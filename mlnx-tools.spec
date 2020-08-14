@@ -84,6 +84,7 @@ install -m 0755 ofed_scripts/setup_mr_cache.sh      %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/odp_stat.sh            %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/show_counters          %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/show_gids              %{buildroot}%{_sbindir}
+install -m 0755 ofed_scripts/mlnx*hlk               %{buildroot}%{_sbindir}
 install -m 0755 ofed_scripts/ibdev2netdev           %{buildroot}%{_bindir}
 install -m 0755 ofed_scripts/roce_config.sh         %{buildroot}%{_bindir}/roce_config
 install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}/lib/udev/

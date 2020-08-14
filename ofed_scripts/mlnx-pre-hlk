@@ -1,0 +1,30 @@
+#!/bin/bash
+
+export PATH=/opt/mellanox/iproute2/sbin:$PATH
+
+if [ -e /etc/debian_version ]; then
+	/etc/init.d/openvswitch-switch stop
+else
+	/usr/bin/systemctl stop openvswitch.service
+fi
+
+tc qdisc del dev p0 handle ffff: ingress
+tc qdisc del dev pf0hpf handle ffff: ingress
+tc qdisc del dev p1 handle ffff: ingress
+tc qdisc del dev pf1hpf handle ffff: ingress
+
+
+tc qdisc add dev p0 handle ffff: ingress
+tc qdisc add dev pf0hpf handle ffff: ingress
+tc qdisc add dev p1 handle ffff: ingress
+tc qdisc add dev pf1hpf handle ffff: ingress
+
+tc filter add dev p0 ingress  protocol all flower skip_sw action mirred egress redirect dev pf0hpf
+tc filter add dev pf0hpf ingress  protocol all flower skip_sw action mirred egress redirect dev p0
+tc filter add dev p1 ingress  protocol all flower skip_sw action mirred egress redirect dev pf1hpf
+tc filter add dev pf1hpf ingress  protocol all flower skip_sw action mirred egress redirect dev p1
+
+ifconfig p0 mtu 9614
+ifconfig pf0hpf mtu 9614
+ifconfig p1 mtu 9614
+ifconfig pf1hpf mtu 9614
