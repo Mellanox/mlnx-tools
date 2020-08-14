@@ -112,6 +112,9 @@ set_max_mdevs() {
 		X1)
 			LIMIT_MAX_MDEVS=2
 			;;
+		X2)
+			LIMIT_MAX_MDEVS=16
+			;;
 		X3)
 			LIMIT_MAX_MDEVS=32
 			;;
@@ -198,7 +201,7 @@ enable() {
 # Action: enable
 	info "Enabling SF for device: ${device}"
 	if (lspci -n -s ${device} | grep -q 'a2d6'); then
-		PF_BAR2_SIZE=3
+		PF_BAR2_SIZE=2
 	fi
 	current_pf_bar2_size=`get_config_value PF_BAR2_SIZE`
 	current_pf_bar2_enable=`get_config_value PF_BAR2_ENABLE`
