@@ -98,6 +98,17 @@ set_eswitch_mode()
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
 do
 	if (mstconfig -d ${dev} q 2> /dev/null | grep -q "ECPF_ESWITCH_MANAGER.*ECPF(1)"); then
+		steering_mode=`get_steering_mode ${dev}`
+		if [ "${steering_mode}" == "dmfs" ]; then
+			eswitch_mode=`get_eswitch_mode ${dev}`
+			if [ "${eswitch_mode}" == "switchdev" ]; then
+				set_eswitch_mode ${dev} legacy
+				RC=$((RC+$?))
+			fi
+
+			set_steering_mode ${dev} smfs
+			RC=$((RC+$?))
+		fi
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" != "switchdev" ]; then
 			set_eswitch_mode ${dev} switchdev
