@@ -1,3 +1,14 @@
+mlnx-tools (5.1.2-0) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * mlnx/BF scripts: Ignore devices with link type IB
+  * Added 92-oob_net.rules to rename OOB network interface
+  * kernel-boot/mlnx_bf_configure: Support default SMFS mode
+  * kernel-boot/mlnx-sf: Update the default values for PF_BAR2_SIZE and max_mdevs
+  * Added mlnx-[pre|post]-hlk scripts
+
+ -- Vladimir Sokolovsky <vlad@mellanox.com>  Wed, 26 Aug 2020 11:51:21 -0600
+
 mlnx-tools (5.1.1-0) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
