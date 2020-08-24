@@ -90,6 +90,7 @@ install -m 0755 ofed_scripts/roce_config.sh         %{buildroot}%{_bindir}/roce_
 install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}/lib/udev/
 install -m 0644 kernel-boot/82-net-setup-link.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
 install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/udev/rules.d/
+install -m 0644 kernel-boot/92-oob_net.rules        %{buildroot}%{_sysconfdir}/udev/rules.d/
 install -m 0644 kernel-boot/mlnx-bf.conf            %{buildroot}%{_sysconfdir}/modprobe.d/
 install -m 0755 kernel-boot/mlnx_bf_configure       %{buildroot}/sbin
 install -m 0755 kernel-boot/mlnx-sf                 %{buildroot}/sbin
