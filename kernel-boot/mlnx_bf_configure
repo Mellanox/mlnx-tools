@@ -97,7 +97,7 @@ set_eswitch_mode()
 
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
 do
-	if (mstconfig -e -d ${dev} q 2> /dev/null | grep LINK_TYPE_P | awk '{print $3}' | grep -q "IB(1)"); then
+	if (mstconfig -e -d ${dev} q 2> /dev/null | grep LINK_TYPE_P | awk '{print $4}' | grep -q "IB(1)"); then
 		logger -t $prog -i "Link type is IB for ${dev}. Skipping mode confiugration."
 		continue
 	fi

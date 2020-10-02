@@ -429,7 +429,7 @@ case "${action}" in
 esac
 
 if [ ! -z "$device" ]; then
-	if (mstconfig -e -d $device q 2> /dev/null | grep LINK_TYPE_P | awk '{print $3}' | grep -q "IB(1)"); then
+	if (mstconfig -e -d $device q 2> /dev/null | grep LINK_TYPE_P | awk '{print $4}' | grep -q "IB(1)"); then
 		error "SFs are not supported for ports with link type IB. Device: $device Action: $action"
 		exit 22
 	fi
