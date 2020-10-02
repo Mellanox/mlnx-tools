@@ -47,10 +47,10 @@ except OSError:
 
 
 setup(name='mlnx-tools',
-      version='5.1.0',
+      version='5.1.3',
       author='Vladimir Sokolovsky',
-      author_email='vlad@mellanox.com',
-      url='https://github.com/Mellanox',
+      author_email='vlad@nvidia.com',
+      url='https://github.com/Mellanox/mlnx-tools',
       scripts=['mlnx_qos', 'tc_wrap.py', 'mlnx_perf', 'mlnx_get_vfs.pl', 'mlnx_qcn', 'mlnx_tune', 'mlnx_dump_parser', 'mlx_fs_dump', 'mlnx_mcg'],
       py_modules=['netlink', 'dcbnetlink', 'genetlink'],
       )

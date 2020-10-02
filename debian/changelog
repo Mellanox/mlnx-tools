@@ -1,3 +1,11 @@
+mlnx-tools (5.1.3-0) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * kernel-boot/mlnx-sf: Change PF_BAR2_SIZE and remove limits
+  * kernel-boot/mlnx*: Check the current LINK_TYPE instead of the default
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Fri, 02 Oct 2020 11:32:23 -0600
+
 mlnx-tools (5.1.2-0) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
