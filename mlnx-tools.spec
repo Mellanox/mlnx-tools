@@ -126,6 +126,7 @@ rm -rf %{buildroot}
 /lib/udev/vf-net-link-name.sh
 %{_sysconfdir}/udev/rules.d/82-net-setup-link.rules
 %{_sysconfdir}/udev/rules.d/91-tmfifo_net.rules
+%{_sysconfdir}/udev/rules.d/92-oob_net.rules
 %{_sysconfdir}/systemd/system/mlnx-bf-ctl.service
 %{_sysconfdir}/modprobe.d/mlnx-bf.conf
 
