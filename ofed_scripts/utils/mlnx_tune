@@ -345,7 +345,7 @@ class OS:
 	ALL				= "ALL"
 	SUPPORTED_OS = [
 		CENTOS6_3, CENTOS6_10, CENTOS7_2,CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6,
-		CENTOS7_7, CENTOS8_0, CENTOS8_1, DEBIAN8_9, DEBIAN8_11, DEBIAN9_6,
+		CENTOS7_7, CENTOS7_8, CENTOS8_0, CENTOS8_1, DEBIAN8_9, DEBIAN8_11, DEBIAN9_6,
 		DEBIAN9_9, DEBIAN9_11, DEBIAN10_0, EULEROS2_0_3, EULEROS2_0_8, FEDORA30, OL6_10,
 		OL7_4, OL7_7, OL7_8, OL8_0, OL8_1, RH6_3, RH6_10, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6,
 		RH7_7, RH7_8, RH8_0, RH8_1, SLES11_3, SLES11_4, SLES12_3, SLES12_4, SLES12_5,
@@ -353,12 +353,12 @@ class OS:
                 UBUNTU20_04, UBUNTU20_10
 		]
 	SYSTEMCTL_ACCESS_OS = [
-		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
+		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS7_8, CENTOS8_0,
 		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2
 		]
 	SUSE = [SLES11_3, SLES11_4, SLES12_3, SLES12_4, SLES12_5, SLES15_0, SLES15_1]
 	PPC_DEVICE_NEW_FORMAT_OS = [
-		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
+		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS7_8, CENTOS8_0,
 		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2,
 		]
 	NO_IPV6_FORWARDING_SUPPORT_OS = [UBUNTU14_04]
@@ -454,6 +454,8 @@ class OS:
 					return OS.CENTOS7_6
 				if os_version.startswith('7.7'):
 					return OS.CENTOS7_7
+				if os_version.startswith('7.8'):
+					return OS.CENTOS7_8
 				if os_version.startswith('8.0'):
 					return OS.CENTOS8_0
 				if os_version.startswith('8.1'):
@@ -480,6 +482,8 @@ class OS:
 					return OS.OL7_6
 				if os_version.startswith('7.7'):
 					return OS.OL7_7
+				if os_version.startswith('7.8'):
+					return OS.OL7_8
 				if os_version.startswith('8.0'):
 					return OS.OL8_0
 				if os_version.startswith('8.1'):
@@ -1827,10 +1831,14 @@ class RingInfo:
 		irqs = []
 		( rc, interrupts ) = getstatusoutput(PROC_INTERRUPT_CMD)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(PROC_INTERRUPT_CMD)
+                if not interface_name in interrupts:
+                        interface_name = "mlx5_comp"
+                else:
+                        interface_name = interface_name + "-"
 		for line in interrupts.split('\n'):
-			if (interface_name in line) and ring_number and \
-					('%s%s%s'%(interface_name, '-', str(ring_number)) in line) and \
-					(line.split(interface_name + '-')[1] == str(ring_number)):
+			if (interface_name in line or "mlx5" in line) and ring_number and \
+					('%s%s'%(interface_name, str(ring_number)) in line) and \
+					(line.split(interface_name)[1].split("@")[0] == str(ring_number)):
 
 				irq			= IrqInfo(line.split()[0].split(":")[0].strip())
 				irq.smp_affinity_mask	= irq.get_affinity_mask()
@@ -2196,6 +2204,16 @@ class EthInterfaceInfo(InterfaceInfo):
 					found_index += 1
 					if found_index == appearance_index:
 						current_value = line.split(":")[1].split()[0].strip()
+						return current_value
+                                if parameter == 'adaptive rx' and 'Adaptive RX:' in line:
+                                        found_index += 1
+					if found_index == appearance_index:
+						current_value = line.split("RX:")[1].split()[0].strip()
+						return current_value
+                                if parameter == 'adaptive tx' and 'Adaptive' in line and 'TX:' in line:
+                                        found_index += 1
+					if found_index == appearance_index:
+						current_value = line.split("TX:")[1].split()[0].strip()
 						return current_value
 		return ""
 
