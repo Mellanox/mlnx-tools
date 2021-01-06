@@ -68,12 +68,14 @@ def get_stats(intf, keys = None):
 			val = "0"
 
 		map[key] = int(val)
+	if "timestamp" not in map:
+		map["timestamp"] = time.time()*1000
 	return map
 
 parser = OptionParser(usage="%prog -i <interface> [options]", version="%prog 1.0")
 
 parser.add_option("-i", "--interface", dest="intf", help="Interface name")
-parser.add_option("-t", "--interval", dest="interval", default=1,
+parser.add_option("-t", "--interval", dest="interval", default=1.0, type="float", 
 		help="Interval between measurements in seconds")
 parser.add_option("-c", "--count", dest="count", default=-1, type="int",
 		help="Exit counter - exit after counting number of intervals ( default is -1: do not exit) ")
@@ -86,6 +88,9 @@ if (options.intf == None):
 	sys.exit(1)
 
 print("Initializing mlnx_perf...")
+
+# init the prev timepoint
+prev_timepoint = time.time()
 
 # keys must be ordered, so can't use 'for key in map'
 keys = []
@@ -105,7 +110,8 @@ if count < -1 or count == 0:
 print("Sampling started.")
 
 while count != 0:
-	time.sleep(float(options.interval))
+	time.sleep(options.interval - (time.time() - prev_timepoint))  
+	prev_timepoint = time.time()
 	count -= 1
 
 	curr = get_stats(options.intf)
