@@ -1,0 +1,6 @@
+debian/.debhelper/
+debian/files
+debian/mlnx-tools.debhelper.log
+debian/mlnx-tools.substvars
+debian/mlnx-tools/
+ofed_scripts/utils/build/
