@@ -41,6 +41,19 @@ Requires: python
 %description
 Mellanox userland tools and scripts
 
+%global RHEL8 0%{?rhel} >= 8
+%global FEDORA3X 0%{?fedora} >= 30
+%global SLES15 0%{?suse_version} >= 1500
+%global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15}
+
+%global IS_RHEL_VENDOR "%{_vendor}" == "redhat" || ("%{_vendor}" == "bclinux") || ("%{_vendor}" == "openEuler")
+
+%if %{PYTHON3}
+%define __python %{_bindir}/python3
+BuildRequires: python3
+%endif
+
+
 %prep
 %setup -n %{name}-%{version}
 
@@ -66,7 +79,7 @@ mlnx_python_sitelib=%{python_sitelib}
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
 fi
-python setup.py install -O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}
+%__python setup.py install -O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}
 cd -
 
 install -d %{buildroot}/sbin
