@@ -45,6 +45,7 @@ from netlink import hexdump, parse_attributes, Message, Nested, U8Attr, StrAttr,
 
 NETLINK_ROUTE = 0
 RTM_GETDCB = 78
+RTM_SETDCB = 79
 AF_UNSPEC = 0
 
 DCB_CMD_UNDEFINED = 0
@@ -109,6 +110,8 @@ DCB_ATTR_DCB_BUFFER = 10
 DCB_ATTR_IEEE_APP_UNSPEC = 0
 DCB_ATTR_IEEE_APP = 1
 
+IEEE_8021QAZ_APP_SEL_ETHERTYPE	= 1
+
 class DcbnlHdr:
 	def __init__(self, len, type):
 		self.len = len
@@ -164,7 +167,7 @@ class DcbController:
 	def set_dcb_state(self, state):
 		a = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		state_attr = U8Attr(DCB_ATTR_STATE, state)
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_SSTATE,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_SSTATE,
 				flags=NLM_F_REQUEST, attrs=[a, state_attr])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -181,7 +184,7 @@ class DcbController:
 	def set_dcbx(self, mode):
 		a = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		mode_attr = U8Attr(DCB_ATTR_DCBX , mode)
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_SDCBX,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_SDCBX,
 				flags=NLM_F_REQUEST, attrs=[a, mode_attr])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -249,16 +252,17 @@ class DcbController:
 		buffer_size = array.array('I')
 		buffer_size.fromstring(ieee[DCB_ATTR_DCB_BUFFER].str()[8:])
 
-		return prio2buffer, buffer_size
+		return prio2buffer, buffer_size[:8], buffer_size[8]
 
-	def set_dcb_buffer(self, _prio2buffer, _buffer_size):
+	def set_dcb_buffer(self, _prio2buffer, _buffer_size, _tot_size):
+		_buffer_size.append(_tot_size)
 		dcb_buffer = _prio2buffer.tostring() + _buffer_size.tostring()
 
 		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		dcb_buffer_str = StrAttr(DCB_ATTR_DCB_BUFFER, dcb_buffer)
 		ieee = Nested(DCB_ATTR_IEEE, [dcb_buffer_str]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_SET,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -281,7 +285,7 @@ class DcbController:
 		ieee_pfc = StrAttr(DCB_ATTR_IEEE_PFC, pfc)
 		ieee = Nested(DCB_ATTR_IEEE, [ieee_pfc]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_SET,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -312,7 +316,7 @@ class DcbController:
 		ieee_ets = StrAttr(DCB_ATTR_IEEE_ETS, ets)
 		ieee = Nested(DCB_ATTR_IEEE, [ieee_ets]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_SET,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -349,7 +353,7 @@ class DcbController:
 		ieee_maxrate = StrAttr(DCB_ATTR_IEEE_MAXRATE, tc_maxrate)
 		ieee = Nested(DCB_ATTR_IEEE, [ieee_maxrate]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_SET,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -418,7 +422,7 @@ class DcbController:
 		ieee_qcn = StrAttr(DCB_ATTR_IEEE_QCN, qcn)
 		ieee = Nested(DCB_ATTR_IEEE, [ieee_qcn]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_SET,
 				 flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -449,7 +453,7 @@ class DcbController:
 		ieee_app_table = Nested(DCB_ATTR_IEEE_APP_TABLE, [ieee_app]);
 		ieee           = Nested(DCB_ATTR_IEEE, [ieee_app_table]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_SET,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_SET,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -462,7 +466,7 @@ class DcbController:
 		ieee_app_table = Nested(DCB_ATTR_IEEE_APP_TABLE, [ieee_app]);
 		ieee           = Nested(DCB_ATTR_IEEE, [ieee_app_table]);
 
-		m = DcbNlMessage(type = RTM_GETDCB, cmd = DCB_CMD_IEEE_DEL,
+		m = DcbNlMessage(type = RTM_SETDCB, cmd = DCB_CMD_IEEE_DEL,
 				flags=NLM_F_REQUEST, attrs=[intf, ieee])
 		m.send(self.conn)
 		m = DcbNlMessage.recv(self.conn)
@@ -503,6 +507,11 @@ class DcbAppTable:
 
 			if temp != "":
 				print(temp)
+
+	def printDefaultPriority(self):
+		for app in self.apps.values():
+			if app.selector == IEEE_8021QAZ_APP_SEL_ETHERTYPE:
+				print("\tprio:%d" % app.priority)
 
 	def delAppEntry(self, ctrl, selector):
 		for i in range(len(self.apps)):
