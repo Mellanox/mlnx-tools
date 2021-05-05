@@ -79,35 +79,8 @@ mlnx_python_sitelib=%{python_sitelib}
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
 fi
-%__python setup.py install -O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}
 cd -
-
-install -d %{buildroot}/sbin
-install -d %{buildroot}%{_sbindir}
-install -d %{buildroot}%{_bindir}
-install -d %{buildroot}/lib/udev
-install -d %{buildroot}%{_sysconfdir}/udev/rules.d
-install -d %{buildroot}%{_sysconfdir}/modprobe.d
-install -d %{buildroot}%{_sysconfdir}/systemd/system/
-install -m 0755 ofed_scripts/sysctl_perf_tuning     %{buildroot}/sbin
-install -m 0755 ofed_scripts/cma_roce_mode          %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/cma_roce_tos           %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/*affinity*             %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/setup_mr_cache.sh      %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/odp_stat.sh            %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/show_counters          %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/show_gids              %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/mlnx*hlk               %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/ibdev2netdev           %{buildroot}%{_bindir}
-install -m 0755 ofed_scripts/roce_config.sh         %{buildroot}%{_bindir}/roce_config
-install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}/lib/udev/
-install -m 0644 kernel-boot/82-net-setup-link.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
-install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/udev/rules.d/
-install -m 0644 kernel-boot/92-oob_net.rules        %{buildroot}%{_sysconfdir}/udev/rules.d/
-install -m 0644 kernel-boot/mlnx-bf.conf            %{buildroot}%{_sysconfdir}/modprobe.d/
-install -m 0755 kernel-boot/mlnx_bf_configure       %{buildroot}/sbin
-install -m 0755 kernel-boot/mlnx-sf                 %{buildroot}/sbin
-install -m 0644 kernel-boot/mlnx-bf-ctl.service     %{buildroot}%{_sysconfdir}/systemd/system/
+%make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}"
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -137,11 +110,11 @@ rm -rf %{buildroot}
 %{_sbindir}/*
 %{_bindir}/*
 /lib/udev/vf-net-link-name.sh
-%{_sysconfdir}/udev/rules.d/82-net-setup-link.rules
-%{_sysconfdir}/udev/rules.d/91-tmfifo_net.rules
-%{_sysconfdir}/udev/rules.d/92-oob_net.rules
-%{_sysconfdir}/systemd/system/mlnx-bf-ctl.service
-%{_sysconfdir}/modprobe.d/mlnx-bf.conf
+/lib/udev/rules.d/82-net-setup-link.rules
+/lib/udev/rules.d/91-tmfifo_net.rules
+/lib/udev/rules.d/92-oob_net.rules
+/lib/systemd/system/mlnx-bf-ctl.service
+/lib/modprobe.d/mlnx-bf.conf
 
 %changelog
 * Wed Nov 1 2017 Vladimir Sokolovsky <vlad@mellanox.com>
