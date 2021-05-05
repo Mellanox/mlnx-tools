@@ -2,18 +2,29 @@ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 
 Files: *
 Copyright: Copyright 2019 Mellanox Technologies <support@mellanox.com>
-License: GPL-2
- Software distributed under the terms of the GNU General Public License ("GPL") version 2 as published by the Free Software Foundation.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
+License: GPL-2+BSD
+ This Software is licensed under one of the following licenses:
+ .
+ 1) under the terms of the "Common Public License 1.0" a copy of which is
+    available from the Open Source Initiative, see
+    http://www.opensource.org/licenses/cpl.php.
+ .
+ 2) under the terms of the "The BSD License" a copy of which is
+    available from the Open Source Initiative, see
+    http://www.opensource.org/licenses/bsd-license.php.
+ .
+ 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+    copy of which is available from the Open Source Initiative, see
+    http://www.opensource.org/licenses/gpl-license.php.
+ .
+ Licensee has the right to choose one of the above licenses.
+ .
+ Redistributions of source code must retain the above copyright
+ notice and one of the license notices.
+ .
+ Redistributions in binary form must reproduce both the above copyright
+ notice, one of the license notices in the documentation
+ and/or other materials provided with the distribution.
+ .
+ A copy of the General Public License, version 2, could be found in
+ Debian-based systems at /usr/share/common-licenses/GPL-2 .
