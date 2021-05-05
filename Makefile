@@ -10,37 +10,6 @@ SBIN_DIR = /usr/sbin
 PYTHON = python3
 PYTHON_SETUP_EXTRA_ARGS =
 
-UDEV_RULES = \
-  kernel-boot/82-net-setup-link.rules \
-  kernel-boot/91-tmfifo_net.rules \
-  kernel-boot/92-oob_net.rules \
-  #
-UDEV_SCRIPTS = kernel-boot/vf-net-link-name.sh
-
-SYSTEMD_SERVICES = kernel-boot/mlnx-bf-ctl.service
-
-SBIN_TDIR_PROGRAMS = \
-  kernel-boot/mlnx_bf_configure \
-  kernel-boot/mlnx-sf \
-  ofed_scripts/sysctl_perf_tuning \
-  #
-
-BIN_PROGRAMS = ofed_scripts/ibdev2netdev
-
-SBIN_PROGRAMS = \
-  ofed_scripts/show_gids \
-  ofed_scripts/cma_roce_mode \
-  ofed_scripts/cma_roce_tos \
-  ofed_scripts/*affinity* \
-  ofed_scripts/setup_mr_cache.sh \
-  ofed_scripts/odp_stat.sh \
-  ofed_scripts/show_counters \
-  ofed_scripts/mlnx*hlk \
-  ofed_scripts/roce_config \
-  #
-
-MODPROBE_CONF = kernel-boot/mlnx-bf.conf
-
 all:
 
 install:
@@ -52,13 +21,13 @@ install:
 	$(INSTALL) -d $(DESTDIR)$(SYSTEMD_DIR)
 	$(INSTALL) -d $(DESTDIR)$(MODPROBE_DIR)
 
-	$(INSTALL) -m 0755 $(UDEV_SCRIPTS) -t $(DESTDIR)$(UDEV_DIR)/
-	$(INSTALL) -m 0755 $(SBIN_TDIR_PROGRAMS) -t $(DESTDIR)$(SBIN_TDIR)/
-	$(INSTALL) -m 0755 $(BIN_PROGRAMS) -t $(DESTDIR)$(BIN_DIR)/
-	$(INSTALL) -m 0755 $(SBIN_PROGRAMS) -t $(DESTDIR)$(SBIN_DIR)/
-	$(INSTALL) -m 0644 $(UDEV_RULES) -t $(DESTDIR)$(UDEV_RULES_DIR)/
-	$(INSTALL) -m 0644 $(SYSTEMD_SERVICES) -t $(DESTDIR)$(SYSTEMD_DIR)/
-	$(INSTALL) -m 0644 $(MODPROBE_CONF) -t $(DESTDIR)$(MODPROBE_DIR)/
+	$(INSTALL) -m 0755 udev/* -t $(DESTDIR)$(UDEV_DIR)/
+	$(INSTALL) -m 0755 tsbin/* -t $(DESTDIR)$(SBIN_TDIR)/
+	$(INSTALL) -m 0755 bin/* -t $(DESTDIR)$(BIN_DIR)/
+	$(INSTALL) -m 0755 sbin/* -t $(DESTDIR)$(SBIN_DIR)/
+	$(INSTALL) -m 0644 udev_rules/*.rules -t $(DESTDIR)$(UDEV_RULES_DIR)/
+	$(INSTALL) -m 0644 systemd/*.service -t $(DESTDIR)$(SYSTEMD_DIR)/
+	$(INSTALL) -m 0644 modprobe/*.conf -t $(DESTDIR)$(MODPROBE_DIR)/
 
-	cd ofed_scripts/utils;	$(PYTHON) ./setup.py install $(PYTHON_SETUP_EXTRA_ARGS)
+	cd python; $(PYTHON) ./setup.py install $(PYTHON_SETUP_EXTRA_ARGS)
 

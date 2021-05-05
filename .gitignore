@@ -4,4 +4,4 @@ debian/mlnx-tools.debhelper.log
 debian/mlnx-tools.substvars
 debian/mlnx-tools/
 debian/mlnx-tools.*.debhelper
-ofed_scripts/utils/build/
+python/build/
