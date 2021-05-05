@@ -35,81 +35,80 @@ MODE=-1
 usage="Set/Show RoCE default ToS of RDMA_CM applications
 
 Usage:
-	cma_class
+	cma_roce_tos OPTIONS
 Options:
- -d <dev>        use IB device <dev> (default mlx5_0)
- -p <port>       use port <port> of IB device (default 1)
- -t <tos>  set ToS of RoCE RDMA_CM applications (default 0)"
-
+	-h              show this help
+	-d <dev>        use IB device <dev> (default mlx5_0)
+	-p <port>       use port <port> of IB device (default 1)
+	-t <tos>        set ToS of RoCE RDMA_CM applications (0)"
 
 while getopts "d:t:hp:" arg; do
-case $arg in
-		h)
+	case $arg in
+	h)
 		echo "$usage"
 		exit
 		;;
-		d)
+	d)
 		DEVICE=$OPTARG
 		;;
-		p)
+	p)
 		PORT=$OPTARG
 		;;
-		t)
+	t)
 		MODE=$OPTARG
 		;;
 	esac
 done
 
 ID=$(id -u)
-if [ $ID -ne 0 ] ; then
-	echo you must be root to run this
+if [ $ID -ne 0 ]; then
+	echo "You must be root to run this"
 	exit 1
 fi
 
-if (! cat /proc/mounts |grep /sys/kernel/config > /dev/null) ; then
-	if (! mount -t configfs none /sys/kernel/config) ; then
-		echo "Fail to mount configfs"
+if ! cat /proc/mounts | grep /sys/kernel/config > /dev/null; then
+	if ! mount -t configfs none /sys/kernel/config; then
+		echo "Failed to mount configfs"
 		exit 1
 	fi
 fi
 
-if (modinfo configfs &> /dev/null) ; then
-	if (! cat /proc/modules|grep configfs > /dev/null) ; then
+if modinfo configfs &> /dev/null; then
+	if ! cat /proc/modules | grep configfs > /dev/null; then
 		modprobe configfs
 	fi
 fi
 
-cd /sys/kernel/config/
+cd /sys/kernel/config
 
-if [ ! -d rdma_cm ] ; then
-	echo module rdma_cm is not loaded or does not support configfs
+if [ ! -d rdma_cm ]; then
+	echo "Module rdma_cm is not loaded or does not support configfs"
 	exit 1
 fi
 
 cd rdma_cm
 
-if [ ! -d $DEVICE ] ; then
-	sudo mkdir $DEVICE
-	if [ $? -ne 0 ] ; then
-		echo failed to creat configuration for $DEVICE
+if [ ! -d $DEVICE ]; then
+	mkdir $DEVICE
+	if [ $? -ne 0 ]; then
+		echo "Failed to create configuration for $DEVICE"
 		exit 1
 	fi
 fi
 
-if [ ! -d $DEVICE/ports/$PORT ] ; then
-	echo device $DEVICE port $PORT does not exist
+if [ ! -d $DEVICE/ports/$PORT ]; then
+	echo "Device $DEVICE port $PORT does not exist"
 	exit 1
 fi
 
 cd $DEVICE/ports/$PORT
 
-if [ $MODE -ge 0 ] ; then
-	echo $MODE |sudo tee default_roce_tos
-else
-	cat default_roce_tos
+if [ $MODE -ge 0 ]; then
+	echo $MODE > default_roce_tos
 fi
+cat default_roce_tos
 
 cd ../../..
+rmdir $DEVICE
 
-sudo rmdir $DEVICE
-
+exit 0

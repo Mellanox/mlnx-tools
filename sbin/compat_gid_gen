@@ -1,0 +1,177 @@
+#!/bin/bash
+#
+# Copyright (c) 2016 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+#
+# Author: Moni Shoua <monis@mellanox.com>
+#
+
+mac_to_ipv6_2 () {
+	v=$(printf "%04x" $2)
+	IFS=':'; set $1; unset IFS
+	v1=${v:0:2}
+	v2=${v:2:4}
+	ipv6_address="fe80::$(printf %02x $((0x$1 ^ 2)))$2:${3}$v1:$v2$4:$5$6"
+	echo $ipv6_address
+}
+
+validate_mlx4_dev() {
+	local _dev=$1
+	if [ ! -d /sys/class/net/$_dev/device/driver/module ] ; then
+		echo $_dev is not a mlx4 device
+		exit 1
+	fi
+	pushd /sys/class/net/$_dev/device/driver/module > /dev/null
+	if [ $(pwd -P) != /sys/module/mlx4_core ] ; then
+		echo $_dev is not a mlx4 device
+		exit 1
+	fi
+	popd > /dev/null
+}
+
+add_link_local() {
+	if ($EXEC ip -6 addr add $1/64 dev $2) ; then
+		if [ -z $EXEC ] ; then
+			echo address $1/64 was added to $2
+		fi
+	else
+		echo failed to add $1/64 to $2
+		exit 1
+	fi
+}
+
+is_bond_dev() {
+	if [ -d /sys/class/net/$1/bonding ] ; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+is_real_dev() {
+	if [ -d  /sys/class/net/$1/device/driver/module   ] ; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+usage() {
+	echo "Usage: $0  <-d netdev> [-v|V vlan] [-D] [-n]"
+	exit 1
+}
+
+REALDEV=
+DEV=
+VLAN=
+EXEC=
+VIF=0
+
+while getopts "d:v:V:hDn" arg; do
+case $arg in
+		D)
+		set -x
+		;;
+		d)
+		REALDEV=$OPTARG
+		;;
+		v)
+		VLAN=$OPTARG
+		VIF=0
+		;;
+		V)
+		VLAN=$OPTARG
+		VIF=1
+		;;
+		n)
+		EXEC=/bin/echo
+		;;
+		h)
+		usage
+		;;
+	esac
+done
+
+if [ -z $REALDEV ] ; then
+	usage
+fi
+
+if [ -z $VLAN ] ; then
+	VLAN=65534
+elif [ $VLAN -le 0 -o $VLAN -gt 4095 ] ; then
+	echo vlan must be in range 0 - 4095
+	exit 1
+fi
+
+if [ ! -d /sys/class/net/$REALDEV ] ; then
+	echo $REALDEV: No such device
+	exit 1
+fi
+
+
+if (is_bond_dev $REALDEV) ; then
+	for slave in $(cat /sys/class/net/$REALDEV/bonding/slaves) ; do
+		validate_mlx4_dev $slave
+	done
+elif (is_real_dev $REALDEV) ; then
+	validate_mlx4_dev $REALDEV
+else
+	echo $REALDEV: not a real or bonding device
+	exit 1
+fi
+
+if [ $VIF -eq 1 ] ; then
+	if [ ! -d /sys/class/net/$REALDEV.$VLAN ] ; then
+		if ($EXEC ip link add link $REALDEV name $REALDEV.$VLAN type vlan id $VLAN) ; then
+			echo -n
+		else
+			echo failed to create $REALDEV.$VLAN
+			exit 1
+		fi
+	fi
+	DEV=$REALDEV.$VLAN
+	$EXEC sysctl net.ipv6.conf.$REALDEV/$VLAN.disable_ipv6=0 > /dev/null
+else
+	DEV=$REALDEV
+	$EXEC sysctl net.ipv6.conf.$REALDEV.disable_ipv6=0 > /dev/null
+
+fi
+
+if (is_bond_dev $REALDEV) ; then
+	if [ $(cat /sys/class/net/$REALDEV/bonding/fail_over_mac|tr  -d "[:alpha:][:space:]") -ne 0 ] ; then
+		for slave in $(cat /sys/class/net/$REALDEV/bonding/slaves) ; do
+			ADDR=$(cat /sys/class/net/$slave/address)
+			IP=$(mac_to_ipv6_2 "$ADDR" "$VLAN")
+			add_link_local $IP $DEV
+		done
+		exit 0
+	fi
+fi
+
+ADDR=$(cat /sys/class/net/$REALDEV/address)
+IP=$(mac_to_ipv6_2 "$ADDR" "$VLAN")
+add_link_local $IP $DEV
+
+exit 0

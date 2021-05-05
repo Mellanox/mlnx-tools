@@ -74,12 +74,10 @@ EOF
 }
 
 touch mlnx-tools-files
-cd ofed_scripts/utils
 mlnx_python_sitelib=%{python_sitelib}
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
 fi
-cd -
 %make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}"
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
@@ -106,6 +104,7 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
+/sbin/mlnx_bf_configure_ct
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
@@ -114,6 +113,8 @@ rm -rf %{buildroot}
 /lib/udev/rules.d/91-tmfifo_net.rules
 /lib/udev/rules.d/92-oob_net.rules
 /lib/systemd/system/mlnx-bf-ctl.service
+/lib/modprobe.d/ib_ipoib.conf
+/lib/modprobe.d/mlnx.conf
 /lib/modprobe.d/mlnx-bf.conf
 
 %changelog

@@ -1,0 +1,189 @@
+#!/bin/bash
+#
+# Copyright (c) 2021 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+
+
+RC=0
+
+mode=${1:-enable}
+status="enabled"
+
+default_grub=/etc/default/grub
+modprobe_conf_file=/etc/modprobe.d/mlnx-bf-nf-flowtable.conf
+modprobe_nf_flowtable_script=/usr/share/mlnx_ofed/mlnx_bf_assign_ct_cores.sh
+
+prog=`basename $0`
+
+rshimlog=`which bfrshlog 2> /dev/null`
+
+info()
+{
+	if [ -n "$rshimlog" ]; then
+		$rshimlog "INFO: $prog: $*"
+	fi
+	logger -t $prog -i "INFO: $*"
+}
+
+error()
+{
+	if [ -n "$rshimlog" ]; then
+		$rshimlog "ERR: $prog: $*"
+	fi
+	logger -t $prog -i "ERR: $*"
+	echo "$*"
+	exit $RC
+}
+
+function exec_print()
+{
+	info Executing: "$@";
+	eval "$@"
+}
+
+function get_status()
+{
+	info "Executing status command"
+
+	if [ ! -f $modprobe_nf_flowtable_script ]; then
+		info "${modprobe_nf_flowtable_script} is not installed"
+		status="disabled"
+	fi
+
+	exec_print grep GRUB_CMDLINE_LINUX=.*isolcpus=6,7 $default_grub >/dev/null 2>&1
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		info "isolcpus parameter is not configured in $default_grub"
+		status="disabled"
+	fi
+
+	if [ ! -f $modprobe_conf_file ]; then
+		info "$modprobe_conf_file does not exist"
+		status="disabled"
+	fi
+
+	exec_print grep isolcpus=6,7 $grub_cfg >/dev/null 2>&1;
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		info "isolcpus parameter is not configured in $grub_cfg"
+		status="disabled"
+	fi
+}
+
+if ! lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies"; then
+	RC=1
+	error Not a Bluefield device
+fi
+
+if [ ! $mode == "enable" ] && [ ! $mode == "disable" ] && [ ! $mode == "status" ]; then
+	RC=2
+	echo $0 [enable|disable|status]
+	exit $RC
+fi
+
+. /etc/os-release
+if [ $ID == "centos" ]; then
+	grub_cfg=/etc/grub2-efi.cfg
+	grub_mk_config=/usr/sbin/grub2-mkconfig
+elif [ $ID == "debian" ]; then
+	grub_cfg=/boot/grub/grub.cfg
+	grub_mk_config=/usr/sbin/grub-mkconfig
+elif [ $ID == "ubuntu" ]; then
+	grub_cfg=/boot/grub/grub.cfg
+	grub_mk_config=/usr/sbin/grub-mkconfig
+else
+	RC=3
+	error CT configuration can run only on Bluefield Centos/Debian/Ubuntu distributions
+fi
+
+if [ -f $grub_mk_config ]; then
+	info "Using ${grub_mk_config} file"
+else
+	RC=5
+	error Cannot find \(${grub_mk_config}\)
+fi
+
+if [ -f $grub_cfg ]; then
+	info "Using ${grub_cfg} file"
+else
+	RC=6
+	error Cannot find the grub configruation file \(${grub_cfg}\)
+fi
+
+if [ -f $default_grub ]; then
+	info "Using ${default_grub} file"
+else
+	RC=7
+	error $default_grub does not exist
+fi
+
+if ! grep GRUB_CMDLINE_LINUX= $default_grub >/dev/null 2>&1 ; then
+	RC=8
+	error $default_grub does not contain a GRUB_CMDLINE_LINUX configuration
+fi
+
+if [ $mode == "status" ]; then
+	get_status;
+
+	echo $status
+	exit 0;
+fi
+
+# cleanup (this is also the disable action)
+exec_print sed -i "/GRUB_CMDLINE_LINUX/s/isolcpus=6,7//" $default_grub
+if [ -f $modprobe_conf_file ]; then
+	exec_print rm -f $modprobe_conf_file
+fi
+
+if [ $mode == "enable" ]; then
+	if [ ! -f $modprobe_nf_flowtable_script ]; then
+		RC=9
+		error "${modprobe_nf_flowtable_script} is not installed"
+	fi
+
+	modprobe=`which modprobe 2>/dev/null`
+	if [ ! -n "$modprobe" ]; then
+		RC=10
+		error modprobe not found
+	fi
+
+	exec_print 'sed -in "/GRUB_CMDLINE_LINUX=/s/\"$/ \isolcpus=6,7&/" $default_grub'
+
+	if [ ! -f $modprobe_conf_file ]; then
+		exec_print 'echo "install nf_flow_table $modprobe --ignore-install nf_flow_table $CMDLINE_OPTS && $modprobe_nf_flowtable_script" > ${modprobe_conf_file}'
+	fi
+fi
+
+exec_print ${grub_mk_config} -o $grub_cfg >/dev/null 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+	RC=10
+	error "Failed setting grub config"
+fi
+
+echo Success
+echo System reboot is required
+
+exit $RC

@@ -58,14 +58,36 @@ SET_IRQ_AFIINITY_BY_NODE="set_irq_affinity_bynode.sh"
 SET_IRQ_AFIINITY_ALL="set_irq_affinity.sh"
 
 #########################################################################
+is_not_pty()
+{
+	if [ "$CONSOLETYPE" = 'pty' ]; then
+		return 1
+	fi
+	case `tty` in pts*)
+		return 1
+		;;
+	esac
+	return 0
+}
+
+is_serial()
+{
+	if [ "$CONSOLETYPE" = 'serial' ]; then
+		return 0
+	fi
+	case `tty` in ttyS0)
+		return 0
+		;;
+	esac
+	return 1
+}
+
 # Get a sane screen width
 [ -z "${COLUMNS:-}" ] && COLUMNS=80
 
-[ -z "${CONSOLETYPE:-}" ] && [ -x /sbin/consoletype ] && CONSOLETYPE="`/sbin/consoletype`"
-
 if [ -f /etc/sysconfig/i18n -a -z "${NOLOCALE:-}" ] ; then
   . /etc/sysconfig/i18n
-  if [ "$CONSOLETYPE" != "pty" ]; then
+  if is_not_pty; then
         case "${LANG:-}" in
                 ja_JP*|ko_KR*|zh_CN*|zh_TW*)
                         export LC_MESSAGES=en_US
@@ -75,8 +97,9 @@ if [ -f /etc/sysconfig/i18n -a -z "${NOLOCALE:-}" ] ; then
                         ;;
         esac
   else
-        export LANG
+	export LANG
   fi
+
 fi
 
 # Read in our configuration
@@ -95,7 +118,7 @@ if [ -z "${BOOTUP:-}" ]; then
     SETCOLOR_NORMAL="echo -en \\033[0;39m"
     LOGLEVEL=1
   fi
-  if [ "$CONSOLETYPE" = "serial" ]; then
+  if  is_serial; then
       BOOTUP=serial
       MOVE_TO_COL=
       SETCOLOR_SUCCESS=
@@ -216,15 +239,15 @@ start()
 
 		#check for BIOS support
 		if [ $NUMA_NODE -eq -1 ] ; then #no BIOS support
-			#echo "INFO - No numa node BIOS support for interface $INTERFACE , detecting noma node using pci device"
+		        #echo "INFO - No numa node BIOS support for interface $INTERFACE , detecting noma node using pci device"
 			BIOS_SUPPORT="false"
-		else
-			BIOS_SUPPORT="true"
-		fi
+	        else
+		        BIOS_SUPPORT="true"
+	        fi
 
 		if [ "$BIOS_SUPPORT" = "true" ] ; then
 			interfaces_numa[$i]=$NUMA_NODE
-			continue
+	                continue
 		else
 			if [  "$is_sandy_bridge" = "false" ] ; then
 				interfaces_numa[$i]=-1   #set_irq to all cores
