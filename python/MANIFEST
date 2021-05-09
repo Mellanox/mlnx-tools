@@ -6,6 +6,6 @@ tc_wrap.py
 netlink.py
 setup.py
 mlnx_perf
-mlnx_get_vfs.pl
-mlnx_qcn
 mlnx_dump_parser
+mlnx_tune
+mlx_fs_dump
