@@ -1,2 +1,0 @@
-SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="00:1a:ca:ff:ff:02", ATTR{type}=="1", NAME="tmfifo_net0"
-SUBSYSTEM=="net", ACTION=="add", DEVPATH=="/devices/platform/MLNXBF01:00/virtio1/net/eth[0-9]", NAME="tmfifo_net0"

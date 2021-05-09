@@ -1,0 +1,27 @@
+KERNEL=="umad*", NAME="infiniband/%k"
+KERNEL=="issm*", NAME="infiniband/%k"
+KERNEL=="ucm*", NAME="infiniband/%k", MODE="0666"
+KERNEL=="uverbs*", NAME="infiniband/%k", MODE="0666"
+KERNEL=="ucma", NAME="infiniband/%k", MODE="0666"
+KERNEL=="rdma_cm", NAME="infiniband/%k", MODE="0666"
+
+# Notify irqbalance about our devices (in case irqbalance does not
+# already have such rules):
+DRIVERS=="*mlx*", SUBSYSTEM=="net", ACTION=="add|remove", \
+	RUN+="/usr/bin/killall -SIGHUP irqbalance"
+
+TEST!="/run/systemd/system", GOTO="mlnx_ofed_no_systemd"
+# Only run in the case of systemd:
+DRIVERS=="*mlx*", SUBSYSTEM=="net", ACTION=="add",RUN+="/bin/systemctl --no-block start mlnx_interface_mgr@$name.service"
+DRIVERS=="*mlx*", SUBSYSTEM=="net", ACTION=="remove",RUN+="/bin/systemctl stop mlnx_interface_mgr@$name.service"
+# For IPoIB Pkeys
+KERNEL=="ib[0-9]*\.*|*nfiniband[0-9]*\.*", DRIVERS=="", SUBSYSTEM=="net", ACTION=="add",RUN+="/bin/systemctl --no-block start mlnx_interface_mgr@$name.service"
+KERNEL=="ib[0-9]*\.*|*nfiniband[0-9]*\.*", DRIVERS=="", SUBSYSTEM=="net", ACTION=="remove",RUN+="/bin/systemctl stop mlnx_interface_mgr@$name.service"
+GOTO="mlnx_ofed_end"
+
+LABEL="mlnx_ofed_no_systemd"
+# Only run if no systemd
+DRIVERS=="*mlx*", SUBSYSTEM=="net", ACTION=="add", RUN+="/bin/mlnx_interface_mgr.sh $env{INTERFACE} <&- >/dev/null 2>&1 &"
+# For IPoIB Pkeys
+KERNEL=="ib[0-9]*\.*|*nfiniband[0-9]*\.*", DRIVERS=="", SUBSYSTEM=="net", ACTION=="add", RUN+="/bin/mlnx_interface_mgr.sh $env{INTERFACE} <&- >/dev/null 2>&1 &"
+LABEL="mlnx_ofed_end"

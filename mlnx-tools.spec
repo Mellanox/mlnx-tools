@@ -110,8 +110,7 @@ rm -rf %{buildroot}
 %{_bindir}/*
 /lib/udev/vf-net-link-name.sh
 /lib/udev/rules.d/82-net-setup-link.rules
-/lib/udev/rules.d/91-tmfifo_net.rules
-/lib/udev/rules.d/92-oob_net.rules
+/lib/udev/rules.d/90-ib.rules
 /lib/systemd/system/mlnx-bf-ctl.service
 /lib/modprobe.d/ib_ipoib.conf
 /lib/modprobe.d/mlnx.conf
