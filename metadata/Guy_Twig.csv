@@ -1,2 +1,0 @@
-sep=;
-Change-Id=I1fe60563bb3fc1b256aa6c01bb264a7c44cc2626; subject=ofed_scripts/show_irq_affinity.sh: Add CPU number to the script output; feature=ofed_scripts; upstream_status=ignore; general=;

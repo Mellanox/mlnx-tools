@@ -93,13 +93,6 @@ find %{buildroot}${mlnx_python_sitelib} -type f -print | sed -e 's@%{buildroot}@
 %clean
 rm -rf %{buildroot}
 
-%preun
-/usr/bin/systemctl disable mlnx-bf-ctl.service >/dev/null 2>&1 || :
-
-%post
-/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
-/usr/bin/systemctl enable mlnx-bf-ctl.service >/dev/null 2>&1 || :
-
 %files -f mlnx-tools-files
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
@@ -108,14 +101,10 @@ rm -rf %{buildroot}
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
-/lib/udev/vf-net-link-name.sh
-/lib/udev/rules.d/82-net-setup-link.rules
-/lib/udev/rules.d/90-ib.rules
-/lib/systemd/system/mlnx-bf-ctl.service
-/lib/modprobe.d/ib_ipoib.conf
-/lib/modprobe.d/mlnx.conf
-/lib/modprobe.d/mlnx-bf.conf
+/lib/udev/mlnx_bf_udev
 
 %changelog
-* Wed Nov 1 2017 Vladimir Sokolovsky <vlad@mellanox.com>
+* Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1
+- MLNX_OFED branch
+* Wed Nov  1 2017 Vladimir Sokolovsky <vlad@mellanox.com> - 4.6.0-1
 - Initial packaging

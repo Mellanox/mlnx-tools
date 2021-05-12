@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# need the PATH for BF ARM lspci to work
+PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+
+is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
+if [ $is_bf -ne 1 ]; then
+	exit 0
+fi
+
+case "$1" in
+	p0|p1)
+	ethtool -L $1 combined 4
+	;;
+	*)
+	ethtool -L $1 combined 2
+	ethtool -G $1 rx 256
+	;;
+esac
+ip link set dev $1 up
