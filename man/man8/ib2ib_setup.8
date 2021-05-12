@@ -1,0 +1,61 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.TH mlnx-tools 8 "2021-05-12"
+.SH NAME
+ib2ib_setup \- Generate files required  for preparing the network to work with IB Router
+
+.SH SYNOPSIS
+.B ib2ib_setup
+.RI [-d DEVICE] [-s SUBNET_NUMBER] [-n NETWORK_SUBNET]
+
+.B ib2ib_setup
+.RI [-f IPS FILES] ips_file...
+
+.SH DESCRIPTION
+This  program  invokes ibnetdiscover to scan the network to extract the data about host port names, 
+LIDs and GUIDs, and uses arping to scan the subnet for IPs. It then writes out
+the information into 3 separate files: ip2gid.db, guid2lid and hosts.
+
+.TP
+.B ip2gid.db:
+This file holds the IP to GID mapping used by ibacm service running on each machine in the cluster.
+.TP
+.B guid2lid:
+This  file holds the mapping of GUID to LID. It should be copied into the SM cache directory.
+At the moment it is only supported by host  based  OpenSM  or  UFM  appliance
+(switch based OpenSM does not support it).
+.TP
+.B hosts:
+This file holds mapping of host name to IP and should be placed in /etc/hosts and pointed by nsswitch.conf (lathernatively use a DNS).
+
+.SH OPTIONS
+
+.TP
+.B -d
+"device name". For example: -d ib0. The interface through which the subnet is scanned for IP to GUID mapping using arping.
+.TP
+.B -n
+"Networks/mask  to  scan".  For  example: -n 12.1.1.1/24,24.1.1.1/24 (note:different subnet separated by comma).  
+The flag -n is provided a set of IPs to be scanned on the
+subnet (i.e. A.B.C.D/24) or use the -f with text file holding an IP on each line.
+.TP
+.B -s
+"Subnet number" - unique number for local subnet. (on each subnet you shoud give different number.)
+.TP
+.B -h
+"help" Print a brief help message and exits.
+.TP
+.B -f
+"filename" Specifies a file that holds IPs list. If provided avoids the scan of IPs and overrides the -n option.
+
+.SH EXAMPLES
+
+.TP
+ib2ib2_setup with -a (subnet to scan):
+ib2ib_setup -d ib0 -a 61.130.1.1/24,61.130.2.1/24 -s 3
+
+.TP
+ib2ib_Setup with -f (read IPs from file):
+ib2ib_setup -d ib0 -f my_ips_list.txt -s 3
+
+.SH SEE ALSO
+.BR ibnetdiscover(8)

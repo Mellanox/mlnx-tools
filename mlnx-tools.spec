@@ -94,6 +94,7 @@ find %{buildroot}${mlnx_python_sitelib} -type f -print | sed -e 's@%{buildroot}@
 rm -rf %{buildroot}
 
 %files -f mlnx-tools-files
+%doc doc/*
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
@@ -101,6 +102,7 @@ rm -rf %{buildroot}
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
+%{_mandir}/man8/ib2ib_setup.8*
 /lib/udev/mlnx_bf_udev
 
 %changelog
