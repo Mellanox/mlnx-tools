@@ -1,7 +1,10 @@
 #!/usr/bin/make -f
 # -*- mode: makefile; coding: utf-8 -*-
 
+include /usr/share/dpkg/pkg-info.mk
+
 export DH_OPTIONS
+export PKG_VERSION="$(DEB_VERSION_UPSTREAM)"
 pname:=mlnx-tools
 
 %:

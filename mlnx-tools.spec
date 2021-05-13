@@ -79,6 +79,7 @@ mlnx_python_sitelib=%{python_sitelib}
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
 fi
+export PKG_VERSION="%{version}"
 %make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}"
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
