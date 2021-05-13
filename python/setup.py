@@ -51,6 +51,6 @@ setup(name='mlnx-tools',
       author='Vladimir Sokolovsky',
       author_email='vlad@nvidia.com',
       url='https://github.com/Mellanox/mlnx-tools',
-      scripts=['mlnx_qos', 'tc_wrap.py', 'mlnx_perf', 'mlnx_tune', 'mlnx_dump_parser', 'mlx_fs_dump', 'ib2ib_setup'],
+      scripts=['mlnx_qos', 'tc_wrap.py', 'mlnx_perf', 'mlnx_dump_parser', 'mlx_fs_dump', 'ib2ib_setup'],
       py_modules=['netlink', 'dcbnetlink', 'genetlink'],
       )
