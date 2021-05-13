@@ -35,17 +35,6 @@ if sys.version_info < (2, 5):
     print('requires python 2.5 and up')
     sys.exit(0)
 
-# I would absolutely *LOVE* to be informed of a sexier way to do this,
-# preferably without hard-coding Ubuntu as a special case...
-try:
-    if 'Ubuntu\n' in Popen(('lsb_release', '-si'),
-            stdout=PIPE).communicate():
-        argv.append('--install-layout=deb')
-except OSError:
-    pass
-
-
-
 setup(name='mlnx-tools',
       version='5.1.3',
       author='Vladimir Sokolovsky',
