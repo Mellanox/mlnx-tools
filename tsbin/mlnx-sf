@@ -1,460 +1,389 @@
-#!/bin/bash
+#!/usr/bin/env python3
 # ex:ts=4:sw=4:sts=4:et
 # -*- tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*-
+###############################################################################
 #
-# Copyright (c) 2020 Mellanox Technologies. All rights reserved.
+# Copyright 2020 NVIDIA Corporation
 #
-# This Software is licensed under one of the following licenses:
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in
+# the Software without restriction, including without limitation the rights to
+# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+# the Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
 #
-# 1) under the terms of the "Common Public License 1.0" a copy of which is
-#    available from the Open Source Initiative, see
-#    http://www.opensource.org/licenses/cpl.php.
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
 #
-# 2) under the terms of the "The BSD License" a copy of which is
-#    available from the Open Source Initiative, see
-#    http://www.opensource.org/licenses/bsd-license.php.
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+# FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
-#    copy of which is available from the Open Source Initiative, see
-#    http://www.opensource.org/licenses/gpl-license.php.
-#
-# Licensee has the right to choose one of the above licenses.
-#
-# Redistributions of source code must retain the above copyright
-# notice and one of the license notices.
-#
-# Redistributions in binary form must reproduce both the above copyright
-# notice, one of the license notices in the documentation
-# and/or other materials provided with the distribution.
+###############################################################################
 
-LANG=en_US.UTF_8
-PATH=/bin:/sbin:/usr/bin:/usr/sbin
+import os
+import sys
+import argparse
+import subprocess
+import glob
+import time
+import re
+import json
+import errno
 
-export prog=`readlink -f $0`
-export version="0.1"
-export verbose=0
-export dryrun=0
-export device=""
-export devpath=""
-export spath=""
-export uuid=""
-export uuid_path=""
-export mac=""
-export permanent=0
-export conf="/etc/mellanox/mlnx-sf.conf"
-export PF_BAR2_SIZE=3
+__author__ = "Vladimir Sokolovsky <vlad@nvidia.com>"
+__version__ = "1.0"
 
-usage() {
-cat << EOF
-Usage: `basename $0` [ OPTIONS ]
-OPTIONS:
--a, -action,    --action <action>               Perform action
-    action:	{ enable | create | configure | remove | show | set_max_mdevs | query_mdevs_num }
+prog = os.path.basename(sys.argv[0])
+os.environ['PATH'] = '/opt/mellanox/iproute2/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
 
--d, -device,    --device <device>               PCI device <domain>:<bus>:<device>.<func> (E.g.: 0000:03:00.0)
--m, -max_mdevs, --max_mdevs <max mdevs number>  Set maximum number of MDEVs
--u, -uuid,      --uuid <uuid>                   UUID to create SF with
--M, -mac,       --mac <MAC>                     MAC to create SF with
--p, -permanent, --permanent [<conf file>]       Store configuration to be used after reboot and/or driver restart. Default ($conf).
--V, -version,   --version                       Display script version and exit
--D, -dryrun,    --dryrun                        Display commands only.
--v, -verbose,   --verbose                       Run script in verbose mode. Will print out each step of execution.
--h, -help,      --help                          Display help
+MLXREG = '/usr/bin/mlxreg'
+MLXDEVM = 'mlxdevm'
+SUPPORTED_ACTIONS=["create", "show", "delete"]
+RDMA_DEV_TIMEOUT = 120
+verbose = 0
+
+if os.path.exists("/usr/bin/mlxconfig"):
+    MLXCONFIG = "/usr/bin/mlxconfig"
+elif os.path.exists("/usr/bin/mlxconfig"):
+    MLXCONFIG = "/usr/bin/mlxconfig"
+else:
+    sf_log("ERROR: MFT or mstflint package is required")
+    sys.exit(1)
 
 
-EOF
-}
+class SF:
+    def __init__ (self, args):
+        self.device = args.device
+        self.pfnum = None
+        if self.device:
+            self.pfnum = self.device[-1]
+        self.action = args.action
+        self.verbose = args.verbose
+        self.json = args.json
+        self.sfnum = args.sfnum or None
+        self.hw_addr = args.hwaddr or None
+        self.sfindex = args.sfindex or None
+        self.netif = None
+        self.aux_dev = None
+        self.sf_netdev = None
+        self.rdma_dev = None
+        self.info = {}
+        self.info_error = 0
 
-info() {
-	echo >&2 ":: $*"
-}
+        # Get existing devices
+        cmd = MLXDEVM + " --pretty --json port show "
+        if self.sfindex:
+            cmd += self.sfindex
 
-note() {
-	echo >&2 "NOTE: $*"
-}
+        self.info_error, output = get_status_output(cmd)
+        if self.info_error:
+            return
+        self.info = json.loads(output)
 
-warn() {
-	echo >&2 "WARNING: $*"
-}
 
-error() {
-	echo >&2 "ERROR: $*"
-	exit 1
-}
+    def show(self):
+        """
+        Show configurations
+        """
+        result = {'status': self.info_error, 'output': 'No SF device found'}
 
-ex() {
-	if [ $dryrun -eq 1 ]; then
-		echo "$@"
-	else
-		eval "$@"
-		if [ $? -ne 0 ]; then
-			error "Failed executing $@"
-	        exit 1
-		fi
-	fi
-}
+        if not self.info:
+            return result
 
-get_config_value()
-{
-	mstconfig -d ${device} q 2> /dev/null | grep -w $1 | awk '{print $NF}' | cut -d '(' -f 1
-}
+        info = self.info["port"]
 
-set_max_mdevs() {
-# Action: set_max_mdevs
-	if [ -z "$max_mdevs" ]; then
-		error "max_mdev number is not defined. Use '-m' parameter"
-		exit 1
-	fi
+        for pci_dev_index in info:
+            info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
+            info[pci_dev_index]["sfindex"] = pci_dev_index
+            info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
+            info[pci_dev_index]["sf_netdev"] = get_sf_netdev(info[pci_dev_index]["aux_dev"])
+            info[pci_dev_index]["rdma_dev"] = get_sf_rdmadev(info[pci_dev_index]["aux_dev"])
 
-	x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
-	if [ "$x" -ne $max_mdevs ] ;then
-		ex "echo $max_mdevs > ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs"
-	fi
-}
+        if self.json:
+            result['output'] = json.dumps(info, indent=4)
+        else:
+            result['output'] = ""
+            for pci_dev_index in info:
+                result['output'] += "\n"
+                result['output'] += "SF Index: " + pci_dev_index + "\n"
+                result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
+                result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
+                result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
+                result['output'] += "  Auxiliary device: " + info[pci_dev_index]["aux_dev"] + "\n"
+                result['output'] += "    netdev: " + info[pci_dev_index]["sf_netdev"] + "\n"
+                result['output'] += "    RDMA dev: " + info[pci_dev_index]["rdma_dev"] + "\n"
 
-show_sf() {
-	if [ -z "${uuid}" ]; then
-		error "UUID is not set. Use '-u|--uuid <uuid>' parameter"
-		exit 1
-	fi
+        return result
 
-	pci_dev=`readlink -f ${uuid_path} | cut -d '/' -f 8`
 
-	if [[ ! -z "${device}" && "${pci_dev}" != "${device}" ]]; then
-		return
-	fi
+    def create(self):
+        """
+        Create SF
+        """
+        result = {}
+        self.sfindex = None
 
-	rdma_dev=`/bin/ls ${uuid_path}/infiniband 2> /dev/null`
-	sf_netdev=`cat ${uuid_path}/infiniband/${rdma_dev}/ports/1/gid_attrs/ndevs/0 2> /dev/null`
-	rep_netdev=`cat ${uuid_path}/devlink-compat-config/netdev 2> /dev/null`
-	mac=`cat ${uuid_path}/devlink-compat-config/mac_addr 2> /dev/null`
+        cmd = MLXDEVM + " port add pci/{device} flavour pcisf pfnum {pfnum} sfnum {sfnum}".format(
+                device=self.device, pfnum=self.pfnum, sfnum=self.sfnum
+                )
 
-	cat << EOF
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
 
-UUID: ${uuid}
-	PCI dev: ${pci_dev}
-	rdma_dev: ${rdma_dev}
-	REP netdev: ${rep_netdev}
-	MAC: ${mac}
-	SF netdev: ${sf_netdev}
-EOF
-}
+        for line in result['output'].split('\n'):
+            if 'pci/' + self.device not in line:
+                continue
 
-show() {
-# Action: show
-	if [ ! -z "${uuid}" ]; then
-		show_sf
-		return 0
-	fi
+            self.sfindex = line.split(' ')[0].strip()
+            self.sfindex = self.sfindex[:-1]
+            self.netif = line.split(' ')[4].strip()
 
-	for uuid in `cd /sys/bus/mdev/devices/; /bin/ls -1`
-	do
-		export uuid
-		export uuid_path="/sys/bus/mdev/devices/$uuid"
-		show_sf
-	done
-}
+        if not self.sfindex:
+            result['output'] = "ERROR: Cennot find sfindex for {device} sfnum {sfnum}".format(device=self.device, sfnum=self.sfnum)
+            result['status'] = 1
+            sf_log(result['output'])
+            return result
 
-query_mdevs_num() {
-# Action: query_mdevs_num
-if [ ! -z "$device" ]; then
-	devices="${device}"
-else
-	devices=`lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
-fi
+        if self.hw_addr:
+            cmd = MLXDEVM + " port function set {idx} hw_addr {hw_addr}".format(
+                    idx=self.sfindex, hw_addr=self.hw_addr
+                    )
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+        # Activate SF
+        cmd = MLXDEVM + " port function set {} state active".format(self.sfindex)
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+        # Find the rdma device for the sf
+        start = time.process_time()
+        while True:
+            if time.process_time() - start > RDMA_DEV_TIMEOUT:
+                break
+            self.aux_dev = lookup_aux_dev(self.device, self.sfnum)
+            if self.aux_dev:
+                break
+            time.sleep(0.001)
 
-for device in ${devices}
-do
-	devpath="/sys/bus/pci/devices/${device}"
-	available=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/available_instances)
-	x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
-	cat << EOF_mdev
-PCI device: ${device} max_mdevs: ${x} available_mdevs: ${available}
-EOF_mdev
-done
-}
+        # Unbind the SF from the default config driver and bind the actual SF driver
+        if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
+            try:
+                fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf_cfg/unbind"
+                with open(fname, 'w') as f:
+                    f.write(self.aux_dev)
+                fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf/bind"
+                with open(fname, 'w') as f:
+                    f.write(self.aux_dev)
+            except IOError as e:
+                sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
+            except FileNotFoundError:
+                sf_log("ERROR: File {} does not exist".format(fname))
+            except:
+                sf_log("Unexpected error:", sys.exc_info()[0])
 
-enable() {
-# Action: enable
-	info "Enabling SF for device: ${device}"
-	current_pf_bar2_size=`get_config_value PF_BAR2_SIZE`
-	current_pf_bar2_enable=`get_config_value PF_BAR2_ENABLE`
-	if [[ "${current_pf_bar2_size}" == "$PF_BAR2_SIZE" && "$current_pf_bar2_enable" == "True" ]]; then
-		info "SFs are enabled already for device: ${device}"
-		return
-	fi
+        result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
+        sf_log(result["output"])
+        return result
 
-	ex mstconfig -y -d ${device} s PF_BAR2_SIZE=$PF_BAR2_SIZE PF_BAR2_ENABLE=True
-	note "Cold reboot the BlueField host system so that the above settings can \
-be applied on subsequent reboot sequences."
-}
 
-set_mac() {
-	ex "echo ${mac} > ${uuid_path}/devlink-compat-config/mac_addr"
-	info "MAC: ${mac} is set for device with UUID: ${uuid}"
-}
+    def delete(self):
+        """
+        delete SF
+        """
+        result = {}
+        # Deactivate SF
+        cmd = MLXDEVM + " port function set {} state inactive".format(self.sfindex)
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
 
-remove() {
-# Action: remove
-	if [ -z "${uuid}" ]; then
-		error "UUID is not set. Use '-u|--uuid <uuid>' parameter"
-		exit 1
-	fi
+        # Delete SF
+        cmd = MLXDEVM + " port del {}".format(self.sfindex)
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        return result
 
-	info "Removing SF for device: ${device} with UUID: ${uuid}"
-	ex "echo 1 > ${uuid_path}/remove"
-}
 
-configure() {
-# Action: configure
-	if [ -z "${uuid}" ]; then
-		error "UUID is not set. Use '-u|--uuid <uuid>' parameter"
-		exit 1
-	fi
+def lookup_aux_dev(device, sfnum):
+    """
+    This routine search pci device and sf number and returns the device found
+    else it returns an empty string.
+    """
 
-	if [ ! -d "${uuid_path}" ]; then
-		error "There is no SF with UUID: ${uuid}"
-		exit 1
-	fi
+    devices = os.listdir("/sys/bus/auxiliary/devices")
+    for aux_dev in devices:
+        if (aux_dev.find("mlx5_core.sf") == -1):
+            continue
 
-	ex "echo ${uuid} > `readlink -f /sys/bus/mdev/devices/${uuid}/driver/unbind`"
+        try:
+            with open("/sys/bus/auxiliary/devices/" + aux_dev + "/sfnum") as f:
+                dev_sfnum = f.readline().strip()
+        except IOError as e:
+            sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
+        except FileNotFoundError:
+            sf_log("File {} does not exist".format(fname))
+        except:
+            sf_log("Unexpected error:", sys.exc_info()[0])
 
-	if [ ! -z "${mac}" ]; then
-		set_mac
-	fi
+        if str(sfnum) != dev_sfnum:
+            continue
 
-	ex "echo ${uuid} > /sys/bus/mdev/drivers/mlx5_core/bind"
-}
+        link = os.readlink("/sys/bus/auxiliary/devices/" + aux_dev)
+        hirerchy = link.split("/")
+        # second last device is the parent pci device
+        hirerchy_dev = hirerchy[len(hirerchy) - 2]
+        if hirerchy_dev != device:
+            continue
 
-create() {
-# Action: create
-	if [ ! -d "${spath}" ]; then
-		error "${spath} does not exist. Check if mlx5_core kernel module is loaded."
-	fi
+        return aux_dev
 
-	available=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/available_instances)
-	if [ "$available" -le 0 ] ;then
-		x=$(cat ${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs)
-		error "Reached the maximum number of SFs: ${x}. Cannot create new SF."
-		exit 1
-	fi
+    return ""
 
-	if [ -z "$uuid" ] ; then
-		uuid=$(uuidgen)
-	fi
 
-	info "Creating SF with UUID: $uuid"
+def get_sf_netdev(aux_dev):
+    """
+    This function returns netdevice of auxiliary SF device
+    """
+    if len(aux_dev) == 0:
+        return ""
 
-	if [ ! -e "$spath/devices/$uuid" ] ; then
-		ex "echo ${uuid} > $spath/create"
-		sleep 1
-	else
-		note "$0: SF $spath/devices/$uuid already exists"
-		return 0
-	fi
+    if os.path.exists("/sys/bus/auxiliary/devices/" + aux_dev + "/net/"):
+        netdev = os.listdir("/sys/bus/auxiliary/devices/" + aux_dev + "/net/")
+        if netdev:
+            return netdev[0]
 
-	ex "echo ${uuid} > /sys/bus/mdev/drivers/vfio_mdev/unbind"
+    return ""
 
-	if [ ! -z "${mac}" ]; then
-		set_mac
-	fi
 
-	ex "echo ${uuid} > /sys/bus/mdev/drivers/mlx5_core/bind"
+def get_sf_rdmadev(aux_dev):
+    """
+    This function returns rdma device of auxiliary SF device
+    """
+    if len(aux_dev) == 0:
+        return ""
 
-	info "Created SF with UUID: ${uuid}"
+    if os.path.exists("/sys/bus/auxiliary/devices/" + aux_dev + "/infiniband/"):
+        netdev = os.listdir("/sys/bus/auxiliary/devices/" + aux_dev + "/infiniband/")
+        if netdev:
+            return netdev[0]
 
-	export uuid_path="/sys/bus/mdev/devices/${uuid}"
-}
+    return ""
 
-permanent_change_sf() {
-# Store command in the configuration file
-	if [ ! -e "${conf}" ]; then
-		ex mkdir -p `dirname ${conf}`
-		ex touch ${conf}
-	fi
 
-	ts=`date '+%Y%m%d.%H%M%S'`
+def version():
+    """
+    Display program version information.
+    """
+    print(prog + ' ' + __version__)
 
-	case "${action}" in
-		"set_max_mdevs")
-			ex cp -f ${conf} ${conf}.${ts}
-			cmd="$prog -a set_max_mdevs -d ${device} --max_mdevs ${max_mdevs}"
-			if (grep -wq "set_max_mdevs" ${conf} > /dev/null 2>&1 | grep -w "${device}"); then
-				perl -ni -e "print unless /${uuid}.*${device}/" ${conf}
-			fi
-			sed -i "1i${cmd}" ${conf}
-			;;
-		"remove")
-			if ! (grep -wq "${uuid}" ${conf} > /dev/null 2>&1); then
-				error "There is no SF with UUID: ${uuid} in ${conf}"
-				exit 1
-			fi
-			perl -ni.${ts} -e "print unless /${uuid}/" ${conf}
-			;;
-		"create")
-			if (grep -wq "${uuid}" ${conf} > /dev/null 2>&1); then
-				error "SF with UUID: ${uuid} already exists in ${conf}"
-				exit 1
-			fi
-			cmd="$prog -a create -d ${device} -u ${uuid}"
-			if [ ! -z "${mac}" ]; then
-				cmd="${cmd} --mac ${mac}"
-			fi
-			ex cp -f ${conf} ${conf}.${ts}
-			echo "${cmd}" >> ${conf}
-			;;
-		"configure")
-			if ! (grep -wq "${uuid}" ${conf} > /dev/null 2>&1); then
-				error "There is no SF with UUID: ${uuid} in ${conf}"
-				exit 1
-			fi
-			if [ ! -n "${device}" ]; then
-				device=`grep -w "${uuid}" ${conf} | egrep -o "[[:xdigit:]]{4}:[[:xdigit:]]{2}:[[:xdigit:]]{2}.[[:xdigit:]]{1}"`
-			fi
-			perl -ni.${ts} -e "print unless /${uuid}/" ${conf}
-			cmd="$prog -a create -d ${device} -u ${uuid} --mac ${mac}"
-			echo "${cmd}" >> ${conf}
-			;;
-	esac
-}
 
-options=$(getopt -l "action:,device:,max_mdevs:,permanent::,uuid:,mac:,help,version,verbose,dryrun" -o "a:d:m:p::u:M:hVvD" -a -- "$@")
+def get_status_output(cmd, verbose=False):
+    rc, output = (0, '')
 
-eval set -- "$options"
+    if verbose:
+        print("Running command:", cmd)
 
-while true
-do
-	case $1 in
-		-h|--help)
-		    usage
-		    exit 0
-		    ;;
-		-a|--action)
-		    shift
-			action=$1
-			;;
-		-d|--device)
-		    shift
-			device=$1
-			;;
-		-u|--uuid)
-		    shift
-			uuid=$1
-			;;
-		-M|--mac)
-		    shift
-			mac=$1
-			;;
-		-m|--max_mdevs)
-		    shift
-			max_mdevs=$1
-			;;
-		-p|--permanent)
-			permanent=1
-			if [[ -n $2 && $2 != -* ]]; then
-				conf=$2
-				shift
-			fi
-			;;
-		-V|--version)
-		    echo `basename $0` $version
-			exit 0
-		    ;;
-		-v|--verbose)
-		    export verbose=1
-		    set -xv
-		    ;;
-		-D|--dryrun)
-		    export dryrun=1
-		    ;;
-		--)
-		    shift
-		    break;;
-	esac
-	shift
-done
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                                         shell=True, universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        rc, output = (e.returncode, e.output.strip())
 
-if [ -z "$action" ]; then
-	error "Action is not defined. Use '-a|--action <action>' parameter"
-	exit 1
-fi
+    if rc and verbose:
+        print("Running {} failed (error[{}])".format(cmd, rc))
 
-supported_actions=`grep '^\# Action' $0 | cut -d ' ' -f 3`
-if ! echo "${supported_actions}" | grep -q -w "${action}"; then
-	error "Action \"${action}\" is not supported"
-	exit 1
-fi
+    if verbose:
+        print("Output:\n", output)
 
-case "${action}" in
-	"remove")
-		if [ -z "$uuid" ]; then
-			error "UUID is not defined. Use '-u|--uuid <uuid>' parameter"
-			exit 1
-		fi
-	;;
-	"show" | "configure" | "query_mdevs_num")
-	;;
-	*)
-		if [ -z "$device" ]; then
-			error "Device is not defined. Use '-d|--device <device>' parameter"
-			exit 1
-		fi
-	;;
-esac
+    return rc, output
 
-if [ ! -z "$device" ]; then
-	if (mstconfig -e -d $device q 2> /dev/null | grep LINK_TYPE_P | awk '{print $4}' | grep -q "IB(1)"); then
-		error "SFs are not supported for ports with link type IB. Device: $device Action: $action"
-		exit 22
-	fi
 
-	export devpath="/sys/bus/pci/devices/${device}"
-	if [ ! -d "${devpath}" ]; then
-		error "Device ${device} does not exist."
-		exit 1
-	fi
+def sf_log(msg, level=verbose):
+    if level:
+        print(msg)
+    cmd = "logger -t {} -i '{}'".format(prog, msg)
+    get_status_output(cmd, False)
+    return 0
 
-	export spath="${devpath}/mdev_supported_types/mlx5_core-local"
-fi
 
-if [ ! -z "${uuid}" ]; then
-	export uuid_path="/sys/bus/mdev/devices/${uuid}"
-	if [[ ! -d "${uuid_path}" && "${action}" != "create" ]]; then
-		error "There is no SF with UUID: ${uuid}"
-		exit 1
-	fi
-	if [ -d "${uuid_path}" ]; then
-		pci_dev=`readlink -f ${uuid_path} | cut -d '/' -f 8`
-		if [[ ! -z "$device" && "$device" != "$pci_dev" ]]; then
-			error "UUID: ${uuid} belongs to PCI device $pci_dev and not to $device"
-			exit 1
-		fi
-	fi
-fi
+def verify_args(args):
+    rc = 0
+    msg = ""
+    if (args.action not in SUPPORTED_ACTIONS):
+        msg = "ERROR: Action {} is not supported".format(args.action)
+        rc = 1
+        return rc, msg
 
-case "${action}" in
-	"create")
-		if [ ! -e "${devpath}/mdev_supported_types/mlx5_core-local/max_mdevs" ]  ; then
-			error "Can't ${action} SF using $device - BAR2 is disabled. Need to enable first."
-			exit 69
-		fi
-	;;
-esac
+    if args.action == 'create':
+        if not args.device:
+            msg = "ERROR: Action create requires '--device' parameter"
+            rc = 1
+        if not args.sfnum:
+            msg = "ERROR: Action create requires '--sfnum' parameter"
+            rc = 1
 
-if [ $dryrun -eq 1 ]; then
-	note "Dry run parameter is set. No action will be taken."
-fi
+    elif args.action == 'delete' and not args.sfindex:
+        msg = "ERROR: Action delete requires '--sfindex' parameter"
+        rc = 1
 
-${action}
+    return rc, msg
 
-if [[ $permanent -eq 1 && $dryrun -ne 1 ]]; then
-	case "${action}" in
-		"create"|"configure"|"remove"|"set_max_mdevs")
-			permanent_change_sf
-			;;
-		*)
-			;;
-	esac
-fi
 
-exit 0
+def main():
+
+    global verbose
+    rc = 0
+    result = {"status": 0, "output": ""}
+
+    if os.geteuid() != 0:
+        sys.exit('root privileges are required to run this script!')
+
+    parser = argparse.ArgumentParser(description='Manage SF interfaces')
+    parser.add_argument('-d', '--device', help="Network device name")
+    parser.add_argument('-a', '--action', required='--version' not in sys.argv, choices=SUPPORTED_ACTIONS, help="Action")
+    parser.add_argument('-n', '--sfnum', help="SF number")
+    parser.add_argument('-i', '--sfindex', help="SF index")
+    parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
+    parser.add_argument('-j', '--json', action='store_true', help="Generate JSON output with show action", default=False)
+    parser.add_argument('-v', '--verbose', action='store_true', help="Print verbose information", default=False)
+    parser.add_argument('-V', '--version', action='store_true', help='Display program version information and exit')
+
+
+    args = parser.parse_args()
+    if args.version:
+        version()
+        sys.exit(rc)
+
+    verbose = args.verbose
+    if verbose:
+        print(args)
+
+    rc, msg = verify_args(args)
+    if rc:
+        print(msg)
+        sys.exit(rc)
+
+    sf = SF(args)
+
+    if sf.action == 'show':
+        result = sf.show()
+        print(result["output"])
+        sys.exit(result['status'])
+    elif sf.action == 'create':
+        result = sf.create()
+        print(result["output"])
+        sys.exit(result['status'])
+    elif sf.action == 'delete':
+        result = sf.delete()
+        sys.exit(result['status'])
+
+    sys.exit(rc)
+
+
+if __name__ == '__main__':
+        main()
