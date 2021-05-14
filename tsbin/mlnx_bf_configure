@@ -174,12 +174,13 @@ ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
 do
-	if ($mftconfig -e -d ${dev} q 2> /dev/null | grep LINK_TYPE_P | awk '{print $4}' | grep -q "IB(1)"); then
+	port=$(( ${dev: -1} + 1 ))
+	if ($mftconfig -e -d ${dev} LINK_TYPE_P$port q 2> /dev/null | grep LINK_TYPE_P | awk '{print $3}' | grep -q "IB(1)"); then
 		info "Link type is IB for ${dev}. Skipping mode confiugration."
 		continue
 	fi
 
-	if ($mftconfig -d ${dev} q 2> /dev/null | grep -q "ECPF_ESWITCH_MANAGER.*ECPF(1)"); then
+	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep ECPF_ESWITCH_MANAGER | awk '{print$3}' | grep -q "ECPF(1)"); then
 		steering_mode=`get_steering_mode ${dev}`
 		if [ "${steering_mode}" == "dmfs" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
@@ -235,9 +236,9 @@ if [ ! -n "$vsctl" ]; then
 fi
 
 OVS_BRIDGE1=${OVS_BRIDGE1:-"ovsbr1"}
-OVS_BRIDGE1_PORTS=${OVS_BRIDGE1_PORTS:-"p0 pf0hpf pf0sf0"}
+OVS_BRIDGE1_PORTS=${OVS_BRIDGE1_PORTS:-"p0 pf0hpf en1f0pf0sf0"}
 OVS_BRIDGE2=${OVS_BRIDGE2:-"ovsbr2"}
-OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf pf1sf0"}
+OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf en1f0pf1sf0"}
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 
 ovs_service=`systemctl list-units 2> /dev/null | grep openvswitch | awk '{print $1}'`
@@ -265,7 +266,7 @@ ovs_restart()
 
 	# Re-apply udev settings removed by OVS
 	if [ -x /lib/udev/mlnx_bf_udev ]; then
-		for p in $(cd /sys/class/net; /bin/ls -d p*)
+		for p in $(cd /sys/class/net; /bin/ls -d p* e*)
 		do
 			/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
 		done
