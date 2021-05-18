@@ -1,0 +1,355 @@
+#!/bin/bash
+# ex:ts=4:sw=4:sts=4:et
+# -*- tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*-
+#
+# Copyright (c) 2020 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+
+PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+CT_MAX_OFFLOADED_CONNS=1000000
+
+RC=0
+
+is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
+if [ $is_bf -ne 1 ]; then
+	exit 0
+fi
+
+prog=`basename $0`
+
+PID=$(pgrep -oxf "/bin/bash /sbin/$prog")
+if [ $$ -ne $PID ] ; then
+	# $prog is running already with PID: $PID
+	exit 0
+fi
+
+rshimlog=`which bfrshlog 2> /dev/null`
+
+info()
+{
+	if [ -n "$rshimlog" ]; then
+		$rshimlog "INFO: $prog: $*"
+	fi
+	logger -t $prog -i "INFO: $*"
+}
+
+error()
+{
+	if [ -n "$rshimlog" ]; then
+		$rshimlog "ERR: $prog: $*"
+	fi
+	logger -t $prog -i "ERR: $*"
+}
+
+
+get_steering_mode()
+{
+	pci_dev=$1
+	shift
+
+	cat /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null
+}
+
+set_steering_mode()
+{
+	pci_dev=$1
+	mode=$2
+	shift 2
+
+	# devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
+	echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		error "Failed to configure steering mode ${mode} for ${pci_dev}"
+	else
+		info "Configured mode steering ${mode} for ${pci_dev}"
+	fi
+
+	return $rc
+}
+
+get_eswitch_mode()
+{
+	pci_dev=$1
+	shift
+
+	devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
+}
+
+set_eswitch_mode()
+{
+	pci_dev=$1
+	mode=$2
+	shift 2
+
+	devlink dev eswitch set pci/${pci_dev} mode ${mode}
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		error "Failed to configure ${mode} mode for ${pci_dev}"
+	else
+		info "Configured ${mode} mode for ${pci_dev}"
+	fi
+
+	return $rc
+}
+
+set_ct_max_offloaded_conns()
+{
+	pci_dev=$1
+	max=$2
+	shift 2
+
+	devlink dev param set pci/${pci_dev} name ct_max_offloaded_conns value $max cmode runtime
+
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		error "Failed to configure devlink param ct_max_offloaded_conns=${max} for ${pci_dev}"
+	else
+		info "Configured devlink param ct_max_offloaded_conns=${max} for ${pci_dev}"
+	fi
+
+	return $rc
+}
+
+enable_shared_rq_feature()
+{
+	pci_dev=$1
+	shift 1
+
+	devlink dev param set pci/${pci_dev} name esw_pet_insert value true cmode runtime
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		info "Shared RQ feature not supported"
+	else
+		info "Shared RQ feature enabled"
+	fi
+
+	return 0;
+}
+
+is_SecureBoot=0
+if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
+	is_SecureBoot=1
+fi
+
+if [ $is_SecureBoot -eq 1 ]; then
+	mst_dev=`/bin/ls -1 /dev/mst/mt*_pciconf0 2> /dev/null`
+	if [ ! -n "${mst_dev}" ]; then
+		mst start > /dev/null 2>&1
+	fi
+fi
+
+mftconfig=mstconfig
+if [ -x /usr/bin/mlxconfig ]; then
+	mftconfig=mlxconfig
+fi
+
+if [ -f /etc/mellanox/mlnx-bf.conf ]; then
+	. /etc/mellanox/mlnx-bf.conf
+fi
+ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
+
+num_of_devs=0
+for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
+do
+	if ($mftconfig -e -d ${dev} q 2> /dev/null | grep LINK_TYPE_P | awk '{print $4}' | grep -q "IB(1)"); then
+		info "Link type is IB for ${dev}. Skipping mode confiugration."
+		continue
+	fi
+
+	if ($mftconfig -d ${dev} q 2> /dev/null | grep -q "ECPF_ESWITCH_MANAGER.*ECPF(1)"); then
+		steering_mode=`get_steering_mode ${dev}`
+		if [ "${steering_mode}" == "dmfs" ]; then
+			eswitch_mode=`get_eswitch_mode ${dev}`
+			if [ "${eswitch_mode}" == "switchdev" ]; then
+				set_eswitch_mode ${dev} legacy
+				RC=$((RC+$?))
+			fi
+
+			set_steering_mode ${dev} smfs
+			RC=$((RC+$?))
+		fi
+		eswitch_mode=`get_eswitch_mode ${dev}`
+		if [ "${eswitch_mode}" != "switchdev" ]; then
+			if [ "X${ALLOW_SHARED_RQ}" == "Xyes" ]; then
+				enable_shared_rq_feature ${dev}
+			fi
+			set_eswitch_mode ${dev} switchdev
+			RC=$((RC+$?))
+
+			set_ct_max_offloaded_conns ${dev} ${CT_MAX_OFFLOADED_CONNS}
+			RC=$((RC+$?))
+		fi
+		eswitch_mode=`get_eswitch_mode ${dev}`
+		if [ "${eswitch_mode}" == "switchdev" ]; then
+			num_of_devs=$((num_of_devs+1))
+		fi
+	fi
+done
+
+if [ $RC -ne 0 ]; then
+	error "Exiting due to failures. RC=$RC"
+	exit $RC
+fi
+
+if [ $num_of_devs -eq 0 ]; then
+	info "No devices configured to switchdev mod. Skipping SF/Bridges configuration."
+	exit 0
+fi
+
+if [ -f /etc/mellanox/mlnx-sf.conf ]; then
+	. /etc/mellanox/mlnx-sf.conf
+fi
+
+# Configure the default OVS bridge
+if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
+	. /etc/mellanox/mlnx-ovs.conf
+fi
+
+vsctl=`which ovs-vsctl 2> /dev/null`
+if [ ! -n "$vsctl" ]; then
+	echo "OVS is not installed"
+	exit 1
+fi
+
+OVS_BRIDGE1=${OVS_BRIDGE1:-"ovsbr1"}
+OVS_BRIDGE1_PORTS=${OVS_BRIDGE1_PORTS:-"p0 pf0hpf pf0sf0"}
+OVS_BRIDGE2=${OVS_BRIDGE2:-"ovsbr2"}
+OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf pf1sf0"}
+OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
+
+ovs_service=`systemctl list-units 2> /dev/null | grep openvswitch | awk '{print $1}'`
+
+if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
+	# OVS service is not enabled
+	info "$ovs_service is not enabled. Exiting..."
+	exit 0
+fi
+
+if [ "$ovs_service" == "openvswitch-switch.service" ]; then
+	ovs_start="/etc/init.d/openvswitch-switch start"
+	ovs_restart="/etc/init.d/openvswitch-switch restart"
+else
+	ovs_start=""
+	ovs_restart="systemctl restart $ovs_service"
+fi
+
+ovs_restart()
+{
+	if [ -n "$ovs_service" ]; then
+		info "Restarting $ovs_service"
+		$ovs_restart
+	fi
+
+	# Re-apply udev settings removed by OVS
+	if [ -x /lib/udev/mlnx_bf_udev ]; then
+		for p in $(cd /sys/class/net; /bin/ls -d p*)
+		do
+			/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+		done
+	fi
+
+	for p in $OVS_BRIDGE1_PORTS $OVS_BRIDGE2_PORTS
+	do
+		ethtool -K $p hw-tc-offload on
+	done
+}
+
+if ! ($vsctl show > /dev/null 2>&1); then
+	if [ -n "$ovs_start" ]; then
+		info "Starting $ovs_service"
+		$ovs_start
+	fi
+fi
+
+ovsbr_number=`$vsctl list-br | wc -l`
+if [ $ovsbr_number -gt 0 ]; then
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"'); then
+		ovs_restart
+	fi
+	exit $RC
+fi
+
+CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
+if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
+	exit $RC
+fi
+
+for i in `seq $num_of_devs`
+do
+	br_name=OVS_BRIDGE${i}
+	br_name=${!br_name}
+	br_ports=OVS_BRIDGE${i}_PORTS
+	br_ports=${!br_ports}
+
+	if ($vsctl br-exists $br_name); then
+		info "bridge $br_name exist already."
+		continue
+	fi
+
+	missing_port=0
+	ovs_br_ports=""
+	for port in $br_ports
+	do
+		if [ -d /sys/class/net/$port ]; then
+			ovs_br_ports="$ovs_br_ports $port"
+		else
+			info "port device $port for bridge $br_name is missing."
+			case $port in
+				pf*sf*)
+					info "RDMA functionality is not expected to work without $port in $br_name"
+				;;
+				*)
+					missing_port=$((missing_port+1))
+				;;
+			esac
+		fi
+	done
+
+	if [ $missing_port -gt 0 ]; then
+		info "Skipping $br_name configuration."
+		continue
+	fi
+
+	$vsctl add-br $br_name
+	info "Created bridge: $br_name"
+	for port in $ovs_br_ports
+	do
+		$vsctl add-port $br_name $port
+		info "bridge $br_name: added port $port"
+	done
+
+done
+
+if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
+	$vsctl set Open_vSwitch . Other_config:hw-offload=true
+	if [ $? -eq 0 ]; then
+		info "OVS HW offload is set"
+		info "Going to restart $ovs_service to activate hw-offload"
+		ovs_restart
+	fi
+fi
+
+exit $RC

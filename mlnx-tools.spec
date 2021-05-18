@@ -28,7 +28,7 @@
 
 Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
-Version: 5.1.3
+Version: 5.2.0
 Release: 0%{?_dist}
 License: GPLv2
 Url: https://github.com/Mellanox/mlnx-tools
@@ -37,9 +37,23 @@ Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{n
 BuildRoot: %{?build_root:%{build_root}}%{!?build_root:/var/tmp/%{name}}
 Vendor: Mellanox Technologies
 Requires: perl
-Requires: python
 %description
 Mellanox userland tools and scripts
+
+%global RHEL8 0%{?rhel} >= 8
+%global FEDORA3X 0%{?fedora} >= 30
+%global SLES15 0%{?suse_version} >= 1500
+%global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15}
+
+%global IS_RHEL_VENDOR "%{_vendor}" == "redhat" || ("%{_vendor}" == "bclinux") || ("%{_vendor}" == "openEuler")
+
+%if %{PYTHON3}
+%define __python %{_bindir}/python3
+BuildRequires: python3
+# mlnx_tune is python2 but is not important enough to create a dependency
+# on python2 in a python3 system:
+%global __requires_exclude_from mlnx_tune
+%endif
 
 %prep
 %setup -n %{name}-%{version}
@@ -61,40 +75,12 @@ EOF
 }
 
 touch mlnx-tools-files
-cd ofed_scripts/utils
 mlnx_python_sitelib=%{python_sitelib}
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
 fi
-python setup.py install -O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}
-cd -
-
-install -d %{buildroot}/sbin
-install -d %{buildroot}%{_sbindir}
-install -d %{buildroot}%{_bindir}
-install -d %{buildroot}/lib/udev
-install -d %{buildroot}%{_sysconfdir}/udev/rules.d
-install -d %{buildroot}%{_sysconfdir}/modprobe.d
-install -d %{buildroot}%{_sysconfdir}/systemd/system/
-install -m 0755 ofed_scripts/sysctl_perf_tuning     %{buildroot}/sbin
-install -m 0755 ofed_scripts/cma_roce_mode          %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/cma_roce_tos           %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/*affinity*             %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/setup_mr_cache.sh      %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/odp_stat.sh            %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/show_counters          %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/show_gids              %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/mlnx*hlk               %{buildroot}%{_sbindir}
-install -m 0755 ofed_scripts/ibdev2netdev           %{buildroot}%{_bindir}
-install -m 0755 ofed_scripts/roce_config.sh         %{buildroot}%{_bindir}/roce_config
-install -m 0755 kernel-boot/vf-net-link-name.sh     %{buildroot}/lib/udev/
-install -m 0644 kernel-boot/82-net-setup-link.rules %{buildroot}%{_sysconfdir}/udev/rules.d/
-install -m 0644 kernel-boot/91-tmfifo_net.rules     %{buildroot}%{_sysconfdir}/udev/rules.d/
-install -m 0644 kernel-boot/92-oob_net.rules        %{buildroot}%{_sysconfdir}/udev/rules.d/
-install -m 0644 kernel-boot/mlnx-bf.conf            %{buildroot}%{_sysconfdir}/modprobe.d/
-install -m 0755 kernel-boot/mlnx_bf_configure       %{buildroot}/sbin
-install -m 0755 kernel-boot/mlnx-sf                 %{buildroot}/sbin
-install -m 0644 kernel-boot/mlnx-bf-ctl.service     %{buildroot}%{_sysconfdir}/systemd/system/
+export PKG_VERSION="%{version}"
+%make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}"
 
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	conf_env=/etc/profile.d/mlnx-tools.sh
@@ -109,27 +95,20 @@ find %{buildroot}${mlnx_python_sitelib} -type f -print | sed -e 's@%{buildroot}@
 %clean
 rm -rf %{buildroot}
 
-%preun
-/usr/bin/systemctl disable mlnx-bf-ctl.service >/dev/null 2>&1 || :
-
-%post
-/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
-/usr/bin/systemctl enable mlnx-bf-ctl.service >/dev/null 2>&1 || :
-
 %files -f mlnx-tools-files
+%doc doc/*
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
+/sbin/mlnx_bf_configure_ct
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
-/lib/udev/vf-net-link-name.sh
-%{_sysconfdir}/udev/rules.d/82-net-setup-link.rules
-%{_sysconfdir}/udev/rules.d/91-tmfifo_net.rules
-%{_sysconfdir}/udev/rules.d/92-oob_net.rules
-%{_sysconfdir}/systemd/system/mlnx-bf-ctl.service
-%{_sysconfdir}/modprobe.d/mlnx-bf.conf
+%{_mandir}/man8/ib2ib_setup.8*
+/lib/udev/mlnx_bf_udev
 
 %changelog
-* Wed Nov 1 2017 Vladimir Sokolovsky <vlad@mellanox.com>
+* Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1
+- MLNX_OFED branch
+* Wed Nov  1 2017 Vladimir Sokolovsky <vlad@mellanox.com> - 4.6.0-1
 - Initial packaging

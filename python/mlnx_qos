@@ -98,8 +98,12 @@ parser.add_option("-d", "--dcbx", dest="dcbx",
 parser.add_option("--trust", dest="trust",
                   help="set priority trust state to pcp or dscp")
 parser.add_option("--dscp2prio", dest="dscp2prio",
-                  help="set/del a (dscp,prio) mapping. Example 'set,30,2' maps dscp 30 to priority 2. " +
-                       "'del,30,2' deletes the mapping and resets the dscp 30 mapping back to the default setting priority 0.")
+		  action="append",
+		  help="set/del a (dscp,prio) mapping, or 'flush' to delete all. Example 'set,30,2' maps dscp 30 to priority 2. " +
+		       "'del,30,2' deletes the mapping and resets the dscp 30 mapping back to the default setting priority 0.")
+parser.add_option("--defltprio", dest="defltprio",
+                  help="set/del default priority. Example 'set,2' sets default priority to 2. " +
+                       "'del,2' deletes this setting.")
 parser.add_option("--cable_len", dest="cable_len",
                   help="set cable_len for buffer's xoff and xon thresholds")
 parser.add_option("--prio2buffer", dest="prio2buffer",
@@ -280,7 +284,7 @@ def print_dscp2prio_sysfs():
 			print(temp)
 	f.close()
 
-def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer_size, prio2buffer):
+def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer_size, tot_size, prio2buffer):
 	if (ctrl.get_dcbx() & DCB_CAP_DCBX_HOST):
 		print("DCBX mode: OS controlled")
 	else:
@@ -293,11 +297,15 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer
 			print_dscp2prio_sysfs()
 		else:
 			appTable.printAppSelector(IEEE_8021QAZ_APP_SEL_DSCP)
+	print("default priority:")
+	appTable.printDefaultPriority()
 
 	if (not buffer_error):
 		msg = "Receive buffer size (bytes): "
 		for buf in range(8):
 			msg += "%1d," % (buffer_size[buf])
+		if tot_size is not None:
+			msg += "total_size=%d" % tot_size
 		print(msg)
 
 	tc2up = defaultdict(list)
@@ -393,7 +401,7 @@ if (options.dcbx != None):
 
 # ********* pfc command ******************************
 if options.cable_len:
-	pfc_delay = parse_int(options.cable_len, 0, 1000, "cable_len")
+	pfc_delay = parse_int(options.cable_len, 0, 0xffff, "cable_len")
 
 if options.pfc:
 	i = 0
@@ -421,25 +429,32 @@ if options.cable_len or options.pfc:
 		sys.exit(1)
 
 # ********* dscp2prio command ******************************
+dscp2prio = []
 if options.dscp2prio and options.trust:
 	print ("trust and dscp2prio commands cannot be used at the same time.")
 	sys.exit(1)
 
 try:
 	if options.dscp2prio:
-		action, dscp, prio = options.dscp2prio.split(",")
-		dscp = int(dscp)
-		prio = int(prio)
+		for opt in options.dscp2prio:
+			if opt == "flush":
+				dscp2prio.append((opt, None, None))
+				continue
 
-		if ((action != "set") and (action != "del")) or (dscp > 63) or (prio > 7):
-			sys.exit(1)
+			action, dscp, prio = opt.split(",")
+			dscp = int(dscp)
+			prio = int(prio)
+
+			if ((action != "set") and (action != "del")) or (dscp > 63) or (prio > 7):
+				sys.exit(1)
+			dscp2prio.append((action, dscp, prio))
 
 except:
 	print("Invalid dscp2prio command. Refer to the help.")
 	sys.exit(1)
 
 try:
-	if options.dscp2prio:
+	for action, dscp, prio in dscp2prio:
 		if action == "set":
 			if (is_trust_sysfs):
 				f = open(dscp2prio_path, "w")
@@ -450,6 +465,13 @@ try:
 		elif action == "del":
 			if (not is_trust_sysfs):
 				ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_DSCP,prio,dscp)
+		elif action == "flush":
+			if (not is_trust_sysfs):
+				appTable = ctrl.get_ieee_app_table()
+				for app in appTable.apps.values():
+					if app.selector != IEEE_8021QAZ_APP_SEL_DSCP:
+						continue
+					ctrl.del_ieee_app(app.selector, app.priority, app.protocol)
 
 	if (not is_trust_sysfs):
 		appTable = ctrl.get_ieee_app_table()
@@ -461,6 +483,33 @@ except:
 	else:
 		if (not is_trust_sysfs):
 			appTable = DcbAppTable()
+
+# ********* defltprio command ******************************
+try:
+	if options.defltprio:
+		action, prio = options.defltprio.split(",")
+		prio = int(prio)
+
+		if action not in ("set", "del") or prio < 0 or prio > 7:
+			raise Exception()
+except:
+	print("Invalid defltprio command. Refer to the help.")
+	sys.exit(1)
+
+try:
+	if options.defltprio:
+		if action == "set":
+			ctrl.set_ieee_app(IEEE_8021QAZ_APP_SEL_ETHERTYPE,prio,0)
+		elif action == "del":
+			ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_ETHERTYPE,prio,0)
+
+	appTable = ctrl.get_ieee_app_table()
+except:
+	if options.defltprio:
+		print("defltprio command failed")
+		sys.exit(1)
+	else:
+		appTable = DcbAppTable()
 
 # ********* trust command ******************************
 if options.trust:
@@ -491,13 +540,15 @@ try:
 	if (is_buffer_sysfs):
 		prio2buffer = get_prio2buffer_sysfs()
 		buffer_size = get_buffer_size_sysfs()
+		tot_size = None
 	else:
-		prio2buffer, buffer_size = ctrl.get_ieee_dcb_buffer()
+		prio2buffer, buffer_size, tot_size = ctrl.get_ieee_dcb_buffer()
 
 except:
 	buffer_error = 1
 	buffer_size = [0, 0, 0, 0, 0, 0, 0, 0]
 	prio2buffer = [0, 0, 0, 0, 0, 0, 0, 0]
+	tot_size = None
 	print ("Buffers commands are not supported on your system")
 	if options.buffer_size or options.prio2buffer:
 		sys.exit(1)
@@ -531,9 +582,11 @@ try:
 			set_buffer_size_sysfs(buffer_size)
 			prio2buffer = get_prio2buffer_sysfs()
 			buffer_size = get_buffer_size_sysfs()
+			tot_size = None
 		else:
-			ctrl.set_dcb_buffer(_prio2buffer = prio2buffer, _buffer_size = buffer_size)
-			prio2buffer, buffer_size = ctrl.get_ieee_dcb_buffer()
+			ctrl.set_dcb_buffer(_prio2buffer = prio2buffer, _buffer_size = buffer_size,
+					    _tot_size = tot_size)
+			prio2buffer, buffer_size, tot_size = ctrl.get_ieee_dcb_buffer()
 except:
 	buffer_error = 1
 	if options.buffer_size or options.prio2buffer:
@@ -658,4 +711,4 @@ if options.tsa or options.tc_bw or options.prio_tc:
 		print(e)
 		sys.exit(1)
 
-pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trustObj.trust, pfc_delay, buffer_size, prio2buffer)
+pretty_print(prio_tc, tsa, tc_bw, ratelimit, pfc_en, trustObj.trust, pfc_delay, buffer_size, tot_size, prio2buffer)

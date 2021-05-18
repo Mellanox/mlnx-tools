@@ -53,21 +53,26 @@ function core_to_affinity
 function get_irq_list
 {
 	interface=$1
+	pci_dev=$(ethtool -i $interface | grep "bus-info:" | cut -d ' ' -f 2)
 	infiniband_device_irqs_path="/sys/class/infiniband/$interface/device/msi_irqs"
 	net_device_irqs_path="/sys/class/net/$interface/device/msi_irqs"
-	interface_in_proc_interrupts=$( cat /proc/interrupts | egrep "$interface[^0-9,a-z,A-Z]" | awk '{print $1}' | sed 's/://' )
-	if [ -d $infiniband_device_irqs_path ]; then
-		irq_list=$( /bin/ls $infiniband_device_irqs_path )
+	interface_in_proc_interrupts=$(grep -P "$interface[^0-9,a-z,A-Z]" /proc/interrupts | cut -d":" -f1)
+	pci_in_proc_interrupts=$(grep "$pci_dev" /proc/interrupts | grep -v "async" | cut -d":" -f1)
+
+	if [ -d "$infiniband_device_irqs_path" ]; then
+		irq_list=$(/bin/ls -1 "$infiniband_device_irqs_path" | tail -n +2)
 	elif [ "$interface_in_proc_interrupts" != "" ]; then
 		irq_list=$interface_in_proc_interrupts
-	elif [ -d $net_device_irqs_path ]; then
-		irq_list=$( /bin/ls $net_device_irqs_path )
+	elif [ "$pci_in_proc_interrupts" != "" ]; then
+		irq_list=$pci_in_proc_interrupts
+	elif [ -d "$net_device_irqs_path" ]; then
+		irq_list=$(/bin/ls -1 "$net_device_irqs_path" | tail -n +2)
 	else
 		echo "Error - interface or device \"$interface\" does not exist" 1>&2
 		exit 1
 	fi
-	sorted_irq_list=$( echo $irq_list  | tr " " "\n" | sort -g | tr "\n" " " )
-	echo $sorted_irq_list
+	sorted_irq_list=$(echo "$irq_list" | sort -g)
+	echo "$sorted_irq_list"
 }
 
 function show_irq_affinity

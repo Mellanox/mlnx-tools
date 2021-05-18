@@ -1,0 +1,12 @@
+# Those scripts exist and renaming then would break CLI interfaces:
+script-with-language-extension usr/bin/mlnx_conf_mgr.sh
+script-with-language-extension usr/bin/mlnx_interface_mgr.sh
+script-with-language-extension usr/sbin/common_irq_affinity.sh
+script-with-language-extension usr/sbin/odp_stat.sh
+script-with-language-extension usr/sbin/set_irq_affinity.sh
+script-with-language-extension usr/sbin/set_irq_affinity_bynode.sh
+script-with-language-extension usr/sbin/set_irq_affinity_cpulist.sh
+script-with-language-extension usr/sbin/setup_mr_cache.sh
+script-with-language-extension usr/sbin/show_irq_affinity.sh
+script-with-language-extension usr/sbin/show_irq_affinity_hints.sh
+

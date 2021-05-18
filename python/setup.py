@@ -28,6 +28,7 @@
 from distutils.core import setup
 from subprocess import Popen, PIPE
 import sys
+import os
 from sys import argv
 
 # We cannot sanely support python 2.4:
@@ -35,22 +36,13 @@ if sys.version_info < (2, 5):
     print('requires python 2.5 and up')
     sys.exit(0)
 
-# I would absolutely *LOVE* to be informed of a sexier way to do this,
-# preferably without hard-coding Ubuntu as a special case...
-try:
-    if 'Ubuntu\n' in Popen(('lsb_release', '-si'),
-            stdout=PIPE).communicate():
-        argv.append('--install-layout=deb')
-except OSError:
-    pass
-
-
+pkg_version = os.environ['PKG_VERSION']
 
 setup(name='mlnx-tools',
-      version='5.1.3',
+      version=pkg_version,
       author='Vladimir Sokolovsky',
       author_email='vlad@nvidia.com',
       url='https://github.com/Mellanox/mlnx-tools',
-      scripts=['mlnx_qos', 'tc_wrap.py', 'mlnx_perf', 'mlnx_get_vfs.pl', 'mlnx_qcn', 'mlnx_tune', 'mlnx_dump_parser', 'mlx_fs_dump', 'mlnx_mcg'],
+      scripts=['mlnx_qos', 'tc_wrap.py', 'mlnx_perf', 'mlnx_dump_parser', 'mlx_fs_dump', 'ib2ib_setup'],
       py_modules=['netlink', 'dcbnetlink', 'genetlink'],
       )
