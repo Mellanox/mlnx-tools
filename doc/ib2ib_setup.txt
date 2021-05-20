@@ -83,7 +83,7 @@ ARGUMENTS
 			   The flag -n is provided a set of IPs to be scanned on the
                subnet (i.e. A.B.C.D/24) or use the -f with text file holding an IP on each line.
 
-       -s     "Subnet number" - unique number for local subnet. (on each subnet you shoud give different number.)
+       -s     "Subnet number" - unique number for local subnet. (on each subnet you should give different number.)
 
 
 OPTIONS
