@@ -9,4 +9,5 @@ script-with-language-extension usr/sbin/set_irq_affinity_cpulist.sh
 script-with-language-extension usr/sbin/setup_mr_cache.sh
 script-with-language-extension usr/sbin/show_irq_affinity.sh
 script-with-language-extension usr/sbin/show_irq_affinity_hints.sh
-
+# Activly ignored:
+missing-dep-for-interpreter python2 => python:any | python-minimal:any (usr/sbin/mlnx_tune) #!/usr/bin/python2
