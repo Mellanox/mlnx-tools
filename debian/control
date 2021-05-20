@@ -9,7 +9,7 @@ Homepage: http://www.mellanox.com/Mellanox/mlnx-tools
 
 Package: mlnx-tools
 Architecture: any
-Depends: ${misc:Depends}, ${python3:Depends}, ${perl:Depends},
+Depends: ${python3:Depends}, ${perl:Depends},
  pciutils, procps
 Description: Userspace tools to restart and tune MLNX_OFED kernel modules
  Userspace tools and scripts to help manage MLNX_OFED.
