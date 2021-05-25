@@ -17,4 +17,4 @@ override_dh_python3:
 	dh_python3
 	# Remove python2 dep: this was only added due to mlnx_tune
 	# If users don't need mlnx_tune, they should not install python2
-	sed -i -e 's/python2:any, //' debian/mlnx-tools.substvars
+	sed -r -i -e 's/python2?:any(, |$$)//' debian/mlnx-tools.substvars
