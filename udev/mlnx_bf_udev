@@ -17,4 +17,12 @@ case "$1" in
 	ethtool -G $1 rx 256
 	;;
 esac
-ip link set dev $1 up
+
+# Bring up only renamed devices
+case "$1" in
+	eth*)
+	;;
+	*)
+	ip link set dev $1 up
+	;;
+esac
