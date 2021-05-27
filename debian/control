@@ -11,6 +11,8 @@ Package: mlnx-tools
 Architecture: any
 Depends: ${python3:Depends}, ${perl:Depends},
  pciutils, procps
+Replaces: mlnx-ofed-kernel-utils (<< 5.4), mlnx-en-utils (<< 5.4),
+Breaks: mlnx-ofed-kernel-utils (<< 5.4), mlnx-en-utils (<< 5.4),
 Description: Userspace tools to restart and tune MLNX_OFED kernel modules
  Userspace tools and scripts to help manage MLNX_OFED.
  Those include scripts, udev hooks and initialization scripts.

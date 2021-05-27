@@ -36,7 +36,7 @@ Group: Applications/System
 Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tar.gz
 BuildRoot: %{?build_root:%{build_root}}%{!?build_root:/var/tmp/%{name}}
 Vendor: Mellanox Technologies
-Requires: perl
+Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
 %description
 Mellanox userland tools and scripts
 
