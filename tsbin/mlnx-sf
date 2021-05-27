@@ -64,6 +64,7 @@ class SF:
         self.action = args.action
         self.verbose = args.verbose
         self.json = args.json
+        self.pretty = args.pretty
         self.sfnum = args.sfnum or None
         self.hw_addr = args.hwaddr or None
         self.sfindex = args.sfindex or None
@@ -104,7 +105,10 @@ class SF:
             info[pci_dev_index]["rdma_dev"] = get_sf_rdmadev(info[pci_dev_index]["aux_dev"])
 
         if self.json:
-            result['output'] = json.dumps(info, indent=4)
+            if self.pretty:
+                result['output'] = json.dumps(info, indent=4)
+            else:
+                result['output'] = json.dumps(info)
         else:
             result['output'] = ""
             for pci_dev_index in info:
@@ -350,6 +354,7 @@ def main():
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
     parser.add_argument('-j', '--json', action='store_true', help="Generate JSON output with show action", default=False)
+    parser.add_argument('-p', '--pretty', action='store_true', help="Generate pretty JSON output with show action", default=False)
     parser.add_argument('-v', '--verbose', action='store_true', help="Print verbose information", default=False)
     parser.add_argument('-V', '--version', action='store_true', help='Display program version information and exit')
 
@@ -372,10 +377,7 @@ def main():
 
     if sf.action == 'show':
         result = sf.show()
-        if args.json:
-            print(result)
-        else:
-            print(result["output"])
+        print(result["output"])
         sys.exit(result['status'])
     elif sf.action == 'create':
         result = sf.create()
