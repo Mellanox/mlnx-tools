@@ -372,7 +372,10 @@ def main():
 
     if sf.action == 'show':
         result = sf.show()
-        print(result["output"])
+        if args.json:
+            print(result)
+        else:
+            print(result["output"])
         sys.exit(result['status'])
     elif sf.action == 'create':
         result = sf.create()
@@ -380,6 +383,10 @@ def main():
         sys.exit(result['status'])
     elif sf.action == 'delete':
         result = sf.delete()
+        if args.json:
+            print(result)
+        else:
+            print(result["output"])
         sys.exit(result['status'])
 
     sys.exit(rc)
