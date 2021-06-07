@@ -285,6 +285,10 @@ if ! ($vsctl show > /dev/null 2>&1); then
 	fi
 fi
 
+if ! ($vsctl show > /dev/null 2>&1); then
+	$ovs_restart
+fi
+
 ovsbr_number=`$vsctl list-br | wc -l`
 if [ $ovsbr_number -gt 0 ]; then
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"'); then
@@ -352,5 +356,7 @@ if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 		ovs_restart
 	fi
 fi
+
+sync
 
 exit $RC
