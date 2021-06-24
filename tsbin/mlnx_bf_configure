@@ -264,6 +264,10 @@ ovs_restart()
 		$ovs_restart
 	fi
 
+	if ! ($vsctl show > /dev/null 2>&1); then
+		$ovs_restart
+	fi
+
 	# Re-apply udev settings removed by OVS
 	if [ -x /lib/udev/mlnx_bf_udev ]; then
 		for p in $(cd /sys/class/net; /bin/ls -d p* e*)
