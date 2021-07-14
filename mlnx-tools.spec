@@ -49,16 +49,20 @@ Mellanox userland tools and scripts
 
 %if %{PYTHON3}
 %define __python %{_bindir}/python3
+%global mlnx_python_sitelib %{python3_sitelib}
 BuildRequires: python3
 # mlnx_tune is python2 but is not important enough to create a dependency
 # on python2 in a python3 system:
 %global __requires_exclude_from mlnx_tune
+%else
+%global mlnx_python_sitelib %{python2_sitelib}
 %endif
 
 %prep
 %setup -n %{name}-%{version}
 
 %install
+rm -rf %{buildroot}
 
 add_env()
 {
@@ -75,7 +79,7 @@ EOF
 }
 
 touch mlnx-tools-files
-mlnx_python_sitelib=%{python_sitelib}
+mlnx_python_sitelib=%{mlnx_python_sitelib}
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
 	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
 fi
