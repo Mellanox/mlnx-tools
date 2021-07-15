@@ -66,31 +66,9 @@ BuildRequires: python3
 %install
 rm -rf %{buildroot}
 
-add_env()
-{
-	efile=$1
-	evar=$2
-	epath=$3
-
-cat >> $efile << EOF
-if ! echo \$${evar} | grep -q $epath ; then
-	export $evar=$epath:\$$evar
-fi
-
-EOF
-}
-
 export PKG_VERSION="%{version}"
 %make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --root=%{buildroot} --record $PWD/%{files_list}"
 
-if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
-	conf_env=/etc/profile.d/mlnx-tools.sh
-	install -d %{buildroot}/etc/profile.d
-	add_env %{buildroot}$conf_env PYTHONPATH $mlnx_python_sitelib
-	add_env %{buildroot}$conf_env PATH %{_bindir}
-	add_env %{buildroot}$conf_env PATH %{_sbindir}
-	echo $conf_env >> mlnx-tools-files
-fi
 # Moved in the Makefile:
 sed -i -e '/ib2ib_setup/s|/usr/bin|/usr/sbin|' %{files_list}
 
