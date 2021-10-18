@@ -193,12 +193,12 @@ num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
 do
 	port=$(( ${dev: -1} + 1 ))
-	if ($mftconfig -e -d ${dev} LINK_TYPE_P$port q 2> /dev/null | grep LINK_TYPE_P | awk '{print $3}' | grep -q "IB(1)"); then
+	if ($mftconfig -d ${dev} -e q LINK_TYPE_P$port 2> /dev/null | grep -o LINK_TYPE_P.* | awk '{print $3}' | grep -q "IB(1)"); then
 		info "Link type is IB for ${dev}. Skipping mode confiugration."
 		continue
 	fi
 
-	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep ECPF_ESWITCH_MANAGER | awk '{print$3}' | grep -q "ECPF(1)"); then
+	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
 		steering_mode=`get_steering_mode ${dev}`
 		if [ "${steering_mode}" == "dmfs" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
