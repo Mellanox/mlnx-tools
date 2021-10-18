@@ -193,7 +193,7 @@ num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
 do
 	port=$(( ${dev: -1} + 1 ))
-	if ($mftconfig -e -d ${dev} LINK_TYPE_P$port q 2> /dev/null | grep LINK_TYPE_P | awk '{print $3}' | grep -q "IB(1)"); then
+	if ($mftconfig -d ${dev} -e q LINK_TYPE_P$port 2> /dev/null | grep LINK_TYPE_P | awk '{print $4}' | grep -q "IB(1)"); then
 		info "Link type is IB for ${dev}. Skipping mode confiugration."
 		continue
 	fi
