@@ -41,9 +41,17 @@ Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
 Mellanox userland tools and scripts
 
 %global python_dir %{_datadir}/%{name}/python
+%if "%{rhel}" = "7"
+%global PYTHON2 1
+%else
+%global PYTHON2 0
+%endif
 
 %prep
 %setup -n %{name}-%{version}
+%if %{PYTHON2}
+sed -i -e '1s/python3/python/' python/* 2>/dev/null
+%endif
 
 %install
 rm -rf %{buildroot}
