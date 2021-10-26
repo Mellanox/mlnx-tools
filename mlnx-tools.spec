@@ -45,9 +45,17 @@ Mellanox userland tools and scripts
 %global SLES15 0%{?suse_version} >= 1500
 %global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15}
 %global python_dir %{_datadir}/%{name}/python
+%if "%{rhel}" = "7"
+%global PYTHON2 1
+%else
+%global PYTHON2 0
+%endif
 
 %prep
 %setup -n %{name}-%{version}
+%if %{PYTHON2}
+sed -i -e '1s/python3/python/' python/* 2>/dev/null
+%endif
 
 %install
 rm -rf %{buildroot}
