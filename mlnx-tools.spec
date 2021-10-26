@@ -62,6 +62,9 @@ BuildRequires: python3
 
 %prep
 %setup -n %{name}-%{version}
+%if ! (%{PYTHON3)
+sed -i -e '1s/python3/python/' python/* 2>/dev/null
+%endif
 
 %install
 rm -rf %{buildroot}
