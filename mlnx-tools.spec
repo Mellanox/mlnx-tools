@@ -41,7 +41,7 @@ Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
 Mellanox userland tools and scripts
 
 %global python_dir %{_datadir}/%{name}/python
-%if "%{rhel}" = "7"
+%if "%{rhel}" == "7"
 %global PYTHON2 1
 %else
 %global PYTHON2 0
@@ -50,7 +50,10 @@ Mellanox userland tools and scripts
 %prep
 %setup -n %{name}-%{version}
 %if %{PYTHON2}
-sed -i -e '1s/python3/python/' python/* 2>/dev/null
+sed -i -e '1s/python3/python/' \
+	python/ib2ib_setup python/mlnx_dump_parser python/mlnx_perf \
+	python/mlnx_qos python/mlnx_tune python/mlx_fs_dump python/tc_wrap.py \
+	python/Python/dcbnetlink.py
 %endif
 
 %install
