@@ -167,6 +167,19 @@ enable_shared_rq_feature()
 	return 0;
 }
 
+get_ipsec_mode()
+{
+    pci_dev=$1
+    cat /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/ipsec_mode 2> /dev/null
+}
+
+set_ipsec_mode()
+{
+    pci_dev=$1
+    mode=$2
+    echo $mode > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/ipsec_mode 2> /dev/null
+}
+
 is_SecureBoot=0
 if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
 	is_SecureBoot=1
@@ -188,6 +201,8 @@ if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 	. /etc/mellanox/mlnx-bf.conf
 fi
 ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
+SW_STEERING=${SW_STEERING:-"yes"}
+IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
@@ -200,7 +215,7 @@ do
 
 	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
 		steering_mode=`get_steering_mode ${dev}`
-		if [ "${steering_mode}" == "dmfs" ]; then
+        if [ "${steering_mode}" == "dmfs" && "${SW_STEERING}" == "yes" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
 			if [ "${eswitch_mode}" == "switchdev" ]; then
 				set_eswitch_mode ${dev} legacy
@@ -210,6 +225,33 @@ do
 			set_steering_mode ${dev} smfs
 			RC=$((RC+$?))
 		fi
+        if [ "${IPSEC_FULL_OFFLOAD}" == "yes" ]; then
+            lscpu | grep Flags | grep sha1 | grep sha2 | grep -q aes
+		    if [ $? -eq 0 ]; then
+               if [ "${SW_STEERING}" == "yes" ]; then
+                   info "IPsec full offload mode requires FW steering. Skipping IPsec mode configuration."
+               else
+                   eswitch_mode=`get_eswitch_mode ${dev}`
+			       if [ "${eswitch_mode}" == "switchdev" ]; then
+                       set_eswitch_mode ${dev} legacy
+			           RC=$((RC+$?))
+			       fi
+			       ipsec_mode=`get_ipsec_mode ${dev}`
+			       if [ "$ipsec_mode" != "none" ]; then
+                       set_ipsec_mode ${dev} none
+			       fi
+			       steering_mode=`get_steering_mode ${dev}`
+                   if [ "${steering_mode}" == "smfs" ]; then
+                       set_steering_mode ${dev} dmfs
+                       RC=$((RC+$?))
+                   fi
+			       set_ipsec_mode ${dev} full
+               fi
+            else
+                info "Crypto disabled on this devide. Skipping IPsec mode configuration."
+            fi
+    fi
+
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" != "switchdev" ]; then
 			if [ "X${ALLOW_SHARED_RQ}" == "Xyes" ]; then
