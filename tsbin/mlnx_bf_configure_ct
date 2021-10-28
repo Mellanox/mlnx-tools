@@ -37,21 +37,13 @@ modprobe_nf_flowtable_script=/usr/share/mlnx_ofed/mlnx_bf_assign_ct_cores.sh
 
 prog=`basename $0`
 
-rshimlog=`which bfrshlog 2> /dev/null`
-
 info()
 {
-	if [ -n "$rshimlog" ]; then
-		$rshimlog "INFO: $prog: $*"
-	fi
 	logger -t $prog -i "INFO: $*"
 }
 
 error()
 {
-	if [ -n "$rshimlog" ]; then
-		$rshimlog "ERR: $prog: $*"
-	fi
 	logger -t $prog -i "ERR: $*"
 	echo "$*"
 	exit $RC

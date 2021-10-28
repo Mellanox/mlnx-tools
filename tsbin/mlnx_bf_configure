@@ -45,21 +45,13 @@ if [ $$ -ne $PID ] ; then
 	exit 0
 fi
 
-rshimlog=`which bfrshlog 2> /dev/null`
-
 info()
 {
-	if [ -n "$rshimlog" ]; then
-		$rshimlog "INFO: $prog: $*"
-	fi
 	logger -t $prog -i "INFO: $*"
 }
 
 error()
 {
-	if [ -n "$rshimlog" ]; then
-		$rshimlog "ERR: $prog: $*"
-	fi
 	logger -t $prog -i "ERR: $*"
 }
 
