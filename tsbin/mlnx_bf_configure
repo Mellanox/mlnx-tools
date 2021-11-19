@@ -159,6 +159,13 @@ enable_shared_rq_feature()
 	return 0;
 }
 
+set_lag_hash_mode()
+{
+	pci_dev=$1
+
+	echo "hash" > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/lag_port_select_mode
+}
+
 is_SecureBoot=0
 if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
 	is_SecureBoot=1
@@ -180,6 +187,7 @@ if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 	. /etc/mellanox/mlnx-bf.conf
 fi
 ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
+LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
@@ -191,6 +199,9 @@ do
 	fi
 
 	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
+		if [ "X${LAG_HASH_MODE}" == "Xyes" ]; then
+			set_lag_hash_mode ${dev}
+		fi
 		steering_mode=`get_steering_mode ${dev}`
 		if [ "${steering_mode}" == "dmfs" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
