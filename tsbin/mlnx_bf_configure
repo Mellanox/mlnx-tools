@@ -226,7 +226,6 @@ do
 			RC=$((RC+$?))
 
 			set_ct_max_offloaded_conns ${dev} ${CT_MAX_OFFLOADED_CONNS}
-			RC=$((RC+$?))
 		fi
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
