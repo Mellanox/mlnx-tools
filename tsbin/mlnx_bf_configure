@@ -187,7 +187,7 @@ if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 	. /etc/mellanox/mlnx-bf.conf
 fi
 ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
-LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
+LAG_HASH_MODE=${LAG_HASH_MODE:-"no"}
 
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
