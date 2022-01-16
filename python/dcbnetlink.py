@@ -200,7 +200,7 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		a = array.array('B')
-		a.fromstring(ieee[DCB_ATTR_IEEE_PFC].str()[0:])
+		a.frombytes(ieee[DCB_ATTR_IEEE_PFC].str()[0:])
 
 		return a[1]
 
@@ -214,7 +214,7 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		a = array.array('B')
-		a.fromstring(ieee[DCB_ATTR_IEEE_PFC].str()[0:])
+		a.frombytes(ieee[DCB_ATTR_IEEE_PFC].str()[0:])
 
 		return a[4] + (a[5] << 8)
 
@@ -230,7 +230,7 @@ class DcbController:
 		willing, ets_cap, cbs = struct.unpack_from("BBB", ieee[DCB_ATTR_IEEE_ETS].str(), 0)
 
 		a = array.array('B')
-		a.fromstring(ieee[DCB_ATTR_IEEE_ETS].str()[3:])
+		a.frombytes(ieee[DCB_ATTR_IEEE_ETS].str()[3:])
 
 		f = lambda A, n=8: [A[i:i+n] for i in range(0, len(A), n)]
 
@@ -248,9 +248,9 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		prio2buffer = array.array('B')
-		prio2buffer.fromstring(ieee[DCB_ATTR_DCB_BUFFER].str()[:8])
+		prio2buffer.frombytes(ieee[DCB_ATTR_DCB_BUFFER].str()[:8])
 		buffer_size = array.array('I')
-		buffer_size.fromstring(ieee[DCB_ATTR_DCB_BUFFER].str()[8:])
+		buffer_size.frombytes(ieee[DCB_ATTR_DCB_BUFFER].str()[8:])
 
 		return prio2buffer, buffer_size[:8], buffer_size[8]
 
@@ -369,9 +369,9 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		rpg_enable = array.array('B')
-		rpg_enable.fromstring(ieee[DCB_ATTR_IEEE_QCN].str()[:8])
+		rpg_enable.frombytes(ieee[DCB_ATTR_IEEE_QCN].str()[:8])
 		a = array.array('I')
-		a.fromstring(ieee[DCB_ATTR_IEEE_QCN].str()[8:])
+		a.frombytes(ieee[DCB_ATTR_IEEE_QCN].str()[8:])
 
 		lst_params = self.__parse_array(a,8)
 
@@ -400,7 +400,7 @@ class DcbController:
 
 		rppp_rp_centiseconds = struct.unpack_from("QQQQQQQQ",ieee[DCB_ATTR_IEEE_QCN_STATS].str(), 0);
 		a = array.array('I')
-		a.fromstring(ieee[DCB_ATTR_IEEE_QCN_STATS].str()[64:])
+		a.frombytes(ieee[DCB_ATTR_IEEE_QCN_STATS].str()[64:])
 
 		lst_statistics = self.__parse_array(a,8)
 
