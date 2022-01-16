@@ -37,7 +37,6 @@ if os.path.exists('/usr/lib/python2.7/site-packages'):
 import socket
 import struct
 
-
 import array
 
 from netlink import hexdump, parse_attributes, Message, Nested, U8Attr, StrAttr, NulStrAttr, Connection, NETLINK_GENERIC, U32Attr, NLM_F_REQUEST
@@ -111,6 +110,17 @@ DCB_ATTR_IEEE_APP_UNSPEC = 0
 DCB_ATTR_IEEE_APP = 1
 
 IEEE_8021QAZ_APP_SEL_ETHERTYPE	= 1
+
+_PY_VERSION = sys.version
+
+# Use this function instead of direct call to frombytes
+# Will call the right attr depend on python version used
+def from_bytes(a, string):
+	if sys.version_info[0] < 3:
+		a.fromstring(string)
+	else:
+		a.frombytes(string)
+
 
 class DcbnlHdr:
 	def __init__(self, len, type):
@@ -200,7 +210,7 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		a = array.array('B')
-		a.fromstring(ieee[DCB_ATTR_IEEE_PFC].str()[0:])
+		from_bytes(a, ieee[DCB_ATTR_IEEE_PFC].str()[0:])
 
 		return a[1]
 
@@ -214,7 +224,7 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		a = array.array('B')
-		a.fromstring(ieee[DCB_ATTR_IEEE_PFC].str()[0:])
+		from_bytes(a, ieee[DCB_ATTR_IEEE_PFC].str()[0:])
 
 		return a[4] + (a[5] << 8)
 
@@ -230,7 +240,7 @@ class DcbController:
 		willing, ets_cap, cbs = struct.unpack_from("BBB", ieee[DCB_ATTR_IEEE_ETS].str(), 0)
 
 		a = array.array('B')
-		a.fromstring(ieee[DCB_ATTR_IEEE_ETS].str()[3:])
+		from_bytes(a, ieee[DCB_ATTR_IEEE_ETS].str()[3:])
 
 		f = lambda A, n=8: [A[i:i+n] for i in range(0, len(A), n)]
 
@@ -248,9 +258,9 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		prio2buffer = array.array('B')
-		prio2buffer.fromstring(ieee[DCB_ATTR_DCB_BUFFER].str()[:8])
+		from_bytes(prio2buffer, ieee[DCB_ATTR_DCB_BUFFER].str()[:8])
 		buffer_size = array.array('I')
-		buffer_size.fromstring(ieee[DCB_ATTR_DCB_BUFFER].str()[8:])
+		from_bytes(buffer_size, ieee[DCB_ATTR_DCB_BUFFER].str()[8:])
 
 		return prio2buffer, buffer_size[:8], buffer_size[8]
 
@@ -369,9 +379,9 @@ class DcbController:
 		ieee = m.attrs[DCB_ATTR_IEEE].nested()
 
 		rpg_enable = array.array('B')
-		rpg_enable.fromstring(ieee[DCB_ATTR_IEEE_QCN].str()[:8])
+		from_bytes(rpg_enable, ieee[DCB_ATTR_IEEE_QCN].str()[:8])
 		a = array.array('I')
-		a.fromstring(ieee[DCB_ATTR_IEEE_QCN].str()[8:])
+		from_bytes(a, ieee[DCB_ATTR_IEEE_QCN].str()[8:])
 
 		lst_params = self.__parse_array(a,8)
 
@@ -400,7 +410,7 @@ class DcbController:
 
 		rppp_rp_centiseconds = struct.unpack_from("QQQQQQQQ",ieee[DCB_ATTR_IEEE_QCN_STATS].str(), 0);
 		a = array.array('I')
-		a.fromstring(ieee[DCB_ATTR_IEEE_QCN_STATS].str()[64:])
+		from_bytes(a, ieee[DCB_ATTR_IEEE_QCN_STATS].str()[64:])
 
 		lst_statistics = self.__parse_array(a,8)
 
