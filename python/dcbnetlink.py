@@ -122,6 +122,13 @@ def from_bytes(a, string):
 		a.frombytes(string)
 
 
+def to_bytes(a):
+	if sys.version_info[0] < 3:
+		return a.tostring()
+	else:
+		return a.tobytes()
+
+
 class DcbnlHdr:
 	def __init__(self, len, type):
 		self.len = len
@@ -266,7 +273,7 @@ class DcbController:
 
 	def set_dcb_buffer(self, _prio2buffer, _buffer_size, _tot_size):
 		_buffer_size.append(_tot_size)
-		dcb_buffer = _prio2buffer.tostring() + _buffer_size.tostring()
+		dcb_buffer = to_bytes(_prio2buffer) + to_bytes(_buffer_size)
 
 		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		dcb_buffer_str = StrAttr(DCB_ATTR_DCB_BUFFER, dcb_buffer)
@@ -289,7 +296,7 @@ class DcbController:
 		pads = array.array('B', b'\0' * 3)
 
 		#delay is 16bit value
-		pfc = struct.pack("BBBBBB", pfc_cap, _pfc_en, mbc, 0, _delay & 0xFF , _delay >> 8) + (requests + indications + pads).tostring()
+		pfc = struct.pack("BBBBBB", pfc_cap, _pfc_en, mbc, 0, _delay & 0xFF , _delay >> 8) + to_bytes(requests + indications + pads)
 
 		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		ieee_pfc = StrAttr(DCB_ATTR_IEEE_PFC, pfc)
@@ -318,9 +325,8 @@ class DcbController:
 		for tc in range(len(_tsa)): tc_tsa[tc] = _tsa[tc]
 		for tc in range(len(_tc_bw)): tc_tc_bw[tc] = _tc_bw[tc]
 
-		ets = struct.pack("BBB", willing, ets_cap, cbs) + (tc_tc_bw + tc_rx_bw +
-				tc_tsa + prio_tc + tc_reco_bw + tc_reco_tsa +
-				reco_prio_tc).tostring()
+		ets = struct.pack("BBB", willing, ets_cap, cbs) + to_bytes(tc_tc_bw + tc_rx_bw +
+				tc_tsa + prio_tc + tc_reco_bw + tc_reco_tsa + reco_prio_tc)
 
 		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		ieee_ets = StrAttr(DCB_ATTR_IEEE_ETS, ets)
@@ -426,7 +432,7 @@ class DcbController:
 	# @_qcn: struct of arrays, each array (_qcn[0], _qcn[1].. etc.) holds the values of a certain qcn parameter for all priorities.
 	def set_ieee_qcn(self, _qcn):
 
-		qcn = _qcn[0].tostring() + (_qcn[1] + _qcn[2] + _qcn[3] + _qcn[4] + _qcn[5] + _qcn[6] + _qcn[7] + _qcn[8] + _qcn[9] + _qcn[10] + _qcn[11]).tostring()
+		qcn = to_bytes(_qcn[0]) + to_bytes(_qcn[1] + _qcn[2] + _qcn[3] + _qcn[4] + _qcn[5] + _qcn[6] + _qcn[7] + _qcn[8] + _qcn[9] + _qcn[10] + _qcn[11])
 
 		intf = NulStrAttr(DCB_ATTR_IFNAME, self.intf)
 		ieee_qcn = StrAttr(DCB_ATTR_IEEE_QCN, qcn)
