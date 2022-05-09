@@ -59,6 +59,7 @@ BuildRequires: python3
 %setup -n %{name}-%{version}
 
 %install
+rm -rf %{buildroot}
 
 add_env()
 {
