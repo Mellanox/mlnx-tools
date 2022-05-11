@@ -59,6 +59,7 @@ BuildRequires: python3
 %setup -n %{name}-%{version}
 
 %install
+rm -rf %{buildroot}
 
 add_env()
 {
@@ -75,9 +76,13 @@ EOF
 }
 
 touch mlnx-tools-files
-mlnx_python_sitelib=%{python_sitelib}
+%if %{PYTHON3}
+mlnx_python_sitelib=%{?python3_sitelib}
+%else
+mlnx_python_sitelib=%{?python_sitelib}
+%endif
 if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
-	mlnx_python_sitelib=$(echo %{python_sitelib} | sed -e 's@/usr@%{_prefix}@')
+	mlnx_python_sitelib=$(echo "$mlnx_python_sitelib" | sed -e 's@/usr@%{_prefix}@')
 fi
 export PKG_VERSION="%{version}"
 %make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}"
