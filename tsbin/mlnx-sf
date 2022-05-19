@@ -44,7 +44,7 @@ MLXREG = '/usr/bin/mlxreg'
 MLXDEVM = 'mlxdevm'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
-verbose = 0
+verbose = False
 
 if os.path.exists("/usr/bin/mlxconfig"):
     MLXCONFIG = "/usr/bin/mlxconfig"
@@ -65,6 +65,7 @@ class SF:
         self.verbose = args.verbose
         self.json = args.json
         self.pretty = args.pretty
+        self.enable_trust = args.enable_trust
         self.sfnum = args.sfnum or None
         self.hw_addr = args.hwaddr or None
         self.sfindex = args.sfindex or None
@@ -100,6 +101,7 @@ class SF:
         for pci_dev_index in info:
             info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
             info[pci_dev_index]["sfindex"] = pci_dev_index
+            info[pci_dev_index]["trust"] = get_sf_trust(pci_dev_index)
             info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
             info[pci_dev_index]["sf_netdev"] = get_sf_netdev(info[pci_dev_index]["aux_dev"])
             info[pci_dev_index]["rdma_dev"] = get_sf_rdmadev(info[pci_dev_index]["aux_dev"])
@@ -117,6 +119,7 @@ class SF:
                 result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
                 result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
                 result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
+                result['output'] += "  Function trust: " + info[pci_dev_index]["function"]["trust"] + "\n"
                 result['output'] += "  Auxiliary device: " + info[pci_dev_index]["aux_dev"] + "\n"
                 result['output'] += "    netdev: " + info[pci_dev_index]["sf_netdev"] + "\n"
                 result['output'] += "    RDMA dev: " + info[pci_dev_index]["rdma_dev"] + "\n"
@@ -160,6 +163,15 @@ class SF:
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
+
+        if self.enable_trust:
+            cmd = MLXDEVM + " port function set {idx} trust on".format(
+                    idx=self.sfindex
+                    )
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
         # Activate SF
         cmd = MLXDEVM + " port function set {} state active".format(self.sfindex)
         result['status'], result['output'] = get_status_output(cmd, self.verbose)
@@ -249,6 +261,18 @@ def lookup_aux_dev(device, sfnum):
     return ""
 
 
+def get_sf_trust(pci_dev_index):
+    """
+    This function returns SF trust
+    """
+    cmd = MLXDEVM + " port | grep -A 2 {} | grep -oP '(?<=trust )[^ ]*'".format(pci_dev_index)
+    result, output = get_status_output(cmd)
+    if result:
+        return "NA"
+
+    return output.strip()
+
+
 def get_sf_netdev(aux_dev):
     """
     This function returns netdevice of auxiliary SF device
@@ -286,7 +310,7 @@ def version():
     print(prog + ' ' + __version__)
 
 
-def get_status_output(cmd, verbose=False):
+def get_status_output(cmd, verbose=verbose):
     rc, output = (0, '')
 
     if verbose:
@@ -353,6 +377,7 @@ def main():
     parser.add_argument('-n', '--sfnum', help="SF number")
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
+    parser.add_argument('-t', '--enable-trust', action='store_true', help="Set SF as trusted", default=False)
     parser.add_argument('-j', '--json', action='store_true', help="Generate JSON output with show action", default=False)
     parser.add_argument('-p', '--pretty', action='store_true', help="Generate pretty JSON output with show action", default=False)
     parser.add_argument('-v', '--verbose', action='store_true', help="Print verbose information", default=False)
