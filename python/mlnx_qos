@@ -330,7 +330,7 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer
 		tc = prio_tc[up]
 		tc2up[int(tc)].append(up)
 
-	for tc in tc2up:
+	for tc in sorted(tc2up):
 		r = "unlimited"
 		msg = ""
 		try:
