@@ -96,6 +96,7 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
+	rmmod mlx5_ib
 	devlink dev eswitch set pci/${pci_dev} mode ${mode}
 	rc=$?
 	if [ $rc -ne 0 ]; then
@@ -103,6 +104,7 @@ set_eswitch_mode()
 	else
 		info "Configured ${mode} mode for ${pci_dev}"
 	fi
+	modprobe mlx5_ib
 
 	return $rc
 }
