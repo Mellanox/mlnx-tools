@@ -96,15 +96,13 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
-	rmmod mlx5_ib
-	devlink dev eswitch set pci/${pci_dev} mode ${mode}
+	echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode
 	rc=$?
 	if [ $rc -ne 0 ]; then
 		error "Failed to configure ${mode} mode for ${pci_dev}"
 	else
 		info "Configured ${mode} mode for ${pci_dev}"
 	fi
-	modprobe mlx5_ib
 
 	return $rc
 }
