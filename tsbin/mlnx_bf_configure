@@ -204,7 +204,7 @@ IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"no"}
 
 num_of_devs=0
-for dev in `lspci -nD -d 15b3: | grep 'a2d[26]' | cut -d ' ' -f 1`
+for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
 do
 	port=$(( ${dev: -1} + 1 ))
 	if ($mftconfig -d ${dev} -e q LINK_TYPE_P$port 2> /dev/null | grep -o LINK_TYPE_P.* | awk '{print $3}' | grep -q "IB(1)"); then
