@@ -101,10 +101,12 @@ class SF:
         for pci_dev_index in info:
             info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
             info[pci_dev_index]["sfindex"] = pci_dev_index
-            info[pci_dev_index]["trust"] = get_sf_trust(pci_dev_index)
             info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
             info[pci_dev_index]["sf_netdev"] = get_sf_netdev(info[pci_dev_index]["aux_dev"])
             info[pci_dev_index]["rdma_dev"] = get_sf_rdmadev(info[pci_dev_index]["aux_dev"])
+            if "trust" not in info[pci_dev_index]["function"]:
+                info[pci_dev_index]["function"]["trust"] = "NA"
+
 
         if self.json:
             if self.pretty:
@@ -259,18 +261,6 @@ def lookup_aux_dev(device, sfnum):
         return aux_dev
 
     return ""
-
-
-def get_sf_trust(pci_dev_index):
-    """
-    This function returns SF trust
-    """
-    cmd = MLXDEVM + " port | grep -A 2 {} | grep -oP '(?<=trust )[^ ]*'".format(pci_dev_index)
-    result, output = get_status_output(cmd)
-    if result:
-        return "NA"
-
-    return output.strip()
 
 
 def get_sf_netdev(aux_dev):
