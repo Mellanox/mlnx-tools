@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 #
 # Copyright (c) 2017 Mellanox Technologies. All rights reserved.
 #
@@ -45,6 +45,7 @@ import glob
 import subprocess as sp
 from optparse 					import OptionParser
 from threading import Timer
+from functools import reduce
 
 VERSION_MAJOR					= "5"
 VERSION_MINOR					= "0"
@@ -520,7 +521,7 @@ class DeviceType:
 		if name:
 			self.name = name
 		else:
-			matching_devices = filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS)
+			matching_devices = list(filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS))
 			if any(matching_devices):
 				self.name = matching_devices[0].name
 
@@ -592,7 +593,7 @@ class IbSpeed:
 		""" Returns a IB speed name from a speed value
 		"""
 		if speed in IbSpeed.speed_names_to_speed.values():
-			return filter(lambda key: IbSpeed.speed_names_to_speed[key] == speed, IbSpeed.speed_names_to_speed.keys())[0]
+			return list(filter(lambda key: IbSpeed.speed_names_to_speed[key] == speed, IbSpeed.speed_names_to_speed.keys()))[0]
 		else:
 			return IbSpeed.UNKNOWN
 
@@ -2999,7 +3000,7 @@ def getstatusoutput(cmd, shell=False, timeout=DEFAULT_TIMEOUT):
 		stdout = stdout.rstrip()
 		is_timeout = not timer.is_alive()
 		timer.cancel()
-		return process.returncode, stdout
+		return process.returncode, str(stdout.decode('UTF-8'))
 
 def run_command_debug_when_fail(cmd, shell=False, debug_message=False, prnt=False):
 	""" run command and print debug message when failed
@@ -3155,7 +3156,7 @@ def merge_fpp_devices(logical_devices):
 				fpp_device_pers.append([checked_device, compared_device])
 				devices_to_remove += [checked_device, compared_device]
 	# Create new list withouut FPP devices
-	merged_fpp_device_list = filter(lambda physical_dev: physical_dev not in devices_to_remove, logical_devices)
+	merged_fpp_device_list = list(filter(lambda physical_dev: physical_dev not in devices_to_remove, logical_devices))
 	# Add FPP devices
 	for per in fpp_device_pers:
 		fpp_device = FppPciDeviceInfo(per[0], per[1])
