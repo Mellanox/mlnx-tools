@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 #
 # Copyright (c) 2017 Mellanox Technologies. All rights reserved.
 #
@@ -45,6 +45,7 @@ import glob
 import subprocess as sp
 from optparse 					import OptionParser
 from threading import Timer
+from functools import reduce
 
 VERSION_MAJOR					= "5"
 VERSION_MINOR					= "0"
@@ -366,6 +367,7 @@ class OS:
 		RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2
 		]
 
+
 	def get_os(self):
 		""" Return local OS Type (one of the list OS_ALL)
 		    in case of unknown system type, it's return OS.UNKNOWN.
@@ -383,10 +385,17 @@ class OS:
 		if os_platform == "sunos":
 			return OS.SUNOS
 
+		try:
+			import distro
+		except ImportError:
+			import platform as distro
+
+		platform_dist = distro.linux_distribution()
+
 		if os_platform == "linux":
-			linux_dist = platform.linux_distribution()[0].lower()
+			linux_dist = platform_dist[0].lower()
 			try:
-				os_version = platform.platform().split('-with-')[1].split('-')[1]
+				os_version = platform_dist[1]
 			except IndexError as err:
 				os_version = ""
 			if any(dist in linux_dist for dist in ['redhat', 'red hat']):
@@ -493,8 +502,8 @@ class OS:
 					return OS.XENSERVER6_5
 				if os_version == '7.1.0':
 					return OS.XENSERVER7_1
-
-		logging.warning("Unknown OS [%s,%s,%s]. Tuning might be non-optimized." % (str(platform.system()), str(platform.release()), str(platform.dist())))
+		
+		logging.warning("Unknown OS [%s,%s,%s]. Tuning might be non-optimized." % (str(platform.system()), str(platform.release()), str(platform_dist)))
 		return OS.UNKNOWN
 
 	def get_kernel(self):
@@ -520,7 +529,7 @@ class DeviceType:
 		if name:
 			self.name = name
 		else:
-			matching_devices = filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS)
+			matching_devices = list(filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS))
 			if any(matching_devices):
 				self.name = matching_devices[0].name
 
@@ -592,7 +601,7 @@ class IbSpeed:
 		""" Returns a IB speed name from a speed value
 		"""
 		if speed in IbSpeed.speed_names_to_speed.values():
-			return filter(lambda key: IbSpeed.speed_names_to_speed[key] == speed, IbSpeed.speed_names_to_speed.keys())[0]
+			return list(filter(lambda key: IbSpeed.speed_names_to_speed[key] == speed, IbSpeed.speed_names_to_speed.keys()))[0]
 		else:
 			return IbSpeed.UNKNOWN
 
@@ -742,11 +751,11 @@ class OsInfo:
 		"""
 		if profile == Profile.LOW_LATENCY_VMA:
 			logging.info("Stopping services.")
-			services_to_stop = filter(lambda service: service.name in Service.DISABLE_FOR_VMA and service.is_active(), self.services)
+			services_to_stop = list(filter(lambda service: service.name in Service.DISABLE_FOR_VMA and service.is_active(), self.services))
 			for service in services_to_stop:
 				service.stop(node_info)
 			logging.info("Unloading kernel modules.")
-			kernel_modules_to_unload = filter(lambda kernel_module: kernel_module.name in KernelModule.REMOVE_FOR_VMA and kernel_module.is_loaded(), self.kernel_modules)
+			kernel_modules_to_unload = list(filter(lambda kernel_module: kernel_module.name in KernelModule.REMOVE_FOR_VMA and kernel_module.is_loaded(), self.kernel_modules))
 			for kernel_module in kernel_modules_to_unload:
 				kernel_module.unload()
 
@@ -2998,7 +3007,7 @@ def getstatusoutput(cmd, shell=False, timeout=DEFAULT_TIMEOUT):
 		stdout = stdout.rstrip()
 		is_timeout = not timer.is_alive()
 		timer.cancel()
-		return process.returncode, stdout
+		return process.returncode, str(stdout.decode('UTF-8'))
 
 def run_command_debug_when_fail(cmd, shell=False, debug_message=False, prnt=False):
 	""" run command and print debug message when failed
@@ -3088,6 +3097,7 @@ def force_sw_dependencies(profile):
 	output = run_command_exit_when_fail(LSMOD, error_message="Please install lsmod tool.")
 	if "mlx" not in output:
 		logging.error( "Driver don't exist/not loaded. Please load Mellanox driver.")
+	
 
 	# Check profile specific tools
 	if profile in Profile.NEED_IFCONFIG:
@@ -3154,7 +3164,7 @@ def merge_fpp_devices(logical_devices):
 				fpp_device_pers.append([checked_device, compared_device])
 				devices_to_remove += [checked_device, compared_device]
 	# Create new list withouut FPP devices
-	merged_fpp_device_list = filter(lambda physical_dev: physical_dev not in devices_to_remove, logical_devices)
+	merged_fpp_device_list = list(filter(lambda physical_dev: physical_dev not in devices_to_remove, logical_devices))
 	# Add FPP devices
 	for per in fpp_device_pers:
 		fpp_device = FppPciDeviceInfo(per[0], per[1])
