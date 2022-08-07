@@ -1954,11 +1954,12 @@ class InterfaceInfo( object ):
 		cmd = RINGS_CMD%(self.name)
 		( rc, output ) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
-		for line in output.split('\n'):
+		lines = output.split('\n')
+		for line in lines:
 			if ("rx-" in line ):
 				rx_ring = RingInfo(line.split('rx-')[1])
 				rx_ring.set_rps_mask(self.name)
-				if self.supports_xps:
+				if self.supports_xps and ('tx-'+rx_ring.number) in lines:
 					rx_ring.set_xps_mask(self.name)
 				rx_ring.irqs = rx_ring.get_irqs(self.name, rx_ring.number)
 				rings.append(rx_ring)
