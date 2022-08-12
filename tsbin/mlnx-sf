@@ -42,6 +42,7 @@ os.environ['PATH'] = '/opt/mellanox/iproute2/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 MLXREG = '/usr/bin/mlxreg'
 MLXDEVM = 'mlxdevm'
+DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
 verbose = False
@@ -73,6 +74,7 @@ class SF:
         self.aux_dev = None
         self.sf_netdev = None
         self.rdma_dev = None
+        self.cpu_list = args.cpu_list or None
         self.info = {}
         self.info_error = 0
 
@@ -204,6 +206,18 @@ class SF:
                 sf_log("ERROR: File {} does not exist".format(fname))
             except:
                 sf_log("Unexpected error:", sys.exc_info()[0])
+
+        if self.cpu_list:
+            cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
+                    self.aux_dev, self.cpu_list
+                    )
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+            cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
 
         result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
         sf_log(result["output"])
@@ -368,6 +382,9 @@ def main():
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
     parser.add_argument('-t', '--enable-trust', action='store_true', help="Set SF as trusted", default=False)
+    parser.add_argument('-c', '--cpu-list', help="Interpret mask as numerical list of cores instead of a \
+                                                  bitmask. Numbers are separated by commas and may include \
+                                                  ranges. For example: 0,5,8-11.", default=None)
     parser.add_argument('-j', '--json', action='store_true', help="Generate JSON output with show action", default=False)
     parser.add_argument('-p', '--pretty', action='store_true', help="Generate pretty JSON output with show action", default=False)
     parser.add_argument('-v', '--verbose', action='store_true', help="Print verbose information", default=False)
