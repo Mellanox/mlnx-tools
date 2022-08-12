@@ -172,11 +172,12 @@ set_ipsec_mode()
 	echo $mode > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/ipsec_mode 2> /dev/null
 }
 
-set_lag_hash_mode()
+set_lag_mode()
 {
 	pci_dev=$1
+	mode=$2
 
-	echo "hash" > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/lag_port_select_mode
+	echo $mode > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/lag_port_select_mode
 }
 
 is_SecureBoot=0
@@ -214,8 +215,17 @@ do
 
 	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
 		if [ "X${LAG_HASH_MODE}" == "Xyes" ]; then
-			set_lag_hash_mode ${dev}
+			set_lag_mode ${dev} "hash"
+		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
+			eswitch_mode=`get_eswitch_mode ${dev}`
+			if [ "${eswitch_mode}" == "switchdev" ]; then
+				set_eswitch_mode ${dev} legacy
+				RC=$((RC+$?))
+			fi
+
+			set_lag_mode ${dev} "multiport_esw"
 		fi
+
 		steering_mode=`get_steering_mode ${dev}`
 		if [ "${steering_mode}" == "dmfs" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
