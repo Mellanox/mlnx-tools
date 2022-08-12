@@ -334,6 +334,17 @@ class SF:
             if result['status']:
                 return result
 
+        if self.cpu_list:
+            cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
+                    self.aux_dev, self.cpu_list
+                    )
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+            cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
 
         result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
         sf_log(result["output"])
