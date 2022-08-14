@@ -100,7 +100,7 @@ parser.add_option("--trust", dest="trust",
 parser.add_option("--dscp2prio", dest="dscp2prio",
 		  action="append",
 		  help="set/del a (dscp,prio) mapping, or 'flush' to delete all. Example 'set,30,2' maps dscp 30 to priority 2. " +
-		       "'del,30,2' deletes the mapping and resets the dscp 30 mapping back to the default setting priority 0.")
+		       "'del,30,2' deletes the mapping. Deleting last dscp or using 'flush' will automatically change trust to pcp.")
 parser.add_option("--defltprio", dest="defltprio",
                   help="set/del default priority. Example 'set,2' sets default priority to 2. " +
                        "'del,2' deletes this setting.")
