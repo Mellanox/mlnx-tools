@@ -226,7 +226,7 @@ do
 			set_lag_mode ${dev} "hash"
 		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
-			if [ "${eswitch_mode}" == "switchdev" ]; then
+			if [ "${eswitch_mode}" != "legacy" ]; then
 				set_eswitch_mode ${dev} legacy
 				RC=$((RC+$?))
 			fi
@@ -236,7 +236,7 @@ do
 
 		if [ "X${ENCAP_NONE_MODE}" == "Xyes" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
-			if [ "${eswitch_mode}" == "switchdev" ]; then
+			if [ "${eswitch_mode}" != "legacy" ]; then
 				set_eswitch_mode ${dev} legacy
 				RC=$((RC+$?))
 			fi
@@ -247,7 +247,7 @@ do
 		steering_mode=`get_steering_mode ${dev}`
 		if [ "${steering_mode}" == "dmfs" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
-			if [ "${eswitch_mode}" == "switchdev" ]; then
+			if [ "${eswitch_mode}" != "legacy" ]; then
 				set_eswitch_mode ${dev} legacy
 				RC=$((RC+$?))
 			fi
@@ -260,7 +260,7 @@ do
 			lscpu | grep Flags | grep sha1 | grep sha2 | grep -q aes
 			if [ $? -eq 0 ]; then
 				eswitch_mode=`get_eswitch_mode ${dev}`
-				if [ "${eswitch_mode}" == "switchdev" ]; then
+				if [ "${eswitch_mode}" != "legacy" ]; then
 					set_eswitch_mode ${dev} legacy
 					RC=$((RC+$?))
 				fi
