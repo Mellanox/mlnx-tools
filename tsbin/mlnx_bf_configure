@@ -28,7 +28,7 @@
 # and/or other materials provided with the distribution.
 
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
-CT_MAX_OFFLOADED_CONNS=1000000
+CT_MAX_OFFLOADED_CONNS=${CT_MAX_OFFLOADED_CONNS:-1000000}
 
 RC=0
 
@@ -63,7 +63,7 @@ get_steering_mode()
 
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
 	if [ -n "$compat" ]; then
-		cat /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null
+		cat ${compat} 2> /dev/null
 	else
 		devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
 	fi
@@ -107,7 +107,7 @@ set_eswitch_mode()
 
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
 	if [ -n "$compat" ]; then
-		echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode
+		echo ${mode} > ${compat}
 	else
 		devlink dev eswitch set pci/${pci_dev} mode ${mode}
 	fi
@@ -121,85 +121,41 @@ set_eswitch_mode()
 	return $rc
 }
 
-set_metadata_match_mode()
+get_dev_param()
 {
 	pci_dev=$1
-	mode=$2
+	name=$2
 	shift 2
+	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
+	if [ -n "$compat" ]; then
+		cat ${compat} 2> /dev/null
+	else
+		devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
+	fi
+}
 
-	echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/vport_match_mode
+set_dev_param()
+{
+	pci_dev=$1
+	name=$2
+	value=$3
+	msg=$4
+	shift 4
 
+	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
+	if [ -n "$compat" ]; then
+		echo ${value} > ${compat}
+	else
+		devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime
+	fi
 	rc=$?
 	if [ $rc -ne 0 ]; then
-		error "Failed to configure vport match mode ${mode} for ${pci_dev}"
+		error "${msg} Failed to set parameter ${name} to ${value} value for ${pci_dev}"
 	else
-		info "Configured vport match mode ${mode} for ${pci_dev}"
+		info "${msg} Set ${name} parameter to ${value} value for ${pci_dev}"
 	fi
 
 	return $rc
-}
-
-set_ct_max_offloaded_conns()
-{
-	pci_dev=$1
-	max=$2
-	shift 2
-
-	devlink dev param set pci/${pci_dev} name ct_max_offloaded_conns value $max cmode runtime
-
-	rc=$?
-	if [ $rc -ne 0 ]; then
-		error "Failed to configure devlink param ct_max_offloaded_conns=${max} for ${pci_dev}"
-	else
-		info "Configured devlink param ct_max_offloaded_conns=${max} for ${pci_dev}"
-	fi
-
-	return $rc
-}
-
-enable_shared_rq_feature()
-{
-	pci_dev=$1
-	shift 1
-
-	devlink dev param set pci/${pci_dev} name esw_pet_insert value true cmode runtime
-	rc=$?
-	if [ $rc -ne 0 ]; then
-		info "Shared RQ feature not supported"
-	else
-		info "Shared RQ feature enabled"
-	fi
-
-	return 0;
-}
-
-get_ipsec_mode()
-{
-	pci_dev=$1
-	cat /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/ipsec_mode 2> /dev/null
-}
-
-set_ipsec_mode()
-{   
-	pci_dev=$1
-	mode=$2
-	echo $mode > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/ipsec_mode 2> /dev/null
-}
-
-set_lag_mode()
-{
-	pci_dev=$1
-	mode=$2
-
-	echo $mode > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/lag_port_select_mode
-}
-
-set_encap_mode()
-{
-	pci_dev=$1
-	mode=$2
-
-	echo $mode > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/encap
 }
 
 is_SecureBoot=0
@@ -237,7 +193,7 @@ do
 
 	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
 		if [ "X${LAG_HASH_MODE}" == "Xyes" ]; then
-			set_lag_mode ${dev} "hash"
+			set_dev_param ${dev} lag_port_select_mode hash
 		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
 			if [ "${eswitch_mode}" != "legacy" ]; then
@@ -245,7 +201,7 @@ do
 				RC=$((RC+$?))
 			fi
 
-			set_lag_mode ${dev} "multiport_esw"
+			set_dev_param ${dev} lag_port_select_mode multiport_esw
 		fi
 
 		if [ "X${ENCAP_NONE_MODE}" == "Xyes" ]; then
@@ -255,7 +211,7 @@ do
 				RC=$((RC+$?))
 			fi
 
-			set_encap_mode ${dev} "none"
+			set_dev_param ${dev} encap none
 		fi
 
 		steering_mode=`get_steering_mode ${dev}`
@@ -278,16 +234,16 @@ do
 					set_eswitch_mode ${dev} legacy
 					RC=$((RC+$?))
 				fi
-				ipsec_mode=`get_ipsec_mode ${dev}`
+				ipsec_mode=`get_dev_param ${dev} ipsec_mode`
 				if [ "$ipsec_mode" != "none" ]; then
-					set_ipsec_mode ${dev} none
+					set_dev_param ${dev} ipsec_mode none
 				fi
 				steering_mode=`get_steering_mode ${dev}`
 				if [ "${steering_mode}" == "smfs" ]; then
 					set_steering_mode ${dev} dmfs
 					RC=$((RC+$?))
 				fi
-				set_ipsec_mode ${dev} full
+				set_dev_param ${dev} ipsec_mode full
 			else
 				info "Crypto disabled on this devide. Skipping IPsec mode configuration."
 			fi
@@ -296,16 +252,16 @@ do
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" != "switchdev" ]; then
 			if [ "X${ALLOW_SHARED_RQ}" == "Xyes" ]; then
-				enable_shared_rq_feature ${dev}
+				set_dev_param ${dev} esw_pet_insert true "Shared RQ:"
 			fi
 			if [ "X${LEGACY_METADATA_MATCH_MODE}" == "Xyes" ]; then
-				set_metadata_match_mode ${dev} legacy
+				set_dev_param ${dev} vport_match_mode legacy
 			fi
 
 			set_eswitch_mode ${dev} switchdev
 			RC=$((RC+$?))
 
-			set_ct_max_offloaded_conns ${dev} ${CT_MAX_OFFLOADED_CONNS}
+			set_dev_param ${dev} ct_max_offloaded_conns ${CT_MAX_OFFLOADED_CONNS}
 		fi
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
