@@ -61,7 +61,12 @@ get_steering_mode()
 	pci_dev=$1
 	shift
 
-	cat /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null
+	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
+	if [ -n "$compat" ]; then
+		cat /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null
+	else
+		devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
+	fi
 }
 
 set_steering_mode()
@@ -70,8 +75,12 @@ set_steering_mode()
 	mode=$2
 	shift 2
 
-	# devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
-	echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
+	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
+	if [ -n "$compat" ]; then
+		echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
+	else
+		devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
+	fi
 	rc=$?
 	if [ $rc -ne 0 ]; then
 		error "Failed to configure steering mode ${mode} for ${pci_dev}"
@@ -96,7 +105,12 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
-	echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode
+	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
+	if [ -n "$compat" ]; then
+		echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode
+	else
+		devlink dev eswitch set pci/${pci_dev} mode ${mode}
+	fi
 	rc=$?
 	if [ $rc -ne 0 ]; then
 		error "Failed to configure ${mode} mode for ${pci_dev}"
