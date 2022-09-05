@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #
 # Copyright (c) 2017 Mellanox Technologies. All rights reserved.
 #
@@ -45,7 +45,6 @@ import glob
 import subprocess as sp
 from optparse 					import OptionParser
 from threading import Timer
-from functools import reduce
 
 VERSION_MAJOR					= "5"
 VERSION_MINOR					= "0"
@@ -277,7 +276,7 @@ class Unit:
 	def convert(self, value, original_unit, wanted_unit):
 		""" Converts a value between units
 		"""
-		if not all(unit in list(Unit.unit_to_ratio.keys()) for unit in (original_unit, wanted_unit)):
+		if not all(unit in Unit.unit_to_ratio.keys() for unit in (original_unit, wanted_unit)):
 			logging.error("Could not convert between %s%s to %s"%(value, original_unit, wanted_unit))
 			exit(1)
 		# convert value to bits and then apply wanted units
@@ -367,7 +366,6 @@ class OS:
 		RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2
 		]
 
-
 	def get_os(self):
 		""" Return local OS Type (one of the list OS_ALL)
 		    in case of unknown system type, it's return OS.UNKNOWN.
@@ -385,17 +383,10 @@ class OS:
 		if os_platform == "sunos":
 			return OS.SUNOS
 
-		try:
-			import distro
-		except ImportError:
-			import platform as distro
-
-		platform_dist = distro.linux_distribution()
-
 		if os_platform == "linux":
-			linux_dist = platform_dist[0].lower()
+			linux_dist = platform.linux_distribution()[0].lower()
 			try:
-				os_version = platform_dist[1]
+				os_version = platform.platform().split('-with-')[1].split('-')[1]
 			except IndexError as err:
 				os_version = ""
 			if any(dist in linux_dist for dist in ['redhat', 'red hat']):
@@ -502,8 +493,8 @@ class OS:
 					return OS.XENSERVER6_5
 				if os_version == '7.1.0':
 					return OS.XENSERVER7_1
-		
-		logging.warning("Unknown OS [%s,%s,%s]. Tuning might be non-optimized." % (str(platform.system()), str(platform.release()), str(platform_dist)))
+
+		logging.warning("Unknown OS [%s,%s,%s]. Tuning might be non-optimized." % (str(platform.system()), str(platform.release()), str(platform.dist())))
 		return OS.UNKNOWN
 
 	def get_kernel(self):
@@ -529,7 +520,7 @@ class DeviceType:
 		if name:
 			self.name = name
 		else:
-			matching_devices = list([type for type in Devices.SUPPORTED_CONSUMERS if type.id == id])
+			matching_devices = filter(lambda type: type.id == id, Devices.SUPPORTED_CONSUMERS)
 			if any(matching_devices):
 				self.name = matching_devices[0].name
 
@@ -600,8 +591,8 @@ class IbSpeed:
 	def from_number(self, speed):
 		""" Returns a IB speed name from a speed value
 		"""
-		if speed in list(IbSpeed.speed_names_to_speed.values()):
-			return list([key for key in list(IbSpeed.speed_names_to_speed.keys()) if IbSpeed.speed_names_to_speed[key] == speed])[0]
+		if speed in IbSpeed.speed_names_to_speed.values():
+			return filter(lambda key: IbSpeed.speed_names_to_speed[key] == speed, IbSpeed.speed_names_to_speed.keys())[0]
 		else:
 			return IbSpeed.UNKNOWN
 
@@ -713,7 +704,7 @@ class OsInfo:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "OS:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -750,13 +741,12 @@ class OsInfo:
 		""" Optimizes the OS acording to the requested profile
 		"""
 		if profile == Profile.LOW_LATENCY_VMA:
-			print("#"*100)
 			logging.info("Stopping services.")
-			services_to_stop = list([service for service in self.services if service.name in Service.DISABLE_FOR_VMA and service.is_active()])
+			services_to_stop = filter(lambda service: service.name in Service.DISABLE_FOR_VMA and service.is_active(), self.services)
 			for service in services_to_stop:
 				service.stop(node_info)
 			logging.info("Unloading kernel modules.")
-			kernel_modules_to_unload = list([kernel_module for kernel_module in self.kernel_modules if kernel_module.name in KernelModule.REMOVE_FOR_VMA and kernel_module.is_loaded()])
+			kernel_modules_to_unload = filter(lambda kernel_module: kernel_module.name in KernelModule.REMOVE_FOR_VMA and kernel_module.is_loaded(), self.kernel_modules)
 			for kernel_module in kernel_modules_to_unload:
 				kernel_module.unload()
 
@@ -771,7 +761,7 @@ class Cpu:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "CPU:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
 		return string
 
 	def __repr__ (self):
@@ -865,13 +855,13 @@ class Cpu:
 			socket_dict[0] = sorted(socket_dict[0])
 
 		self.sockets_cores = socket_dict
-		for numa in list(self.sockets_cores.keys()):
+		for numa in self.sockets_cores.keys():
 			self.all_cores += self.sockets_cores[numa]
 
 		self.sibling_cores = {}
 		self.physical_cores = {}
-		for numa in list(self.sockets_cores.keys()):
-			if numa not in list(self.sibling_cores.keys()):
+		for numa in self.sockets_cores.keys():
+			if numa not in self.sibling_cores.keys():
 				self.sibling_cores[numa] = {}
 				self.physical_cores[numa] = []
 				self.offline_cores[numa] = []
@@ -881,7 +871,7 @@ class Cpu:
 						self.offline_cores[numa].append(core)
 						continue
 					core_id = output.replace('\n','')
-					if core_id in list(self.sibling_cores[numa].keys()):
+					if core_id in self.sibling_cores[numa].keys():
 						self.sibling_cores[numa][core_id].append(core)
 					else:
 						self.sibling_cores[numa][core_id] = [core]
@@ -918,7 +908,7 @@ class Cpu:
 		for line in lscpu_output.split('\n'):
 			if "Architecture" in line:
 				architecture_str = line.split()[1].strip().lower()
-				if architecture_str in list(Architecture.MODEL_TO_ARCH[CPUVendor.IBM].keys()):
+				if architecture_str in Architecture.MODEL_TO_ARCH[CPUVendor.IBM].keys():
 					self.architecture = Architecture.MODEL_TO_ARCH[CPUVendor.IBM][architecture_str]
 			if "Thread(s)" in line:
 				threads_per_core = int(line.split(":")[1].strip())
@@ -940,7 +930,7 @@ class Cpu:
 		for line in lscpu_output.split('\n'):
 			if "Architecture" in line:
 				architecture_str = line.split()[1].strip().lower()
-				if architecture_str in list(Architecture.MODEL_TO_ARCH[CPUVendor.ARM].keys()):
+				if architecture_str in Architecture.MODEL_TO_ARCH[CPUVendor.ARM].keys():
 					self.architecture = Architecture.MODEL_TO_ARCH[CPUVendor.ARM][architecture_str]
 			if "Thread(s)" in line:
 				threads_per_core = int(line.split(":")[1].strip())
@@ -998,7 +988,7 @@ class Cpu:
 		""" Converts model and family number to architecture name
 		"""
 		if family_number == CPUConstant.INTEL_FAMILY:
-			if model_number in list(Architecture.MODEL_TO_ARCH[CPUVendor.INTEL][CPUConstant.INTEL_FAMILY].keys()):
+			if model_number in Architecture.MODEL_TO_ARCH[CPUVendor.INTEL][CPUConstant.INTEL_FAMILY].keys():
 				return Architecture.MODEL_TO_ARCH[CPUVendor.INTEL][CPUConstant.INTEL_FAMILY][model_number]
 
 		return Architecture.UNKNOWN
@@ -1055,7 +1045,7 @@ class Memory:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "Memory:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
 
 		INDENT	+= 2
 		string	+= str(self.hugepages) + '\n'
@@ -1155,7 +1145,7 @@ class Hugepages:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "Hugepages:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int', 'list', 'dict')))
 		return string
 
 	def __repr__ (self):
@@ -1165,9 +1155,9 @@ class Hugepages:
 		""" Report the hugepage status to the user
 		"""
 		print("Hugepages Status")
-		for numa in list(self.numa_hugepages.keys()):
+		for numa in self.numa_hugepages.keys():
 			report_str = "On NUMA %s:"%numa
-			for hugepages_val in list(self.numa_hugepages[numa].items()):
+			for hugepages_val in self.numa_hugepages[numa].items():
 				report_str += " %sKB: %s pages"%(hugepages_val[0], hugepages_val[1])
 		print(report_str)
 		print("Transparent enabled: %s"%self.transparent_hugepages_enabled)
@@ -1368,14 +1358,14 @@ class Service(object):
 	def to_suse(self):
 		""" Returns the requested service name in a format recognized by SUSE OS
 		"""
-		if self.name in list(Service.service_name_to_suse.keys()):
+		if self.name in Service.service_name_to_suse.keys():
 			return Service.service_name_to_suse[self.name]
 		return self.name
 
 	def to_presentation_name(self):
 		""" Returns the requested service name in a presentation format.
 		"""
-		if self.name in list(Service.service_to_presentation_name.keys()):
+		if self.name in Service.service_to_presentation_name.keys():
 			return Service.service_to_presentation_name[self.name]
 		return self.name
 
@@ -1383,7 +1373,7 @@ class Service(object):
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "%s:\n"%self.to_presentation_name()
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -1584,7 +1574,7 @@ class IpForwarding:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "IP Forwarding:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -1644,7 +1634,7 @@ class HyperThreading:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "Hyper Threading:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -1678,7 +1668,7 @@ class Iommu:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "IOMMU:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -1713,7 +1703,7 @@ class Driver:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "Driver:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -1756,7 +1746,7 @@ class IrqInfo:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "IRQ Info:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		return string
 
 	def __repr__ (self):
@@ -1801,7 +1791,7 @@ class RingInfo:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "Ring Info:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		string	+= '\n' + '\t'*(INDENT+1) + 'IRQs:\n'
 		for irq in self.irqs:
 			INDENT += 2
@@ -1890,7 +1880,7 @@ class InterfaceInfo( object ):
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + self.link_type + " Interface Info:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		string	+= '\n' + '\t'*(INDENT+1) + 'Rings:\n'
 
 		for ring in self.rings:
@@ -2222,7 +2212,7 @@ class EthInterfaceInfo(InterfaceInfo):
 			get_group = group.replace("set","show")
 			group = "-" + group
 		# Force list type
-		if isinstance(parameter_name_get, str):
+		if isinstance(parameter_name_get, basestring):
 			parameter_name_get = [parameter_name_get]
 		for param_get in parameter_name_get:
 			current_value = self.get_network_parameter_value(get_group, param_get, appearance_index)
@@ -2230,7 +2220,7 @@ class EthInterfaceInfo(InterfaceInfo):
 				logging.debug("%s already set to %s for %s."%(param_get, value, self.name))
 			else:
 				# Force list type
-				if isinstance(parameter_name_set, str):
+				if isinstance(parameter_name_set, basestring):
 					parameter_name_set = [parameter_name_set]
 				# Set all parameters and return
 				set_string = ""
@@ -2285,7 +2275,7 @@ class PciDeviceInfo:
 		global INDENT
 		attrs	= vars(self)
 		string	= '\t'*INDENT + "Device Info:\n"
-		string  += '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in list(attrs.items()) if (type(item[1]).__name__ in ('str','bool', 'int')))
+		string	+= '\t'*(INDENT+1) + ('\n' +'\t'*(INDENT+1)).join("%s: %s" % item for item in attrs.items() if (type(item[1]).__name__ in ('str','bool', 'int')))
 		string	+= '\n' + '\t'*(INDENT+1) + "numa_aware_core_list: %s"%(self.numa_aware_core_list)
 		string	+= '\n' + '\t'*(INDENT+1) + 'Irqs:\n'
 		for irq in self.irqs:
@@ -2626,7 +2616,7 @@ class PciDeviceInfo:
 		    For PPC (IBM) systems: buid list that contain: [ numa cores ]
 		"""
 		non_numa_cores = []
-		for numa in list(node_info.cpu.sockets_cores.keys()):
+		for numa in node_info.cpu.sockets_cores.keys():
 			if (numa != self.numa):
 				non_numa_cores = non_numa_cores + node_info.cpu.sockets_cores[numa]
 		numa_aware_cores = []
@@ -2641,7 +2631,7 @@ class PciDeviceInfo:
 				for core in output.split(','):
 					if '-' in core:
 						values = core.split('-')
-						cores = list(range(int(values[0]), int(values[1]) + 1))
+						cores = range(int(values[0]), int(values[1]) + 1)
 						numa_aware_cores += cores
 					else:
 						numa_aware_cores += core
@@ -2654,8 +2644,8 @@ class PciDeviceInfo:
 					self.numa_aware_cores = non_numa_cores
 				# If no other option, consider all cores as close
 				else:
-					self.closest_core_list = list(range(0,node_info.cpu.total_cores))
-					self.numa_aware_cores = list(range(0,node_info.cpu.total_cores))
+					self.closest_core_list = range(0,node_info.cpu.total_cores)
+					self.numa_aware_cores = range(0,node_info.cpu.total_cores)
 
 		if node_info.cpu.vendor != CPUVendor.IBM and self.numa != -1:
 			numa_aware_cores += non_numa_cores
@@ -2931,7 +2921,7 @@ class PciDeviceInfo:
 class FppPciDeviceInfo(PciDeviceInfo):
 	def __init__ (self, dev1, dev2):
 		self.fpp_devices		= [dev1, dev2]
-		self.interfaces			= [fpp_dev.interfaces for fpp_dev in self.fpp_devices]
+		self.interfaces			= map(lambda fpp_dev: fpp_dev.interfaces, self.fpp_devices)
 		# Flatten the list (remove lists inside interface list)
 		self.interfaces			= reduce(lambda l1, l2: l1 + l2, self.interfaces)
 		# No MH support yet (TODO). We assume same close NUMA for all FPP devices.
@@ -2961,8 +2951,8 @@ class FppPciDeviceInfo(PciDeviceInfo):
 		"""
 		if not isinstance(other, FppPciDeviceInfo):
 			return False
-		self_pci_slots = [fpp_device.pci_slot for fpp_device in self.fpp_devices]
-		other_pci_slots = [fpp_device.pci_slot for fpp_device in other.fpp_devices]
+		self_pci_slots = map(lambda fpp_device: fpp_device.pci_slot, self.fpp_devices)
+		other_pci_slots = map(lambda fpp_device: fpp_device.pci_slot, other.fpp_devices)
 		for pci_slot in self_pci_slots:
 			if pci_slot in other_pci_slots:
 				return True
@@ -2979,7 +2969,7 @@ class FppPciDeviceInfo(PciDeviceInfo):
 		""" Returns the device interfaces by their PCI location
 		"""
 		fpp_devices_sorted =  sorted(self.fpp_devices, key=lambda device: device.pci_slot)
-		sorted_interfaces = [fpp_dev.interfaces for fpp_dev in fpp_devices_sorted]
+		sorted_interfaces = map(lambda fpp_dev: fpp_dev.interfaces, fpp_devices_sorted)
 		return reduce(lambda l1, l2: l1 + l2, sorted_interfaces)
 
 
@@ -3009,7 +2999,7 @@ def getstatusoutput(cmd, shell=False, timeout=DEFAULT_TIMEOUT):
 		stdout = stdout.rstrip()
 		is_timeout = not timer.is_alive()
 		timer.cancel()
-		return process.returncode, str(stdout.decode('UTF-8'))
+		return process.returncode, stdout
 
 def run_command_debug_when_fail(cmd, shell=False, debug_message=False, prnt=False):
 	""" run command and print debug message when failed
@@ -3099,7 +3089,6 @@ def force_sw_dependencies(profile):
 	output = run_command_exit_when_fail(LSMOD, error_message="Please install lsmod tool.")
 	if "mlx" not in output:
 		logging.error( "Driver don't exist/not loaded. Please load Mellanox driver.")
-	
 
 	# Check profile specific tools
 	if profile in Profile.NEED_IFCONFIG:
@@ -3166,7 +3155,7 @@ def merge_fpp_devices(logical_devices):
 				fpp_device_pers.append([checked_device, compared_device])
 				devices_to_remove += [checked_device, compared_device]
 	# Create new list withouut FPP devices
-	merged_fpp_device_list = list([physical_dev for physical_dev in logical_devices if physical_dev not in devices_to_remove])
+	merged_fpp_device_list = filter(lambda physical_dev: physical_dev not in devices_to_remove, logical_devices)
 	# Add FPP devices
 	for per in fpp_device_pers:
 		fpp_device = FppPciDeviceInfo(per[0], per[1])
