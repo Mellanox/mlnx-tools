@@ -12,9 +12,3 @@ pname:=mlnx-tools
 
 override_dh_auto_install:
 	dh_auto_install -- PYTHON_SETUP_EXTRA_ARGS="--install-layout=deb --root=../debian/$(pname)"
-
-override_dh_python3:
-	dh_python3
-	# Remove python2 dep: this was only added due to mlnx_tune
-	# If users don't need mlnx_tune, they should not install python2
-	sed -r -i -e 's/python2?:any(, |$$)//' debian/mlnx-tools.substvars

@@ -50,9 +50,6 @@ Mellanox userland tools and scripts
 %if %{PYTHON3}
 %define __python %{_bindir}/python3
 BuildRequires: python3
-# mlnx_tune is python2 but is not important enough to create a dependency
-# on python2 in a python3 system:
-%global __requires_exclude_from mlnx_tune
 %endif
 
 %prep

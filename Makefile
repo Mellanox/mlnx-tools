@@ -7,6 +7,7 @@ BIN_DIR = /usr/bin
 MAN8_DIR = /usr/share/man/man8
 PYTHON = python3
 PYTHON_SETUP_EXTRA_ARGS =
+PYTHON_SBIN = ib2ib_setup mlnx_tune
 
 all:
 
@@ -23,4 +24,6 @@ install:
 
 	cd python; $(PYTHON) ./setup.py install $(PYTHON_SETUP_EXTRA_ARGS)
 	# Originally resided in sbin and not in bin, as setup.py installs:
-	mv $(DESTDIR)$(BIN_DIR)/ib2ib_setup $(DESTDIR)$(SBIN_DIR)/
+	@for bin in $(PYTHON_SBIN); do \
+	  mv -v $(DESTDIR)$(BIN_DIR)/$$bin $(DESTDIR)$(SBIN_DIR)/; \
+	done
