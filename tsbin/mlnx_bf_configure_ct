@@ -96,7 +96,7 @@ if [ ! $mode == "enable" ] && [ ! $mode == "disable" ] && [ ! $mode == "status" 
 fi
 
 . /etc/os-release
-if [ $ID == "centos" ]; then
+if [ $ID == "centos" ] || [ $ID == "rocky" ]; then
 	grub_cfg=/etc/grub2-efi.cfg
 	grub_mk_config=/usr/sbin/grub2-mkconfig
 elif [ $ID == "debian" ]; then
@@ -107,7 +107,7 @@ elif [ $ID == "ubuntu" ]; then
 	grub_mk_config=/usr/sbin/grub-mkconfig
 else
 	RC=3
-	error CT configuration can run only on Bluefield Centos/Debian/Ubuntu distributions
+	error CT configuration can run only on Bluefield Centos/Rocky/Debian/Ubuntu distributions
 fi
 
 if [ -f $grub_mk_config ]; then
