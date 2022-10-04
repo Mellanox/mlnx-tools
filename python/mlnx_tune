@@ -323,13 +323,9 @@ class OS:
 	RH8_0				= "RHEL8.0"
 	RH8_1				= "RHEL8.1"
 	RH8_2				= "RHEL8.2"
-	SLES11_3			= "SLES11SP3"
-	SLES11_4			= "SLES11SP4"
-	SLES12_3			= "SLES12SP3"
-	SLES12_4			= "SLES12SP4"
-	SLES12_5			= "SLES12SP5"
-	SLES15_0			= "SLES15SP0"
-	SLES15_1			= "SLES15SP1"
+	SLES11				= "SLES11"
+	SLES12				= "SLES12"
+	SLES15				= "SLES15"
 	UBUNTU14_04			= "Ubuntu14.04"
 	UBUNTU16_04			= "Ubuntu16.04"
 	UBUNTU18_04			= "Ubuntu18.04"
@@ -350,15 +346,15 @@ class OS:
 		CENTOS7_7, CENTOS8_0, CENTOS8_1, DEBIAN8_9, DEBIAN8_11, DEBIAN9_6,
 		DEBIAN9_9, DEBIAN9_11, DEBIAN10_0, EULEROS2_0_3, EULEROS2_0_8, FEDORA30, OL6_10,
 		OL7_4, OL7_7, OL7_8, OL8_0, OL8_1, RH6_3, RH6_10, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6,
-		RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, SLES11_3, SLES11_4, SLES12_3, SLES12_4, SLES12_5,
-		SLES15_0, SLES15_1, UBUNTU14_04, UBUNTU16_04, UBUNTU18_04, UBUNTU19_04, UBUNTU19_10,
+		RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, SLES11, SLES12, SLES15,
+		UBUNTU14_04, UBUNTU16_04, UBUNTU18_04, UBUNTU19_04, UBUNTU19_10,
                 UBUNTU20_04, UBUNTU20_10
 		]
 	SYSTEMCTL_ACCESS_OS = [
 		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
 		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2
 		]
-	SUSE = [SLES11_3, SLES11_4, SLES12_3, SLES12_4, SLES12_5, SLES15_0, SLES15_1]
+	SUSE = [SLES11, SLES12, SLES15]
 	PPC_DEVICE_NEW_FORMAT_OS = [
 		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
 		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2,
@@ -370,8 +366,7 @@ class OS:
 
 
 	def get_os(self):
-		""" Return local OS Type (one of the list OS_ALL)
-		    in case of unknown system type, it's return OS.UNKNOWN.
+		""" Return local OS Type
 		"""
 		os_platform = platform.system().lower()
 		if os_platform in ["windows", "microsoft"]:
@@ -400,102 +395,11 @@ class OS:
 			except IndexError as err:
 				os_version = ""
 			if any(dist in linux_dist for dist in ['redhat', 'red hat']):
-				if os_version == '6.3':
-					return OS.RH6_3
-				if os_version == '6.10':
-					return OS.RH6_10
-				if os_version == '7.2':
-					return OS.RH7_2
-				if os_version == '7.3':
-					return OS.RH7_3
-				if os_version == '7.4':
-					return OS.RH7_4
-				if os_version == '7.5':
-					return OS.RH7_5
-				if os_version == '7.6':
-					return OS.RH7_6
-				if os_version == '7.7':
-					return OS.RH7_7
-				if os_version == '7.8':
-					return OS.RH7_8
-				if os_version == '7.9':
-					return OS.RH7_9
-				if os_version == '8.0':
-					return OS.RH8_0
-				if os_version == '8.1':
-					return OS.RH8_1
-				if os_version == '8.2':
-					return OS.RH8_2
-			if linux_dist == 'fedora':
-				if os_version == '30':
-					return OS.FEDORA30
+				return "RHEL" + os_version
 			if 'suse' in linux_dist:
-				if os_version == '11':
-					return OS.SLES11_3
-				if os_version == '12':
-					return OS.SLES12
-			if linux_dist == 'ubuntu':
-				if os_version == '14.04':
-					return OS.UBUNTU14_04
-				if os_version == '16.04':
-					return OS.UBUNTU16_04
-				if os_version == '18.04':
-					return OS.UBUNTU18_04
-				if os_version == '19.04':
-					return OS.UBUNTU19_04
-				if os_version == '19.10':
-					return OS.UBUNTU19_10
-				if os_version == '20.04':
-					return OS.UBUNTU20_04
-				if os_version == '20.10':
-					return OS.UBUNTU20_10
-			if 'centos' in linux_dist:
-				if os_version.startswith('6.3'):
-					return OS.CENTOS6_3
-				if os_version.startswith('6.10'):
-					return OS.CENTOS6_10
-				if os_version.startswith('7.2'):
-					return OS.CENTOS7_2
-				if os_version.startswith('7.3'):
-					return OS.CENTOS7_3
-				if os_version.startswith('7.4'):
-					return OS.CENTOS7_4
-				if os_version.startswith('7.5'):
-					return OS.CENTOS7_5
-				if os_version.startswith('7.6'):
-					return OS.CENTOS7_6
-				if os_version.startswith('7.7'):
-					return OS.CENTOS7_7
-				if os_version.startswith('8.0'):
-					return OS.CENTOS8_0
-				if os_version.startswith('8.1'):
-					return OS.CENTOS8_1
-			if linux_dist == 'debian':
-				if os_version.startswith('8.9'):
-					return OS.DEBIAN8_9
-				if os_version.startswith('8.11'):
-					return OS.DEBIAN8_11
-				if os_version.startswith('9.6'):
-					return OS.DEBIAN9_6
-				if os_version.startswith('9.9'):
-					return OS.DEBIAN9_9
-				if os_version.startswith('9.11'):
-					return OS.DEBIAN9_11
-				if os_version.startswith('10.0'):
-					return OS.DEBIAN10_0
+				return "SLES" + os_version
 			if 'oracle' in linux_dist:
-				if os_version.startswith('6.10'):
-					return OS.OL6_10
-				if os_version.startswith('7.4'):
-					return OS.OL7_4
-				if os_version.startswith('7.6'):
-					return OS.OL7_6
-				if os_version.startswith('7.7'):
-					return OS.OL7_7
-				if os_version.startswith('8.0'):
-					return OS.OL8_0
-				if os_version.startswith('8.1'):
-					return OS.OL8_1
+				return "OL" + os_version
 			if linux_dist == "freebsd":
 				return OS.FREEBSD
 			if linux_dist == "ibm_powerkvm":
@@ -506,8 +410,7 @@ class OS:
 				if os_version == '7.1.0':
 					return OS.XENSERVER7_1
 
-		logging.warning("Unknown OS [%s,%s,%s]. Tuning might be non-optimized." % (str(platform.system()), str(platform.release()), str(platform_dist)))
-		return OS.UNKNOWN
+		return platform_dist[0] + os_version
 
 	def get_kernel(self):
 		""" Return kernel version.
