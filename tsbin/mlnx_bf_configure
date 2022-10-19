@@ -180,7 +180,7 @@ if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 fi
 ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
-LAG_HASH_MODE=${LAG_HASH_MODE:-"no"}
+LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
@@ -192,8 +192,8 @@ do
 	fi
 
 	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
-		if [ "X${LAG_HASH_MODE}" == "Xyes" ]; then
-			set_dev_param ${dev} lag_port_select_mode hash
+		if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
+			set_dev_param ${dev} lag_port_select_mode queue_affinity
 		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
 			eswitch_mode=`get_eswitch_mode ${dev}`
 			if [ "${eswitch_mode}" != "legacy" ]; then
