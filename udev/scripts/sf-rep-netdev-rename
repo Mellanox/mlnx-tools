@@ -1,0 +1,22 @@
+#!/bin/bash
+
+PORT_NAME=$1
+IFINDEX=$2
+
+for rep_ndev in `ls /sys/class/net/`; do
+	_ifindex=`cat /sys/class/net/$rep_ndev/ifindex | head -1 2>/dev/null`
+	if [ "$_ifindex" = "$IFINDEX" ]
+	then
+		devpath=`udevadm info /sys/class/net/$rep_ndev | grep "DEVPATH="`
+		pcipath=`echo $devpath | awk -F "/net/$rep_ndev" '{print $1}'`
+		array=($(echo "$pcipath" | sed 's/\// /g'))
+		len=${#array[@]}
+		# last element in array is pci parent device
+		parent_pdev=${array[$len-1]}
+		#pdev is : 0000:03:00.0, so extract them by their index
+		b=`echo ${parent_pdev:5:2} | sed 's/^0//'`
+		f=${parent_pdev: -1}
+		echo "NAME=en${b}f${f}${PORT_NAME}"
+		exit
+	fi
+done

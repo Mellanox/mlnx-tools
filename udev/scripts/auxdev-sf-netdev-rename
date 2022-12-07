@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# This file renames netdevice of the SF's auxiliary device.
+# It is done by using its parent PCI device + sf number.
+#
+# For example, when SF with sfnumber 88 is located on its parent PCI Device 03:00.0, it will be named renamed as,
+#
+# enp3s0f0s88.
+#
+# en = Ethernet
+# p = pci
+# 3s0sf0 = pci bdf = 0x3:00.0
+# s88 = SF number 88
+
+SFNUM=$1
+IFINDEX=$2
+
+for sf_ndev in `ls /sys/class/net/`; do
+	_ifindex=`cat /sys/class/net/$sf_ndev/ifindex | head -1 2>/dev/null`
+	if [ "$_ifindex" = "$IFINDEX" ]
+	then
+		_sfnum=`cat /sys/class/net/$sf_ndev/device/sfnum | head -1 2>/dev/null`
+		if [ "$_sfnum" = "$SFNUM" ]
+		then
+			devpath=`udevadm info /sys/class/net/$sf_ndev | grep "DEVPATH="`
+			pcipath=`echo $devpath | awk -F "/mlx5_core.sf" '{print $1}'`
+			array=($(echo "$pcipath" | sed 's/\// /g'))
+			len=${#array[@]}
+			# last element in array is pci parent device
+			parent_pdev=${array[$len-1]}
+			#pdev is : 0000:03:00.0, so extract them by their index
+			b=`echo ${parent_pdev:5:2} | sed 's/^0//'`
+			d=`echo ${parent_pdev:8:2} | sed 's/^0//'`
+			f=${parent_pdev: -1}
+			echo "SF_NETDEV_NAME=enp${b}s${d}f${f}s${SFNUM}"
+			exit
+		fi
+	fi
+done

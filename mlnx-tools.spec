@@ -28,7 +28,7 @@
 
 Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
-Version: 5.2.0
+Version: 5.8.0
 Release: 0%{?_dist}
 License: GPLv2
 Url: https://github.com/Mellanox/mlnx-tools
@@ -36,7 +36,7 @@ Group: Applications/System
 Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tar.gz
 BuildRoot: %{?build_root:%{build_root}}%{!?build_root:/var/tmp/%{name}}
 Vendor: Mellanox Technologies
-Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
+Obsoletes: mlnx-ofa_kernel, mlnx_en-utils
 %description
 Mellanox userland tools and scripts
 
@@ -106,8 +106,9 @@ rm -rf %{buildroot}
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
+%{_sysconfdir}/*
 %{_mandir}/man8/ib2ib_setup.8*
-/lib/udev/mlnx_bf_udev
+/lib/udev/*
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1

@@ -1,3 +1,9 @@
+mlnx-tools (5.8.0) UNRELEASED; urgency=medium
+
+  * Sync with MLNX_OFED 5.8
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 07 Dec 2022 14:50:47 -0600
+
 mlnx-tools (5.2.0) UNRELEASED; urgency=medium
 
   * Switched to a MLNX_OFED branch

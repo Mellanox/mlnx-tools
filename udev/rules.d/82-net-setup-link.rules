@@ -1,0 +1,12 @@
+SUBSYSTEM=="net", NAME=="side-*-eth[0-9]*", GOTO="net_setup_skip_link_name"
+
+SUBSYSTEM=="net", ACTION=="add", ATTR{phys_switch_id}!="", ATTR{phys_port_name}!="", ATTR{phys_port_name}!="*pf*sf*" \
+        IMPORT{program}="/lib/udev/vf-net-link-name.sh $attr{phys_port_name} $attr{phys_switch_id} $attr{ifindex}" \
+        NAME="$env{NAME}", RUN+="/lib/udev/mlnx_bf_udev $env{NAME}", GOTO="net_setup_skip_link_name"
+
+
+SUBSYSTEM=="net", ACTION=="add", ATTR{phys_port_name}!="", ATTR{phys_port_name}!="*pf*sf*" \
+        IMPORT{program}="/lib/udev/vf-net-link-name.sh $attr{phys_port_name}" \
+        NAME="$env{NAME}", RUN+="/lib/udev/mlnx_bf_udev $env{NAME}"
+
+LABEL="net_setup_skip_link_name"

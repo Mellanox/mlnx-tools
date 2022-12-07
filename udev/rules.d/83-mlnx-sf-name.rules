@@ -1,0 +1,7 @@
+SUBSYSTEM=="net", ACTION=="add", ATTR{phys_switch_id}!="", ATTR{phys_port_name}!="", ATTR{phys_port_name}=="*pf*sf*" \
+        IMPORT{program}="sf-rep-netdev-rename $attr{phys_port_name} $attr{ifindex}" \
+        NAME="$env{NAME}", RUN+="/lib/udev/mlnx_bf_udev $env{NAME}"
+
+SUBSYSTEM=="net", SUBSYSTEMS=="auxiliary", ACTION=="add", ATTRS{sfnum}!="", \
+	IMPORT{program}="auxdev-sf-netdev-rename $attr{sfnum} $attr{ifindex}" \
+	NAME="$env{SF_NETDEV_NAME}"
