@@ -1,0 +1,90 @@
+#!/bin/sh
+
+USE_ALT_MODS_DIR=false
+OPENIBD_COMMANDS="start force-start stop force-stop restart force-restart status"
+# An alternative version of /lib/modules to load modules from.
+# Typically from a container host:
+ALT_MODS_DIR="/host/lib/modules"
+MLNXOFACTL_SHARED="${MLNXOFACTL_SHARED:-}" # For internal use
+
+
+me=${0##*/}
+
+usage() {
+	cat <<EOF
+$me: $OPENIBD_SCRIPT wrapper
+
+Usage: $me [--alt-mods] <command>
+
+  -a | --alt-mods    Use modules from alternative location: $ALT_MODS_DIR
+  <command>:    $OPENIBD_COMMANDS
+EOF
+}
+
+err() {
+	echo "$me: Error: $*" >&2
+}
+
+check_valid_command() {
+	local cmd=`echo "$1" | tr -d -c 'a-z-'`
+	echo "$OPENIBD_COMMANDS" | grep -q -w "$cmd"
+}
+
+ORIG_CMDLINE="$*"
+# Re-run script in a separate filesystem namespace:
+do_unshare() {
+	if ! $USE_ALT_MODS_DIR; then return; fi
+	if [ "$MLNXOFACTL_SHARED" != '' ]; then return; fi
+
+	export MLNXOFACTL_SHARED="USE_ALT_MODS_DIR"
+	exec unshare --mount "$0" $ORIG_CMDLINE # FIXME: bash arrays?
+}
+
+run_with_host_modules() {
+	if ! $USE_ALT_MODS_DIR; then return; fi
+	mount -r -o bind "$ALT_MODS_DIR" /lib/modules
+}
+
+set_openibd() {
+	OPENIBD_SCRIPT="/etc/init.d/openibd"
+	if [ ! -x "$OPENIBD_SCRIPT" -a -x /etc/init.d/mlnx-en.d ]; then
+		OPENIBD_SCRIPT="/etc/init.d/mlnx-en.d"
+	fi
+}
+
+set -e
+
+getopt_tmp=$(getopt -o ai --long alt-mods,help -n "$me" -- "$@")
+eval set -- "$getopt_tmp"
+while true; do
+	case "$1" in
+	-h | --help) usage; exit 0;;
+	-a | --alt-mods) USE_ALT_MODS_DIR=true;;
+	--)
+		shift
+		break
+		;;
+	*)
+		echo "$0: Error parsing command line" >&2
+		exit 1
+		;;
+	esac
+	shift
+done
+
+do_unshare
+
+command="$1"
+if ! check_valid_command "$command"; then
+	err "Invalid command '$command'. Try one of $OPENIBD_COMMANDS."
+	usage
+	exit 2
+fi
+
+set_openibd
+
+if $USE_ALT_MODS_DIR; then
+	run_with_host_modules
+fi
+
+$OPENIBD_SCRIPT "$command"
