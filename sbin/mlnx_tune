@@ -318,12 +318,19 @@ class OS:
 	RH7_6				= "RHEL7.6"
 	RH7_7				= "RHEL7.7"
 	RH7_8				= "RHEL7.8"
+	RH7_9				= "RHEL7.9"
 	RH8_0				= "RHEL8.0"
 	RH8_1				= "RHEL8.1"
 	RH8_2				= "RHEL8.2"
 	RH8_3				= "RHEL8.3"
 	RH8_4				= "RHEL8.4"
 	RH8_5				= "RHEL8.5"
+	RH8_6				= "RHEL8.6"
+	RH8_7				= "RHEL8.7"
+	RH8_8				= "RHEL8.8"
+	RH8_9				= "RHEL8.9"
+	RH9_0				= "RHEL9.0"
+	RH9_1				= "RHEL9.1"
 	SLES11_3			= "SLES11SP3"
 	SLES11_4			= "SLES11SP4"
 	SLES12_3			= "SLES12SP3"
@@ -351,25 +358,25 @@ class OS:
 		CENTOS7_7, CENTOS8_0, CENTOS8_1, DEBIAN8_9, DEBIAN8_11, DEBIAN9_6,
 		DEBIAN9_9, DEBIAN9_11, DEBIAN10_0, EULEROS2_0_3, EULEROS2_0_8, FEDORA30, OL6_10,
 		OL7_4, OL7_7, OL7_8, OL8_0, OL8_1, RH6_3, RH6_10, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6,
-		RH7_7, RH7_8, RH8_0, RH8_1, RH8_2, RH8_3, RH8_4, RH8_5,
+		RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2, RH8_3, RH8_4, RH8_5,
 		SLES11_3, SLES11_4, SLES12_3, SLES12_4, SLES12_5,
 		SLES15_0, SLES15_1, UBUNTU14_04, UBUNTU16_04, UBUNTU18_04, UBUNTU19_04, UBUNTU19_10,
                 UBUNTU20_04, UBUNTU20_10
 		]
 	SYSTEMCTL_ACCESS_OS = [
 		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
-		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2,
-		RH8_3, RH8_4, RH8_5
+		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1,
+		RH8_2, RH8_3, RH8_4, RH8_5
 		]
 	SUSE = [SLES11_3, SLES11_4, SLES12_3, SLES12_4, SLES12_5, SLES15_0, SLES15_1]
 	PPC_DEVICE_NEW_FORMAT_OS = [
 		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
-		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2,
-		RH8_3, RH8_4, RH8_5
+		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1,
+		RH8_2, RH8_3, RH8_4, RH8_5
 		]
 	NO_IPV6_FORWARDING_SUPPORT_OS = [UBUNTU14_04]
 	TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS = [
-		RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH8_0, RH8_1, RH8_2, RH8_3, RH8_4, RH8_5
+		RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2, RH8_3, RH8_4, RH8_5
 		]
 
 	def get_os(self):
@@ -414,6 +421,8 @@ class OS:
 					return OS.RH7_7
 				if os_version == '7.8':
 					return OS.RH7_8
+				if os_version == '7.9':
+					return OS.RH7_9
 				if os_version == '8.0':
 					return OS.RH8_0
 				if os_version == '8.1':
@@ -426,6 +435,18 @@ class OS:
 					return OS.RH8_4
 				if os_version == '8.5':
 					return OS.RH8_5
+				if os_version == '8.6':
+					return OS.RH8_6
+				if os_version == '8.7':
+					return OS.RH8_7
+				if os_version == '8.8':
+					return OS.RH8_8
+				if os_version == '8.9':
+					return OS.RH8_9
+				if os_version == '9.0':
+					return OS.RH9_0
+				if os_version == '9.1':
+					return OS.RH9_1
 			if linux_dist == 'fedora':
 				if os_version == '30':
 					return OS.FEDORA30
