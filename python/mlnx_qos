@@ -237,7 +237,10 @@ def set_prio2buffer_sysfs(buffer):
 
 def get_buffer_size_sysfs():
 	f = open(buffer_size_path, "r")
-	buffer = array.array('I', [0,0,0,0,0,0,0,0])
+	buffer = array.array('I', [0,0,0,0,0,0,0,0,0])
+	first_line =  f.readline()
+	data = first_line.split('=')
+	total_size = int(data[1])
 	next(f)
 	next(f)
 	next(f)
@@ -247,6 +250,7 @@ def get_buffer_size_sysfs():
 		size = int(data[1])
 		buffer[buf] = size
 	f.close()
+	buffer[8] = total_size
 	return buffer
 
 def set_buffer_size_sysfs(buffer):
@@ -536,7 +540,7 @@ try:
 	if (is_buffer_sysfs):
 		prio2buffer = get_prio2buffer_sysfs()
 		buffer_size = get_buffer_size_sysfs()
-		tot_size = None
+		tot_size = buffer_size[8]
 	else:
 		prio2buffer, buffer_size, tot_size = ctrl.get_ieee_dcb_buffer()
 
@@ -574,11 +578,13 @@ try:
 
 	if options.buffer_size or options.prio2buffer:
 		if (is_buffer_sysfs):
-			set_prio2buffer_sysfs(prio2buffer)
-			set_buffer_size_sysfs(buffer_size)
-			prio2buffer = get_prio2buffer_sysfs()
-			buffer_size = get_buffer_size_sysfs()
-			tot_size = None
+			if (options.buffer_size):
+				set_buffer_size_sysfs(buffer_size)
+				buffer_size = get_buffer_size_sysfs()
+				tot_size = buffer_size[8]
+			else:
+				set_prio2buffer_sysfs(prio2buffer)
+				prio2buffer = get_prio2buffer_sysfs()
 		else:
 			ctrl.set_dcb_buffer(_prio2buffer = prio2buffer, _buffer_size = buffer_size,
 					    _tot_size = tot_size)
