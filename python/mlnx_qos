@@ -245,10 +245,9 @@ def get_buffer_size_sysfs():
 	first_line =  f.readline()
 	data = first_line.split('=')
 	total_size = int(data[1])
-	next(f)
-	next(f)
-	next(f)
 	for line in f:
+		if not line[0].isdigit():
+			continue
 		data = line.split()
 		buf = int(data[0])
 		size = int(data[1])
