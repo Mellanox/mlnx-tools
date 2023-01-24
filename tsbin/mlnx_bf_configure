@@ -301,7 +301,7 @@ OVS_BRIDGE2=${OVS_BRIDGE2:-"ovsbr2"}
 OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf en3f1pf1sf0"}
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 
-ovs_service=`systemctl list-units 2> /dev/null | grep openvswitch | awk '{print $1}'`
+ovs_service=`systemctl list-units 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
 
 if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 	# OVS service is not enabled
