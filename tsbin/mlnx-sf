@@ -41,7 +41,7 @@ prog = os.path.basename(sys.argv[0])
 os.environ['PATH'] = '/opt/mellanox/iproute2/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 MLXREG = '/usr/bin/mlxreg'
-MLXDEVM = 'mlxdevm'
+MLXDEVM = 'devlink'
 DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
@@ -101,6 +101,8 @@ class SF:
         info = self.info["port"]
 
         for pci_dev_index in info:
+            if "sfnum" not in info[pci_dev_index]:
+                continue
             info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
             info[pci_dev_index]["sfindex"] = pci_dev_index
             info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
@@ -118,6 +120,8 @@ class SF:
         else:
             result['output'] = ""
             for pci_dev_index in info:
+                if "sfnum" not in info[pci_dev_index]:
+                    continue
                 result['output'] += "\n"
                 result['output'] += "SF Index: " + pci_dev_index + "\n"
                 result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
