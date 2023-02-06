@@ -300,8 +300,9 @@ OVS_BRIDGE1_PORTS=${OVS_BRIDGE1_PORTS:-"p0 pf0hpf en3f0pf0sf0"}
 OVS_BRIDGE2=${OVS_BRIDGE2:-"ovsbr2"}
 OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf en3f1pf1sf0"}
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
+OVS_TIMEOUT=${OVS_TIMEOUT:-30}
 
-ovs_service=`systemctl list-units 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
+ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
 
 if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 	# OVS service is not enabled
@@ -310,10 +311,8 @@ if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 fi
 
 if [ "$ovs_service" == "openvswitch-switch.service" ]; then
-	ovs_start="/etc/init.d/openvswitch-switch start"
 	ovs_restart="/etc/init.d/openvswitch-switch restart"
 else
-	ovs_start=""
 	ovs_restart="systemctl restart $ovs_service"
 fi
 
@@ -338,16 +337,16 @@ ovs_restart()
 	done
 }
 
-if ! ($vsctl show > /dev/null 2>&1); then
-	if [ -n "$ovs_start" ]; then
-		info "Starting $ovs_service"
-		$ovs_start
+{
+SECONDS=0
+while ! ($vsctl show > /dev/null 2>&1)
+do
+	if [ $SECONDS -gt $OVS_TIMEOUT ]; then
+		info "$ovs_service is not up. Exiting..."
+		exit 1
 	fi
-fi
-
-if ! ($vsctl show > /dev/null 2>&1); then
-	$ovs_restart
-fi
+	sleep 1
+done
 
 ovsbr_number=`$vsctl list-br | wc -l`
 if [ $ovsbr_number -gt 0 ]; then
@@ -416,6 +415,7 @@ if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 		ovs_restart
 	fi
 fi
+} &
 
 sync
 
