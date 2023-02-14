@@ -106,7 +106,7 @@ rm -rf %{buildroot}
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
-%{_mandir}/man8/ib2ib_setup.8*
+%{_mandir}/man8/*.8*
 /lib/udev/mlnx_bf_udev
 
 %changelog

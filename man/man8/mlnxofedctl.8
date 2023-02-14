@@ -1,0 +1,82 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.\" (C) Copyright 2023, NVIDIA CORPORATION
+.\"
+.\" First parameter, NAME, should be all caps
+.\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
+.\" other parameters are allowed: see man(7), man(1)
+.TH MLNXOFEDCTL 8 "2023-01-23"
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH NAME
+mlnxofedctl \- load and unload mlnx-ofed kernel modules
+.SH SYNOPSIS
+.B mlnxofedctl
+.RI [ -a | --altmods ] <command>
+.SH DESCRIPTION
+.B mlnxofedctl
+is basically a wrapper around /etc/init.d/openibd or /etc/init.d/mlnx_en.d
+(in mlnx_en). That "init.d" script is being used as a script and should not.
+
+Currently it supports all the commands supported by openibd, but may grow
+some extra functionality in the future.
+
+.\" TeX users may be more comfortable with the \fB<whatever>\fP and
+.\" \fI<whatever>\fP escape sequences to invode bold face and italics,
+.\" respectively.
+.SH OPTIONS
+.TP
+.B \-a \-\-altmods
+Load modules from \fI/host/lib/modules\fP instead of from
+\fI/lib/modules\fP . Runs the whole command in a separate mounts namespace.
+
+.SS Supported commands
+.TP
+.B start
+Load modules. In some cases it calls 'restart' on its own because it senses
+that a wrong version of the modules is loaded.
+
+.TP
+.B force\-start
+The start operation also checks that the modules are ones that are provided
+in the mlnx-ofed-kernel / mlnx-ofa_kernel / mlnx_en modules package (rpm or
+deb). If not, it will refuse to load modules to make sure that inbox modules
+will not be used.
+
+force\-start ignores this sanity check and allows using modules that were not
+part of the MLNX_OFED / mlnx-en packages. This is also useful if you want to
+use kernel modules you built manually.
+
+.TP
+.B stop
+Unload modules. Note that this unloads not only current modules but also
+various modules that were previously part of mlnx-ofa_kernel (such as
+mlnx4_core and rdma_rxe) to simplify upgrades.
+
+.TP
+.B restart
+stop and start.
+
+.TP
+.B force\-stop, force\-restart
+\fIforce-stop\fP is the same as \fIstop\fP.
+
+\fIforce\-restart\fP is \fIstop\fP and \fIforce\-start\fP.
+
+.TP
+.B status
+Shows that the modules are loaded. This is handy because there's no real
+process whose presence can provide the "state" for systemd. Generally it
+is a good idea to use 'restart' in many cases.
+
+.SH SEE ALSO
+There should be some other documentation.
