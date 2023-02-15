@@ -49,8 +49,8 @@ verbose = False
 
 if os.path.exists("/usr/bin/mlxconfig"):
     MLXCONFIG = "/usr/bin/mlxconfig"
-elif os.path.exists("/usr/bin/mlxconfig"):
-    MLXCONFIG = "/usr/bin/mlxconfig"
+elif os.path.exists("/usr/bin/mstconfig"):
+    MLXCONFIG = "/usr/bin/mstconfig"
 else:
     sf_log("ERROR: MFT or mstflint package is required")
     sys.exit(1)
