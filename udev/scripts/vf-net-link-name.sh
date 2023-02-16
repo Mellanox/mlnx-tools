@@ -3,7 +3,7 @@
 SWID=$2
 # might be pf0vf1 so only get vf number
 PORT=${1##*f}
-PORT_NAME=$1
+PORT_NAME=`echo ${1} | sed -e "s/c[[:digit:]]\+//"`
 IFINDEX=$3
 
 # need the PATH for BF ARM lspci to work
@@ -18,7 +18,7 @@ function get_mh_bf_rep_name() {
         IFIDX=$2
         for rep_ndev in `ls /sys/class/net/`; do
                 _ifindex=`cat /sys/class/net/$rep_ndev/ifindex | head -1 2>/dev/null`
-                if [ "$_ifindex" = "$IFIDX" ]
+                if [ "$_ifindex" == "$IFIDX" ]
                 then
                         devpath=`udevadm info /sys/class/net/$rep_ndev | grep "DEVPATH="`
                         pcipath=`echo $devpath | awk -F "/net/$rep_ndev" '{print $1}'`
@@ -48,7 +48,7 @@ function get_mh_bf_rep_name() {
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -eq 1 ]; then
-        num_of_pf=`lspci 2> /dev/null | grep -w "Ethernet controller: Mellanox Technologies MT42822 BlueField-2" | wc -l`
+        num_of_pf=`lspci 2> /dev/null | grep -w "network" | wc -l`
         if [ $num_of_pf -gt 2 ]; then
                 echo "NAME=`get_mh_bf_rep_name $PORT_NAME $IFINDEX`"
                 exit 0
