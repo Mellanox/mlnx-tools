@@ -39,7 +39,10 @@ fi
 
 prog=`basename $0`
 
-PID=$(pgrep -oxf "/bin/bash /sbin/$prog")
+PID=$(pgrep -oxf "/bin/bash /sbin/$prog" \
+        || pgrep -oxf "/bin/bash /usr/sbin/$prog" \
+        || pgrep -oxf "/usr/bin/bash /sbin/$prog" \
+        || pgrep -oxf "/usr/bin/bash /usr/sbin/$prog")
 if [ $$ -ne $PID ] ; then
 	# $prog is running already with PID: $PID
 	exit 0
