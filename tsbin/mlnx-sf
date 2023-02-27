@@ -113,10 +113,16 @@ class SF:
 
 
         if self.json:
-            if self.pretty:
-                result['output'] = json.dumps(info, indent=4)
-            else:
-                result['output'] = json.dumps(info)
+            is_sf = 0
+            for pci_dev_index in info:
+                if "sfnum" in info[pci_dev_index]:
+                    is_sf += 1
+
+            if is_sf:
+                if self.pretty:
+                    result['output'] = json.dumps(info, indent=4)
+                else:
+                    result['output'] = json.dumps(info)
         else:
             result['output'] = ""
             for pci_dev_index in info:
