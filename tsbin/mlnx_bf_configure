@@ -261,6 +261,9 @@ do
 		fi
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
+			if ! (rdma system show netns 2>&1 | grep -q exclusive); then
+				rdma system set netns exclusive
+			fi
 			num_of_devs=$((num_of_devs+1))
 		fi
 	fi
