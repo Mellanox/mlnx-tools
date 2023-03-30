@@ -26,15 +26,7 @@
 #
 
 from distutils.core import setup
-from subprocess import Popen, PIPE
-import sys
 import os
-from sys import argv
-
-# We cannot sanely support python 2.4:
-if sys.version_info < (2, 5):
-    print('requires python 2.5 and up')
-    sys.exit(0)
 
 pkg_version = os.environ['PKG_VERSION']
 
