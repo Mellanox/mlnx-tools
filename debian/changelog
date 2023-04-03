@@ -1,7 +1,466 @@
+mlnx-tools (23.04)  UNRELEASED; urgency=medium
+
+  [ Tzafrir Cohen ]
+  * Ignore generated files
+  * Install python modules with dh_python3
+  * Add gbp.conf
+  * Allow installing on either python2 or python3
+  * Sync changes in utils
+  * Move file copying to Makefile
+  * Move configs to dedicated directories
+  * Sync most scripts from ofed_scripts
+  * Debian packaging fixes
+  * python: remove unused programs
+  * Sync more files
+  * Remove files that will be in MLNX_OFED
+  * Add ib2ib_setup
+  * Remove ibdev2netdev
+  * mlnx_tune as standard binary
+  * Remove lsb_release hack: not needed
+  * Get python version from the build system
+
+  [ Vladimir Sokolovsky ]
+  * BF/scripts: Changed to support new SF interface
+
+  [ Tzafrir Cohen ]
+  * debian: suppress mlnx_tune dependency on python2
+  * Remove unused perl:Depends substvar
+  * Fixed typo: shoud -> should (lintian)
+  * debian: also suppress python:any dependency
+
+  [ Vladimir Sokolovsky ]
+  * udev/mlnx_bf_udev: Do not bring up eth* interfaces
+
+  [ Tzafrir Cohen ]
+  * Obsolete older packages
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Change output format
+  * tsbin/mlnx_bf_configure: Updated interface names according to udev rules
+  * tsbin/mlnx-sf: Added --pretty parameter
+  * tsbin/mlnx_bf_configure: Added workarounds for OVS start
+
+  [ Maor Dickman ]
+  * tsbin/mlnx_bf_configure: Add ability to set metadata match mode
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Fix MFT query
+  * mlnx_bf_configure[_ct]: Remove rshimlog usage
+
+  [ Bodong Wang ]
+  * tsbin: Add option to enable hash lag mode before moving to switchdev
+
+  [ Maor Dickman ]
+  * tsbin: Ignore set max connections failure
+
+  [ Bodong Wang ]
+  * mlnx_bf_configure: set lag hash mode to be off as default
+
+  [ Roy Novich ]
+  * dcbnetlink: Use frombytes instead of depracated fromstring
+
+  [ Emeel Hakim ]
+  * tsbin/mlnx_bf_configure: Add ability for enabling IPsec full offload on boot
+
+  [ Roy Novich ]
+  * dcbnetlink: Use tobytes instead of depracated tostring
+
+  [ Tzafrir Cohen ]
+  * spec: Use %python3_sitelib on python3 systems
+  * spec: Clean buildroot before install
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Add SF trust support
+  * tsbin/mlnx_bf_configure: Added workarounf for devlink reload deadlock
+  * mlnx_bf_configure: Use compat to set eswitch mode
+  * tsbin/mlnx_bf_configure: Added BlueField3 support
+  * tsbin/mlnx-sf: Fixed "trust" status query
+
+  [ Shmuel Shaul ]
+  * Fix mlnx_tune out of range tx number
+  * Python 3 compatibility
+
+  [ Andy Roulin ]
+  * tsbin/mlnx_bf_configure: Add multiport_esw lag mode
+  * tsbin/mlnx_bf_configure: Add encap none mode
+
+  [ Guy Truzman ]
+  * mlnx_qos: Change documentation for dscp2prio
+
+  [ Shmuel Shaul ]
+  * Python 3 compatibility
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-sf: Add support for setting CPU affinity for SFs
+
+  [ Andy Roulin ]
+  * tsbin/mlnx_bf_configure: fix switching to legacy mode
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Support steering/eswitch mode set/get using devlink
+  * tsbin/mlnx_bf_configure: Optimize code using set_dev_param/get_dev_param
+
+  [ Tzafrir Cohen ]
+  * Revert mlnx_tune fix: shebang issue
+
+  [ Shmuel Shaul ]
+  * mlnx_tune: Python 3 compatibility
+
+  [ Tzafrir Cohen ]
+  * Make mlnx_tune a standard python script
+
+  [ Shmuel Shaul ]
+  * Add mlnx_tune support for Red Hat 7.9
+  * Change mlnx_tune get_os()
+
+  [ Maher Sanalla ]
+  * Set hash as default lag mode
+
+  [ Oz Shlomo ]
+  * mlnx_bf_configure_ct: Add Rocky support
+
+  [ Hassan Khadour ]
+  * mlnx_tune: Define new redhat OSes in mlnx_tune
+
+  [ Tzafrir Cohen ]
+  * Add mlnxofedctl
+
+  [ Maher Sanalla ]
+  * mlnx_qos: Seperate buffer_size from prio2buffer commands
+  * mlnx_qos: Do not skip first buffer size line
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Fixed openvswitch service detection
+  * tsbin/mlnx_bf_configure: Optimize OVS bridge creation flow
+
+  [ Tzafrir Cohen ]
+  * Add a man page for mlnxofedctl
+
+  [ Mark Haywood ]
+  * mlnx_qos: Sort TCs in pretty_print to fix for python3
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Use mstconfig if mlxconfig does not exist
+  * tsbin/mlnx_bf_configure: Use all available pathes to get PID
+  * mlnx_bf_configure: Run switchdev Ethernet DPU in exclusive rdma net ns mode
+
+  [ Tzafrir Cohen ]
+  * Don't include quote marks in version number
+  * deb: Clean up python temporary build files
+  * python: Remove useless code from setup.py
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Wait till device responds to mlxconfig queries
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Mon, 03 Apr 2023 18:00:52 -0500
+
 mlnx-tools (5.2.0) UNRELEASED; urgency=medium
 
+  [ Tzafrir Cohen ]
+  * Ignore generated files
+  * Install python modules with dh_python3
+  * Add gbp.conf
+  * Allow installing on either python2 or python3
+  * Sync changes in utils
+  * Move file copying to Makefile
+  * Move configs to dedicated directories
+  * Sync most scripts from ofed_scripts
+  * Debian packaging fixes
+  * python: remove unused programs
+  * Sync more files
+  * Remove files that will be in MLNX_OFED
+  * Add ib2ib_setup
+  * Remove ibdev2netdev
+  * mlnx_tune as standard binary
+  * Remove lsb_release hack: not needed
+  * Get python version from the build system
+
+  [ Vladimir Sokolovsky ]
+  * BF/scripts: Changed to support new SF interface
+
+  [ Tzafrir Cohen ]
+  * debian: suppress mlnx_tune dependency on python2
+  * Remove unused perl:Depends substvar
+  * Fixed typo: shoud -> should (lintian)
+  * debian: also suppress python:any dependency
+
+  [ Vladimir Sokolovsky ]
+  * udev/mlnx_bf_udev: Do not bring up eth* interfaces
+
+  [ Tzafrir Cohen ]
+  * Obsolete older packages
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Change output format
+  * tsbin/mlnx_bf_configure: Updated interface names according to udev rules
+  * tsbin/mlnx-sf: Added --pretty parameter
+  * tsbin/mlnx_bf_configure: Added workarounds for OVS start
+
+  [ Maor Dickman ]
+  * tsbin/mlnx_bf_configure: Add ability to set metadata match mode
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Fix MFT query
+  * mlnx_bf_configure[_ct]: Remove rshimlog usage
+
+  [ Bodong Wang ]
+  * tsbin: Add option to enable hash lag mode before moving to switchdev
+
+  [ Maor Dickman ]
+  * tsbin: Ignore set max connections failure
+
+  [ Bodong Wang ]
+  * mlnx_bf_configure: set lag hash mode to be off as default
+
+  [ Roy Novich ]
+  * dcbnetlink: Use frombytes instead of depracated fromstring
+
+  [ Emeel Hakim ]
+  * tsbin/mlnx_bf_configure: Add ability for enabling IPsec full offload on boot
+
+  [ Roy Novich ]
+  * dcbnetlink: Use tobytes instead of depracated tostring
+
+  [ Tzafrir Cohen ]
+  * spec: Use %python3_sitelib on python3 systems
+  * spec: Clean buildroot before install
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Add SF trust support
+  * tsbin/mlnx_bf_configure: Added workarounf for devlink reload deadlock
+  * mlnx_bf_configure: Use compat to set eswitch mode
+  * tsbin/mlnx_bf_configure: Added BlueField3 support
+  * tsbin/mlnx-sf: Fixed "trust" status query
+
+  [ Shmuel Shaul ]
+  * Fix mlnx_tune out of range tx number
+  * Python 3 compatibility
+
+  [ Andy Roulin ]
+  * tsbin/mlnx_bf_configure: Add multiport_esw lag mode
+  * tsbin/mlnx_bf_configure: Add encap none mode
+
+  [ Guy Truzman ]
+  * mlnx_qos: Change documentation for dscp2prio
+
+  [ Shmuel Shaul ]
+  * Python 3 compatibility
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-sf: Add support for setting CPU affinity for SFs
+
+  [ Andy Roulin ]
+  * tsbin/mlnx_bf_configure: fix switching to legacy mode
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Support steering/eswitch mode set/get using devlink
+  * tsbin/mlnx_bf_configure: Optimize code using set_dev_param/get_dev_param
+
+  [ Tzafrir Cohen ]
+  * Revert mlnx_tune fix: shebang issue
+
+  [ Shmuel Shaul ]
+  * mlnx_tune: Python 3 compatibility
+
+  [ Tzafrir Cohen ]
+  * Make mlnx_tune a standard python script
+
+  [ Shmuel Shaul ]
+  * Add mlnx_tune support for Red Hat 7.9
+  * Change mlnx_tune get_os()
+
+  [ Maher Sanalla ]
+  * Set hash as default lag mode
+
+  [ Oz Shlomo ]
+  * mlnx_bf_configure_ct: Add Rocky support
+
+  [ Hassan Khadour ]
+  * mlnx_tune: Define new redhat OSes in mlnx_tune
+
+  [ Tzafrir Cohen ]
+  * Add mlnxofedctl
+
+  [ Maher Sanalla ]
+  * mlnx_qos: Seperate buffer_size from prio2buffer commands
+  * mlnx_qos: Do not skip first buffer size line
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Fixed openvswitch service detection
+  * tsbin/mlnx_bf_configure: Optimize OVS bridge creation flow
+
+  [ Tzafrir Cohen ]
+  * Add a man page for mlnxofedctl
+
+  [ Mark Haywood ]
+  * mlnx_qos: Sort TCs in pretty_print to fix for python3
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Use mstconfig if mlxconfig does not exist
+  * tsbin/mlnx_bf_configure: Use all available pathes to get PID
+  * mlnx_bf_configure: Run switchdev Ethernet DPU in exclusive rdma net ns mode
+
+  [ Tzafrir Cohen ]
+  * Don't include quote marks in version number
+  * deb: Clean up python temporary build files
+  * python: Remove useless code from setup.py
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Wait till device responds to mlxconfig queries
+
+  [ Tzafrir Cohen ]
   * Switched to a MLNX_OFED branch
   * Native package
+  * Ignore generated files
+  * Install python modules with dh_python3
+  * Add gbp.conf
+  * Allow installing on either python2 or python3
+  * Sync changes in utils
+  * Move file copying to Makefile
+  * Move configs to dedicated directories
+  * Sync most scripts from ofed_scripts
+  * Debian packaging fixes
+  * python: remove unused programs
+  * Sync more files
+  * Remove files that will be in MLNX_OFED
+  * Add ib2ib_setup
+  * Remove ibdev2netdev
+  * mlnx_tune as standard binary
+  * Remove lsb_release hack: not needed
+  * Get python version from the build system
+
+  [ Vladimir Sokolovsky ]
+  * BF/scripts: Changed to support new SF interface
+
+  [ Tzafrir Cohen ]
+  * debian: suppress mlnx_tune dependency on python2
+  * Remove unused perl:Depends substvar
+  * Fixed typo: shoud -> should (lintian)
+  * debian: also suppress python:any dependency
+
+  [ Vladimir Sokolovsky ]
+  * udev/mlnx_bf_udev: Do not bring up eth* interfaces
+
+  [ Tzafrir Cohen ]
+  * Obsolete older packages
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Change output format
+  * tsbin/mlnx_bf_configure: Updated interface names according to udev rules
+  * tsbin/mlnx-sf: Added --pretty parameter
+  * tsbin/mlnx_bf_configure: Added workarounds for OVS start
+
+  [ Maor Dickman ]
+  * tsbin/mlnx_bf_configure: Add ability to set metadata match mode
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Fix MFT query
+  * mlnx_bf_configure[_ct]: Remove rshimlog usage
+
+  [ Bodong Wang ]
+  * tsbin: Add option to enable hash lag mode before moving to switchdev
+
+  [ Maor Dickman ]
+  * tsbin: Ignore set max connections failure
+
+  [ Bodong Wang ]
+  * mlnx_bf_configure: set lag hash mode to be off as default
+
+  [ Roy Novich ]
+  * dcbnetlink: Use frombytes instead of depracated fromstring
+
+  [ Emeel Hakim ]
+  * tsbin/mlnx_bf_configure: Add ability for enabling IPsec full offload on boot
+
+  [ Roy Novich ]
+  * dcbnetlink: Use tobytes instead of depracated tostring
+
+  [ Tzafrir Cohen ]
+  * spec: Use %python3_sitelib on python3 systems
+  * spec: Clean buildroot before install
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Add SF trust support
+  * tsbin/mlnx_bf_configure: Added workarounf for devlink reload deadlock
+  * mlnx_bf_configure: Use compat to set eswitch mode
+  * tsbin/mlnx_bf_configure: Added BlueField3 support
+  * tsbin/mlnx-sf: Fixed "trust" status query
+
+  [ Shmuel Shaul ]
+  * Fix mlnx_tune out of range tx number
+  * Python 3 compatibility
+
+  [ Andy Roulin ]
+  * tsbin/mlnx_bf_configure: Add multiport_esw lag mode
+  * tsbin/mlnx_bf_configure: Add encap none mode
+
+  [ Guy Truzman ]
+  * mlnx_qos: Change documentation for dscp2prio
+
+  [ Shmuel Shaul ]
+  * Python 3 compatibility
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-sf: Add support for setting CPU affinity for SFs
+
+  [ Andy Roulin ]
+  * tsbin/mlnx_bf_configure: fix switching to legacy mode
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Support steering/eswitch mode set/get using devlink
+  * tsbin/mlnx_bf_configure: Optimize code using set_dev_param/get_dev_param
+
+  [ Tzafrir Cohen ]
+  * Revert mlnx_tune fix: shebang issue
+
+  [ Shmuel Shaul ]
+  * mlnx_tune: Python 3 compatibility
+
+  [ Tzafrir Cohen ]
+  * Make mlnx_tune a standard python script
+
+  [ Shmuel Shaul ]
+  * Add mlnx_tune support for Red Hat 7.9
+  * Change mlnx_tune get_os()
+
+  [ Maher Sanalla ]
+  * Set hash as default lag mode
+
+  [ Oz Shlomo ]
+  * mlnx_bf_configure_ct: Add Rocky support
+
+  [ Hassan Khadour ]
+  * mlnx_tune: Define new redhat OSes in mlnx_tune
+
+  [ Tzafrir Cohen ]
+  * Add mlnxofedctl
+
+  [ Maher Sanalla ]
+  * mlnx_qos: Seperate buffer_size from prio2buffer commands
+  * mlnx_qos: Do not skip first buffer size line
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Fixed openvswitch service detection
+  * tsbin/mlnx_bf_configure: Optimize OVS bridge creation flow
+
+  [ Tzafrir Cohen ]
+  * Add a man page for mlnxofedctl
+
+  [ Mark Haywood ]
+  * mlnx_qos: Sort TCs in pretty_print to fix for python3
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx-sf: Use mstconfig if mlxconfig does not exist
+  * tsbin/mlnx_bf_configure: Use all available pathes to get PID
+  * mlnx_bf_configure: Run switchdev Ethernet DPU in exclusive rdma net ns mode
+
+  [ Tzafrir Cohen ]
+  * Don't include quote marks in version number
+  * deb: Clean up python temporary build files
+  * python: Remove useless code from setup.py
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Wait till device responds to mlxconfig queries
 
  -- Tzafrir Cohen <nvidia@cohens.org.il>  Mon, 12 Apr 2021 10:16:29 +0300
 
