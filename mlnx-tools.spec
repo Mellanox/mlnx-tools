@@ -44,15 +44,7 @@ Mellanox userland tools and scripts
 %global FEDORA3X 0%{?fedora} >= 30
 %global SLES15 0%{?suse_version} >= 1500
 %global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15}
-
-%global IS_RHEL_VENDOR "%{_vendor}" == "redhat" || ("%{_vendor}" == "bclinux") || ("%{_vendor}" == "openEuler")
-
-%if %{PYTHON3}
-%define __python %{_bindir}/python3
-BuildRequires: python3
-# python(abi) . "(abi)" seems to be is tricky to get through shell quoting.
-%define __requires_exclude ^python
-%endif
+%global python_dir %{_datadir}/%{name}/python
 
 %prep
 %setup -n %{name}-%{version}
@@ -75,31 +67,29 @@ EOF
 }
 
 touch mlnx-tools-files
-%if %{PYTHON3}
-mlnx_python_sitelib=%{?python3_sitelib}
-%else
-mlnx_python_sitelib=%{?python_sitelib}
-%endif
-if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
-	mlnx_python_sitelib=$(echo "$mlnx_python_sitelib" | sed -e 's@/usr@%{_prefix}@')
-fi
 export PKG_VERSION="%{version}"
-%make_install PYTHON="%__python" PYTHON_SETUP_EXTRA_ARGS="-O1 --prefix=%{buildroot}%{_prefix} --install-lib=%{buildroot}${mlnx_python_sitelib}"
+%make_install
+%if %PYTHON3
+sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/* \
+	%{buildroot}%{python_dir}/*.py
+%endif
 
-if [ "$(echo %{_prefix} | sed -e 's@/@@g')" != "usr" ]; then
+%if "%{_prefix}" != "/usr"
 	conf_env=/etc/profile.d/mlnx-tools.sh
 	install -d %{buildroot}/etc/profile.d
-	add_env %{buildroot}$conf_env PYTHONPATH $mlnx_python_sitelib
 	add_env %{buildroot}$conf_env PATH %{_bindir}
 	add_env %{buildroot}$conf_env PATH %{_sbindir}
 	echo $conf_env >> mlnx-tools-files
-fi
-find %{buildroot}${mlnx_python_sitelib} -type f -print | sed -e 's@%{buildroot}@@' >> mlnx-tools-files
+%endif
 
 %clean
 rm -rf %{buildroot}
 
+%if "%{_prefix}" != "/usr"
 %files -f mlnx-tools-files
+%else
+%files
+%endif
 %license LICENSE
 %doc doc/*
 %defattr(-,root,root,-)
@@ -110,8 +100,11 @@ rm -rf %{buildroot}
 %{_sbindir}/*
 %{_bindir}/*
 %{_sysconfdir}/*
-%{_mandir}/man8/ib2ib_setup.8*
 /lib/udev/*
+%{_mandir}/man8/*.8*
+%{python_dir}/dcbnetlink.py*
+%{python_dir}/netlink.py*
+%exclude %{python_dir}/__pycache__/*.pyc
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1

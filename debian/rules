@@ -9,6 +9,3 @@ pname:=mlnx-tools
 
 %:
 	dh $@ --with python3
-
-override_dh_auto_install:
-	dh_auto_install -- PYTHON_SETUP_EXTRA_ARGS="--install-layout=deb --root=../debian/$(pname)"

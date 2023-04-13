@@ -28,12 +28,8 @@
 
 import sys
 import os
-if os.path.exists('/usr/share/pyshared'):
-	sys.path.append('/usr/share/pyshared')
-if os.path.exists('/usr/lib/python2.7/dist-packages'):
-	sys.path.append('/usr/lib/python2.7/dist-packages')
-if os.path.exists('/usr/lib/python2.7/site-packages'):
-	sys.path.append('/usr/lib/python2.7/site-packages')
+if os.path.exists('/usr/share/mlnx-tools/python'):
+	sys.path.append('/usr/share/mlnx-tools/python')
 import socket
 import struct
 
