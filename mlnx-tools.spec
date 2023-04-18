@@ -50,6 +50,8 @@ Mellanox userland tools and scripts
 %if %{PYTHON3}
 %define __python %{_bindir}/python3
 BuildRequires: python3
+# python(abi) . "(abi)" seems to be is tricky to get through shell quoting.
+%define __requires_exclude ^python
 %endif
 
 %prep
