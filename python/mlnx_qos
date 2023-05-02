@@ -308,7 +308,7 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer
 		for buf in range(8):
 			msg += "%1d," % (buffer_size[buf])
 		if tot_size is not None:
-			msg += "total_size=%d" % tot_size
+			msg += "max_buffer_size=%d" % tot_size
 		print(msg)
 
 	tc2up = defaultdict(list)
