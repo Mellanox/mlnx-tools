@@ -67,6 +67,7 @@ class SF:
         self.json = args.json
         self.pretty = args.pretty
         self.enable_trust = args.enable_trust
+        self.disable_roce = args.disable_roce
         self.sfnum = args.sfnum or None
         self.hw_addr = args.hwaddr or None
         self.sfindex = args.sfindex or None
@@ -134,6 +135,7 @@ class SF:
                 result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
                 result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
                 result['output'] += "  Function trust: " + info[pci_dev_index]["function"]["trust"] + "\n"
+                result['output'] += "  Function roce: " + info[pci_dev_index]["function"]["roce"] + "\n"
                 result['output'] += "  Auxiliary device: " + info[pci_dev_index]["aux_dev"] + "\n"
                 result['output'] += "    netdev: " + info[pci_dev_index]["sf_netdev"] + "\n"
                 result['output'] += "    RDMA dev: " + info[pci_dev_index]["rdma_dev"] + "\n"
@@ -185,6 +187,13 @@ class SF:
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
+
+        if self.disable_roce:
+            cmd = MLXDEVM + " port function cap set {} roce false".format(self.sfindex)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
 
         # Activate SF
         cmd = MLXDEVM + " port function set {} state active".format(self.sfindex)
@@ -392,6 +401,7 @@ def main():
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
     parser.add_argument('-t', '--enable-trust', action='store_true', help="Set SF as trusted", default=False)
+    parser.add_argument('-r', '--disable-roce', action='store_true', help="Disable RoCE for SF", default=False)
     parser.add_argument('-c', '--cpu-list', help="Interpret mask as numerical list of cores instead of a \
                                                   bitmask. Numbers are separated by commas and may include \
                                                   ranges. For example: 0,5,8-11.", default=None)
