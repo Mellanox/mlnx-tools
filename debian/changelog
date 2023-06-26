@@ -1,3 +1,10 @@
+mlnx-tools (5.8.0-1.lts) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Wait till device responds to mlxconfig queries
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Mon, 26 Jun 2023 11:00:00 -0600
+
 mlnx-tools (5.2.0) UNRELEASED; urgency=medium
 
   * Switched to a MLNX_OFED branch
