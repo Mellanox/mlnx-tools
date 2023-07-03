@@ -43,8 +43,10 @@ Mellanox userland tools and scripts
 %global RHEL8 0%{?rhel} >= 8
 %global FEDORA3X 0%{?fedora} >= 30
 %global SLES15 0%{?suse_version} >= 1500
-%global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15}
+%global OPENEULER 0%{openEuler} >= 2
+%global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15} || %{OPENEULER}
 %global python_dir %{_datadir}/%{name}/python
+%global PYTHON_UNVERSIONED %(if test -x /usr/bin/python; then echo 1; else echo 0; fi)
 
 %prep
 %setup -n %{name}-%{version}
@@ -101,6 +103,9 @@ rm -rf %{buildroot}
 %{_mandir}/man8/*.8*
 %{python_dir}/dcbnetlink.py*
 %{python_dir}/netlink.py*
+%if %{OPENEULER} && %{PYTHON_UNVERSIONED}
+%{python_dir}/__pycache__/*.pyc
+%endif
 /lib/udev/mlnx_bf_udev
 
 %changelog
