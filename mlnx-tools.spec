@@ -70,7 +70,8 @@ touch mlnx-tools-files
 export PKG_VERSION="%{version}"
 %make_install
 %if %PYTHON3
-sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/*
+sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/* \
+	%{buildroot}%{python_dir}/*.py
 %endif
 
 %if "%{_prefix}" != "/usr"
