@@ -9,3 +9,10 @@ pname:=mlnx-tools
 
 %:
 	dh $@ --with python3
+
+override_dh_auto_install:
+	dh_auto_install
+	sed -i -e '1s/python\>/python3/' \
+		debian/mlnx-tools/usr/sbin/* \
+		debian/mlnx-tools/usr/bin/* \
+		debian/mlnx-tools/usr/share/mlnx-tools/python/*.py
