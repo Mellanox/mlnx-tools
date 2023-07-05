@@ -1,3 +1,28 @@
+mlnx-tools (23.07)  UNRELEASED; urgency=medium
+
+  [ Tzafrir Cohen ]
+  * Avoid the "python(abi)" rpm generated requirement
+
+  [ Maher Sanalla ]
+  * mlnx_qos: Print max_buffer_size instead of total_size
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-sf: Added '--disable-roce' support
+
+  [ Tzafrir Cohen ]
+  * Install mlnx_qos deps to /usr/share/mlnx-tools/python
+  * spec: Also edit shebang line of python modules
+  * Spec: Include pycache files of openEuler
+  * Spec: Fix syntax for non-openEuler systems
+  * debian: Install python files as python3
+  * Spec: Exclude openEuler __pycache__ dir
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Set ovs service name base on existing files
+  * tsbin/mlnx_bf_configure: Added OVS_BR_PORTS_TIMEOUT
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 05 Jul 2023 18:48:03 -0500
+
 mlnx-tools (23.04)  UNRELEASED; urgency=medium
 
   [ Tzafrir Cohen ]
