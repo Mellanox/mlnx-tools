@@ -301,7 +301,14 @@ OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf en3f1pf1sf0"}
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 OVS_TIMEOUT=${OVS_TIMEOUT:-30}
 
-ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
+ovs_service=""
+if [ -e /etc/init.d/openvswitch-switch ]; then
+	ovs_service="openvswitch-switch.service"
+elif [ -e /usr/lib/systemd/system/openvswitch.service ]; then
+	ovs_service="openvswitch.service"
+else
+	ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
+fi
 
 if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 	# OVS service is not enabled
