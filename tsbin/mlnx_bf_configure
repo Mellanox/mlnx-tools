@@ -384,6 +384,7 @@ if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
 	exit $RC
 fi
 
+OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
 for i in `seq $num_of_devs`
 do
 	br_name=OVS_BRIDGE${i}
@@ -400,6 +401,15 @@ do
 	ovs_br_ports=""
 	for port in $br_ports
 	do
+		SECONDS=0
+		while ! [ -d /sys/class/net/$port ]
+		do
+			if [ $SECONDS -gt $OVS_BR_PORTS_TIMEOUT ]; then
+				break
+			fi
+			sleep 1
+		done
+
 		if [ -d /sys/class/net/$port ]; then
 			ovs_br_ports="$ovs_br_ports $port"
 		else
