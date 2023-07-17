@@ -224,7 +224,6 @@ do
 			fi
 
 			set_steering_mode ${dev} smfs
-			RC=$((RC+$?))
 		fi
 
 		if [ "${IPSEC_FULL_OFFLOAD}" == "yes" ]; then
@@ -242,7 +241,6 @@ do
 				steering_mode=`get_steering_mode ${dev}`
 				if [ "${steering_mode}" == "smfs" ]; then
 					set_steering_mode ${dev} dmfs
-					RC=$((RC+$?))
 				fi
 				set_dev_param ${dev} ipsec_mode full
 			else
