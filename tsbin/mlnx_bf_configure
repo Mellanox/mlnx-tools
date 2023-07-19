@@ -182,6 +182,7 @@ if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 fi
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
+ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
 
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
@@ -261,6 +262,9 @@ do
 		if [ "${eswitch_mode}" == "switchdev" ]; then
 			if ! (rdma system show netns 2>&1 | grep -q exclusive); then
 				rdma system set netns exclusive
+			fi
+			if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
+				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
 			fi
 			num_of_devs=$((num_of_devs+1))
 		fi
