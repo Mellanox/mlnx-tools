@@ -35,7 +35,7 @@ import json
 import errno
 
 __author__ = "Vladimir Sokolovsky <vlad@nvidia.com>"
-__version__ = "1.0"
+__version__ = "1.1"
 
 prog = os.path.basename(sys.argv[0])
 os.environ['PATH'] = '/opt/mellanox/iproute2/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
@@ -45,6 +45,7 @@ MLXDEVM = 'mlxdevm'
 DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
+DEVLINK_DEV_TIMEOUT = 20
 verbose = False
 
 if os.path.exists("/usr/bin/mlxconfig"):
@@ -67,6 +68,7 @@ class SF:
         self.json = args.json
         self.pretty = args.pretty
         self.enable_trust = args.enable_trust
+        self.enable_eswitch = args.enable_eswitch
         self.disable_roce = args.disable_roce
         self.sfnum = args.sfnum or None
         self.hw_addr = args.hwaddr or None
@@ -126,6 +128,7 @@ class SF:
                 result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
                 result['output'] += "  Function trust: " + info[pci_dev_index]["function"]["trust"] + "\n"
                 result['output'] += "  Function roce: " + info[pci_dev_index]["function"]["roce"] + "\n"
+                result['output'] += "  Function eswitch: " + info[pci_dev_index]["function"]["eswitch"] + "\n"
                 result['output'] += "  Auxiliary device: " + info[pci_dev_index]["aux_dev"] + "\n"
                 result['output'] += "    netdev: " + info[pci_dev_index]["sf_netdev"] + "\n"
                 result['output'] += "    RDMA dev: " + info[pci_dev_index]["rdma_dev"] + "\n"
@@ -157,7 +160,7 @@ class SF:
             self.netif = line.split(' ')[4].strip()
 
         if not self.sfindex:
-            result['output'] = "ERROR: Cennot find sfindex for {device} sfnum {sfnum}".format(device=self.device, sfnum=self.sfnum)
+            result['output'] = "ERROR: Cannot find sfindex for {device} sfnum {sfnum}".format(device=self.device, sfnum=self.sfnum)
             result['status'] = 1
             sf_log(result['output'])
             return result
@@ -180,6 +183,12 @@ class SF:
 
         if self.disable_roce:
             cmd = MLXDEVM + " port function cap set {} roce false".format(self.sfindex)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
+        if self.enable_eswitch:
+            cmd = MLXDEVM + " port function cap set {idx} eswitch true".format(idx=self.sfindex)
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
@@ -216,6 +225,20 @@ class SF:
             except:
                 sf_log("Unexpected error:", sys.exc_info()[0])
 
+        # Wait for devlink to see SF before running devlink commands
+        start = time.process_time()
+        while True:
+            if time.process_time() - start > DEVLINK_DEV_TIMEOUT:
+                sf_log("WARNING: timed out waiting for SF device {} to appear: {}".format(self.aux_dev, result))
+                break
+
+            cmd = DEVLINK + " dev show auxiliary/{}".format(self.aux_dev)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status'] == 0:
+                break
+
+            time.sleep(0.05)
+
         if self.cpu_list:
             cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
                     self.aux_dev, self.cpu_list
@@ -227,6 +250,13 @@ class SF:
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
+
+        if self.enable_eswitch:
+            cmd = DEVLINK + " dev eswitch set auxiliary/{} mode switchdev".format(self.aux_dev)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
 
         result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
         sf_log(result["output"])
@@ -391,6 +421,7 @@ def main():
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
     parser.add_argument('-t', '--enable-trust', action='store_true', help="Set SF as trusted", default=False)
+    parser.add_argument('-e', '--enable-eswitch', action='store_true', help="Enable Eswitch on SF", default=False)
     parser.add_argument('-r', '--disable-roce', action='store_true', help="Disable RoCE for SF", default=False)
     parser.add_argument('-c', '--cpu-list', help="Interpret mask as numerical list of cores instead of a \
                                                   bitmask. Numbers are separated by commas and may include \
