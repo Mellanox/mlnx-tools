@@ -17,7 +17,6 @@ install:
 	$(INSTALL) -d $(DESTDIR)$(SBIN_DIR)
 	$(INSTALL) -d $(DESTDIR)$(SYSCONFDIR)
 	$(INSTALL) -d $(DESTDIR)$(SYSCONFDIR)/modprobe.d
-	$(INSTALL) -d $(DESTDIR)$(SYSCONFDIR)/modules-load.d
 	$(INSTALL) -d $(DESTDIR)$(UDEV_DIR)
 	$(INSTALL) -d $(DESTDIR)$(UDEV_DIR)/rules.d
 	$(INSTALL) -d $(DESTDIR)$(MAN8_DIR)
@@ -28,7 +27,6 @@ install:
 	$(INSTALL) -m 0755 sbin/* -t $(DESTDIR)$(SBIN_DIR)/
 	$(INSTALL) -m 0644 man/man8/*.8 -t $(DESTDIR)$(MAN8_DIR)/
 	$(INSTALL) -m 0644 etc/modprobe.d/* -t $(DESTDIR)$(SYSCONFDIR)/modprobe.d/
-	$(INSTALL) -m 0644 etc/modules-load.d/* -t $(DESTDIR)$(SYSCONFDIR)/modules-load.d/
 
 	cd python; $(PYTHON) ./setup.py install $(PYTHON_SETUP_EXTRA_ARGS)
 	# Originally resided in sbin and not in bin, as setup.py installs:
