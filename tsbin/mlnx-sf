@@ -251,12 +251,6 @@ class SF:
             if result['status']:
                 return result
 
-        if self.enable_eswitch:
-            cmd = DEVLINK + " dev eswitch set auxiliary/{} mode switchdev".format(self.aux_dev)
-            result['status'], result['output'] = get_status_output(cmd, self.verbose)
-            if result['status']:
-                return result
-
 
         result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
         sf_log(result["output"])
