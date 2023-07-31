@@ -113,6 +113,8 @@ class SF:
             info[pci_dev_index]["rdma_dev"] = get_sf_rdmadev(info[pci_dev_index]["aux_dev"])
             if "trust" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["trust"] = "NA"
+            if "eswitch" not in info[pci_dev_index]["function"]:
+                info[pci_dev_index]["function"]["eswitch"] = "NA"
 
 
         if self.json:
