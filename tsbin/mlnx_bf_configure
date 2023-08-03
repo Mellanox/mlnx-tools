@@ -30,6 +30,7 @@
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 CT_MAX_OFFLOADED_CONNS=${CT_MAX_OFFLOADED_CONNS:-1000000}
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
+RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-60}
 
 RC=0
 
@@ -278,7 +279,13 @@ do
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
 			if ! (rdma system show netns 2>&1 | grep -q exclusive); then
-				rdma system set netns exclusive
+				SECONDS=0
+				while ! (rdma system set netns exclusive); do
+					if [ $SECONDS -gt $RDMA_SET_NETNS_TIMEOUT ]; then
+						break
+					fi
+					sleep 1
+				done
 			fi
 			if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
