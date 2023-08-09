@@ -30,7 +30,7 @@ Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
 Version: 23.07
 Release: 0%{?_dist}
-License: GPLv2
+License: GPLv2 or BSD
 Url: https://github.com/Mellanox/mlnx-tools
 Group: Applications/System
 Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tar.gz
@@ -91,6 +91,7 @@ rm -rf %{buildroot}
 %else
 %files
 %endif
+%license LICENSE
 %doc doc/*
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
