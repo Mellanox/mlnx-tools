@@ -73,7 +73,7 @@ entryList = []
 color = 1
 
 ftb_type = ["NIC_RX", "NIC_TX", "ESW_EGRESS_ACL","ESW_INGRESS_ACL", "ESW_FDB", "SNIFFER_RX", "SNIFFER_TX", "TX_RDMA", "TX_RDMA"]
-fte_action = ["ALLOW", "DROP", "FWD", "FLOW_COUNT", "ENCAP", "DECAP", "MODIFY_HDR", "POP_VLAN", "PUSH_VLAN", "FPGA_ACC", "POP_VLAN_2", "PUSH_VLAN_2"]
+fte_action = ["ALLOW", "DROP", "FWD", "FLOW_COUNT", "ENCAP", "DECAP", "MODIFY_HDR", "POP_VLAN", "PUSH_VLAN", "FPGA_ACC", "POP_VLAN_2", "PUSH_VLAN_2", "DECRYPT", "ENCRYPT", "EXEC_ASO"]
 fte_match = ["OUT_HDR", "MISC", "IN_HDR", "MISC_2"]
 dest_type = ["VPORT", "FLOW_TABLE", "TIR", "QP"]
 
@@ -168,6 +168,9 @@ match_criteria = {
 	"inner_headers.dst_ip_31_0"		:	"dst_ip_31_0",
 
 	"misc_2_parameters.metadata_reg_c_0"	:	"metadata_reg_c_0",
+	"misc_2_parameters.metadata_reg_c_1"	:	"metadata_reg_c_1",
+	"misc_2_parameters.metadata_reg_c_2"	:	"metadata_reg_c_2",
+	"misc_2_parameters.metadata_reg_c_3"	:	"metadata_reg_c_3",
 	"modify_header_id"			:	"modify_header_id"
 }
 
