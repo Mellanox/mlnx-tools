@@ -1,8 +1,18 @@
+mlnx-tools (23.07.1) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * mlnx_bf_configure: Revert: "Run switchdev Ethernet DPU in exclusive rdma net ns mode"
+
+  [ Mikhael Goikhman ]
+  * tsbin/mlnx_bf_configure: Fix cases when "devlink eswitch set mode" returns BUSY
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 16 Aug 2023 10:09:23 -0600
+
 mlnx-tools (23.07.0) UNRELEASED; urgency=medium
 
   * Sync with MLNX_OFED 23.07
 
- -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 07 Dec 2022 14:50:47 -0600
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Sun, 13 Aug 2023 22:35:50 -0600
 
 mlnx-tools (5.8.0) UNRELEASED; urgency=medium
 

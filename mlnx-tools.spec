@@ -28,7 +28,7 @@
 
 Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
-Version: 23.07.0
+Version: 23.07.1
 Release: 0%{?_dist}
 License: GPLv2 or BSD
 Url: https://github.com/Mellanox/mlnx-tools
