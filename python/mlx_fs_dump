@@ -73,7 +73,7 @@ entryList = []
 color = 1
 
 ftb_type = ["NIC_RX", "NIC_TX", "ESW_EGRESS_ACL","ESW_INGRESS_ACL", "ESW_FDB", "SNIFFER_RX", "SNIFFER_TX", "TX_RDMA", "TX_RDMA"]
-fte_action = ["ALLOW", "DROP", "FWD", "FLOW_COUNT", "ENCAP", "DECAP", "MODIFY_HDR", "POP_VLAN", "PUSH_VLAN", "FPGA_ACC", "POP_VLAN_2", "PUSH_VLAN_2"]
+fte_action = ["ALLOW", "DROP", "FWD", "FLOW_COUNT", "ENCAP", "DECAP", "MODIFY_HDR", "POP_VLAN", "PUSH_VLAN", "FPGA_ACC", "POP_VLAN_2", "PUSH_VLAN_2", "DECRYPT", "ENCRYPT", "EXEC_ASO"]
 fte_match = ["OUT_HDR", "MISC", "IN_HDR", "MISC_2"]
 dest_type = ["VPORT", "FLOW_TABLE", "TIR", "QP"]
 
@@ -168,6 +168,9 @@ match_criteria = {
 	"inner_headers.dst_ip_31_0"		:	"dst_ip_31_0",
 
 	"misc_2_parameters.metadata_reg_c_0"	:	"metadata_reg_c_0",
+	"misc_2_parameters.metadata_reg_c_1"	:	"metadata_reg_c_1",
+	"misc_2_parameters.metadata_reg_c_2"	:	"metadata_reg_c_2",
+	"misc_2_parameters.metadata_reg_c_3"	:	"metadata_reg_c_3",
 	"modify_header_id"			:	"modify_header_id"
 }
 
@@ -291,7 +294,7 @@ def printFg(node):
 
 	for i, cr in enumerate(node.cr_found):
 		# Only print cr with none 0 value
-		if (i % 2) and (cr is not "0"):
+		if (i % 2) and (cr != "0"):
 			cr_name = node.cr_found[i-1]
 			ret += pad + cr_name + "|"
 			pad = ""
@@ -303,11 +306,11 @@ def printFte(node):
 	is_ipv4 = False
 	close_dest = False
 
-	if node.dst_type is not "0":
+	if node.dst_type != "0":
 		ret += "to (" + node.dst_type + ":" + node.dst_value
 		close_dest = True
 
-	if node.dst_vhca_id_valid is not 0:
+	if node.dst_vhca_id_valid != 0:
 		ret += " VHCA:" + node.dst_vhca_id
 		close_dest = True
 
@@ -316,12 +319,12 @@ def printFte(node):
 
 	for i, cr in enumerate(node.cr_found):
 		# Only print cr with none 0 value
-		if (i % 2) and (cr is not "0"):
+		if (i % 2) and (cr != "0"):
 			cr_name = node.cr_found[i-1]
 			if "ethtype" in cr_name:
 				try:
 					cr = eth_type[cr]
-					if cr is "IPv4":
+					if cr == "IPv4":
 						is_ipv4 = True
 				except KeyError:
 					pass
@@ -337,7 +340,7 @@ def printFte(node):
 				except ValueError:
 					index = -1
 
-				if index is not -1:
+				if index != -1:
 					cr = cr.zfill(8) + node.cr_found[index+1].lstrip("0x").zfill(4)
 					node.cr_found[index] = "0"
 					node.cr_found[index+1] = "0"
@@ -348,7 +351,7 @@ def printFte(node):
 				except ValueError:
 					index = -1
 
-				if index is not -1:
+				if index != -1:
 					cr = cr.zfill(8) + node.cr_found[index+1].lstrip("0x").zfill(4)
 					node.cr_found[index] = "0"
 					node.cr_found[index+1] = "0"
@@ -443,7 +446,7 @@ class fancy_dump():
 
 				for i in range(0, len(fte_match)):
 					if (match_enable_int & (1 << i)):
-						if match_enable is "NO_MATCH":
+						if match_enable == "NO_MATCH":
 							match_enable = ""
 						match_enable  = match_enable + pad + fte_match[i]
 						pad = " "
