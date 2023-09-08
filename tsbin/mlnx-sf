@@ -139,7 +139,8 @@ class SF:
                 result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
                 result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
                 result['output'] += "  Function trust: " + info[pci_dev_index]["function"]["trust"] + "\n"
-                result['output'] += "  Function roce: " + info[pci_dev_index]["function"]["roce"] + "\n"
+                if "roce" in info[pci_dev_index]["function"]:
+                        result['output'] += "  Function roce: " + info[pci_dev_index]["function"]["roce"] + "\n"
                 result['output'] += "  Function eswitch: " + info[pci_dev_index]["function"]["eswitch"] + "\n"
                 result['output'] += "  Auxiliary device: " + info[pci_dev_index]["aux_dev"] + "\n"
                 result['output'] += "    netdev: " + info[pci_dev_index]["sf_netdev"] + "\n"
