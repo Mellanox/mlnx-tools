@@ -1,3 +1,24 @@
+mlnx-tools (23.07.2) UNRELEASED; urgency=medium
+
+  [ Hassan Khadour ]
+  * mlnx_tune: Define new redhat OSes in mlnx_tune
+
+  [ Maher Sanalla ]
+  * mlnx_qos: Seperate buffer_size from prio2buffer commands
+  * mlnx_qos: Do not skip first buffer size line
+
+  [ Mark Haywood ]
+  * mlnx_qos: Sort TCs in pretty_print to fix for python3
+
+  [ Vladimir Sokolovsky ]
+  * mlnx-sf: Fix show command
+
+  [ William Tu ]
+  * mlx_fs_dump: Fix python3 syntax warning
+  * mlx_fs_dump: Add metadata and ASO
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 13 Sep 2023 22:08:32 -0600
+
 mlnx-tools (23.07.1) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
