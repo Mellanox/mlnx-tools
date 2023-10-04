@@ -364,8 +364,8 @@ fi
 
 vsctl=`which ovs-vsctl 2> /dev/null`
 if [ ! -n "$vsctl" ]; then
-	echo "OVS is not installed"
-	exit 1
+	info "OVS is not installed. Skipping OVS bridges creation."
+	exit 0
 fi
 
 OVS_BRIDGE1=${OVS_BRIDGE1:-"ovsbr1"}
