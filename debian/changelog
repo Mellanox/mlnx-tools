@@ -1,3 +1,30 @@
+mlnx-tools (23.10)  UNRELEASED; urgency=medium
+
+  [ Dmytro Linkin ]
+  * tsbin/mlnx_bf_configure: Enable eswitch multiport
+  * mlnx-sf: Remove moving SF to switchdev mode
+  * mlnx-sf: Populate SF eswitch field if not available in output
+
+  [ Hareesh Puthalath ]
+  * tsbin/mlnx-sf: Added '--enable-eswitch' flag
+
+  [ Shmuel Shaul ]
+  * Update supported os list
+
+  [ Vladimir Sokolovsky ]
+  * tsbin/mlnx_bf_configure: Ignore set_steering_mode status
+  * tsbin/mlnx_bf_configure: Added timeout on rdma system set netns command
+  * tsbin/mlnx_bf_configure: Add retry for mlxconfig
+  * mlnx_bf_configure: Bring up OVS bridge interface
+  * mlnx_bf_configure: Change exit status if OVS is not installed
+  * Added license files
+
+  [ William Tu ]
+  * mlx_fs_dump: Add metadata and ASO
+  * mlx_fs_dump: Fix python3 syntax warning
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 04 Oct 2023 15:02:15 -0500
+
 mlnx-tools (23.07)  UNRELEASED; urgency=medium
 
   [ Tzafrir Cohen ]
