@@ -184,11 +184,6 @@ IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
 
-# Delete ovs bridges and tc ingress rules if any,
-# otherwise "devlink dev eswitch set .. mode" may return BUSY forever
-ovs-vsctl list-br 2>/dev/null | xargs -r -L 1 ovs-vsctl del-br
-for i in `ls -1 /sys/class/net/`; do tc filter del dev $i ingress &>/dev/null; done
-
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
 do
