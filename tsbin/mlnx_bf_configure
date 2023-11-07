@@ -278,10 +278,6 @@ if [ $num_of_devs -eq 0 ]; then
 	exit 0
 fi
 
-if [ -f /etc/mellanox/mlnx-sf.conf ]; then
-	. /etc/mellanox/mlnx-sf.conf
-fi
-
 # Configure the default OVS bridge
 if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
 	. /etc/mellanox/mlnx-ovs.conf
@@ -343,6 +339,21 @@ ovs_restart()
 }
 
 {
+if [ -f /etc/mellanox/mlnx-sf.conf ]; then
+    # Wait until NetworkManager is active to avoid race condition
+    SECONDS=0
+    while ! (systemctl is-active NetworkManager)
+    do
+        if [ $SECONDS -gt 60 ]; then
+            info "NetworkManager timeout"
+            exit $RC
+            break;
+        fi
+        sleep 0.1
+    done
+    . /etc/mellanox/mlnx-sf.conf
+fi
+
 SECONDS=0
 while ! ($vsctl show > /dev/null 2>&1)
 do
