@@ -451,7 +451,9 @@ do
 
 	if ($vsctl br-exists $br_name); then
 		info "bridge $br_name exist already."
-		ip link set $br_name up
+		if ! [[ $(uname -r) =~ "4.19" ]]; then
+			ip link set $br_name up
+		fi
 		continue
 	fi
 
@@ -495,7 +497,9 @@ do
 		$vsctl add-port $br_name $port
 		info "bridge $br_name: added port $port"
 	done
-	ip link set $br_name up
+	if ! [[ $(uname -r) =~ "4.19" ]]; then
+		ip link set $br_name up
+	fi
 
 done
 
