@@ -235,15 +235,10 @@ do
 					set_eswitch_mode ${dev} legacy
 					RC=$((RC+$?))
 				fi
-				ipsec_mode=`get_dev_param ${dev} ipsec_mode`
-				if [ "$ipsec_mode" != "none" ]; then
-					set_dev_param ${dev} ipsec_mode none
-				fi
 				steering_mode=`get_steering_mode ${dev}`
 				if [ "${steering_mode}" == "smfs" ]; then
 					set_steering_mode ${dev} dmfs
 				fi
-				set_dev_param ${dev} ipsec_mode full
 			else
 				info "Crypto disabled on this devide. Skipping IPsec mode configuration."
 			fi
