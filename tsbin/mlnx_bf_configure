@@ -160,6 +160,69 @@ set_dev_param()
 	return $rc
 }
 
+wait_for_netdev()
+{
+	port=$1
+	SECONDS=0
+	while ! [ -d /sys/class/net/$port ]
+	do
+		if [ $SECONDS -gt $OVS_BR_PORTS_TIMEOUT ]; then
+			break
+		fi
+		sleep 1
+	done
+}
+
+ovs_save_conf()
+{
+	ovs_brs=$(ovs-vsctl list-br)
+	
+	for ovs_br in $ovs_brs
+	do
+		eval ${ovs_br}_ports=\"$(ovs-vsctl list-ports $ovs_br | tr -s '[=\n=]' ' ')\"
+		info "Saved $ovs_br: $(eval echo \$$(echo ${ovs_br}_ports))"
+	done
+}
+
+ovs_delete_conf()
+{
+	for ovs_br in $ovs_brs
+	do
+		ovs-vsctl -t 10 del-br $ovs_br
+		rc=$?
+		if [ $rc -eq 0 ]; then
+			info "Removed $ovs_br"
+		else
+			error "Failed to remove $ovs_br"
+		fi
+	done
+
+	return $rc
+}
+
+ovs_restore_conf()
+{	
+	for ovs_br in $ovs_brs
+	do
+	    ovs_br_ports="$(eval echo \$$(echo ${ovs_br}_ports))"
+		$vsctl add-br $ovs_br
+		info "Created bridge: $ovs_br"
+		for port in $ovs_br_ports
+		do
+			wait_for_netdev $port
+			if [ -d /sys/class/net/$port ]; then
+				$vsctl add-port $ovs_br $port
+				info "bridge $ovs_br: added port $port"
+			else
+				info "port device $port for bridge $ovs_br is missing."
+			fi
+		done
+		ip link set $ovs_br up
+	done
+}
+
+vsctl=`which ovs-vsctl 2> /dev/null`
+
 is_SecureBoot=0
 if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
 	is_SecureBoot=1
@@ -183,6 +246,26 @@ fi
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
+
+if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
+	. /etc/mellanox/mlnx-ovs.conf
+fi
+
+OVS_CONF_SAVED=0
+OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
+
+if [ -n "$vsctl" ]; then
+	ovsbr_number=`$vsctl list-br | wc -l`
+	if [ $ovsbr_number -gt 0 ]; then
+		ovs_save_conf
+		if [ -n "$ovs_brs" ]; then
+			OVS_CONF_SAVED=1
+		fi
+	fi
+
+	ovs_delete_conf
+	for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
+fi
 
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
@@ -273,17 +356,12 @@ if [ $num_of_devs -eq 0 ]; then
 	exit 0
 fi
 
-# Configure the default OVS bridge
-if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
-	. /etc/mellanox/mlnx-ovs.conf
-fi
-
-vsctl=`which ovs-vsctl 2> /dev/null`
 if [ ! -n "$vsctl" ]; then
 	info "OVS is not installed. Skipping OVS bridges creation."
 	exit 0
 fi
 
+# Configure the default OVS bridge
 OVS_BRIDGE1=${OVS_BRIDGE1:-"ovsbr1"}
 OVS_BRIDGE1_PORTS=${OVS_BRIDGE1_PORTS:-"p0 pf0hpf en3f0pf0sf0"}
 OVS_BRIDGE2=${OVS_BRIDGE2:-"ovsbr2"}
@@ -359,76 +437,74 @@ do
 	sleep 1
 done
 
-ovsbr_number=`$vsctl list-br | wc -l`
-if [ $ovsbr_number -gt 0 ]; then
-	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"'); then
-		ovs_restart
-	fi
-	exit $RC
-fi
-
-CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
-if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
-	exit $RC
-fi
-
-OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
-for i in `seq $num_of_devs`
-do
-	br_name=OVS_BRIDGE${i}
-	br_name=${!br_name}
-	br_ports=OVS_BRIDGE${i}_PORTS
-	br_ports=${!br_ports}
-
-	if ($vsctl br-exists $br_name); then
-		info "bridge $br_name exist already."
-		ip link set $br_name up
-		continue
+if [[ $OVS_CONF_SAVED -eq 1 && "$OVS_CONF_RESTORE" == "yes" ]]; then
+	info "Restoring original OVS configuration"
+	ovs_restore_conf
+else
+	ovsbr_number=`$vsctl list-br | wc -l`
+	if [ $ovsbr_number -gt 0 ]; then
+		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"'); then
+			ovs_restart
+		fi
+		exit $RC
 	fi
 
-	missing_port=0
-	ovs_br_ports=""
-	for port in $br_ports
+	CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
+	if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
+		exit $RC
+	fi
+
+	OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
+	for i in `seq $num_of_devs`
 	do
-		SECONDS=0
-		while ! [ -d /sys/class/net/$port ]
+		br_name=OVS_BRIDGE${i}
+		br_name=${!br_name}
+		br_ports=OVS_BRIDGE${i}_PORTS
+		br_ports=${!br_ports}
+
+		if ($vsctl br-exists $br_name); then
+			info "bridge $br_name exist already."
+			ip link set $br_name up
+			continue
+		fi
+
+		missing_port=0
+		ovs_br_ports=""
+		for port in $br_ports
 		do
-			if [ $SECONDS -gt $OVS_BR_PORTS_TIMEOUT ]; then
-				break
+			wait_for_netdev $port
+
+			if [ -d /sys/class/net/$port ]; then
+				ovs_br_ports="$ovs_br_ports $port"
+			else
+				info "port device $port for bridge $br_name is missing."
+				case $port in
+					pf*sf*)
+						info "RDMA functionality is not expected to work without $port in $br_name"
+					;;
+					*)
+						missing_port=$((missing_port+1))
+					;;
+				esac
 			fi
-			sleep 1
 		done
 
-		if [ -d /sys/class/net/$port ]; then
-			ovs_br_ports="$ovs_br_ports $port"
-		else
-			info "port device $port for bridge $br_name is missing."
-			case $port in
-				pf*sf*)
-					info "RDMA functionality is not expected to work without $port in $br_name"
-				;;
-				*)
-					missing_port=$((missing_port+1))
-				;;
-			esac
+		if [ $missing_port -gt 0 ]; then
+			info "Skipping $br_name configuration."
+			continue
 		fi
+
+		$vsctl add-br $br_name
+		info "Created bridge: $br_name"
+		for port in $ovs_br_ports
+		do
+			$vsctl add-port $br_name $port
+			info "bridge $br_name: added port $port"
+		done
+		ip link set $br_name up
+
 	done
-
-	if [ $missing_port -gt 0 ]; then
-		info "Skipping $br_name configuration."
-		continue
-	fi
-
-	$vsctl add-br $br_name
-	info "Created bridge: $br_name"
-	for port in $ovs_br_ports
-	do
-		$vsctl add-port $br_name $port
-		info "bridge $br_name: added port $port"
-	done
-	ip link set $br_name up
-
-done
+fi
 
 if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 	$vsctl set Open_vSwitch . Other_config:hw-offload=true
