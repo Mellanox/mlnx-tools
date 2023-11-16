@@ -338,6 +338,11 @@ do
 	fi
 done
 
+if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
+	info "Running in chroot environment. Exiting..."
+	exit 0
+fi
+
 if [ $RC -ne 0 ]; then
 	error "Exiting due to failures. RC=$RC"
 	exit $RC
