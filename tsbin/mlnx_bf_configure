@@ -104,11 +104,19 @@ get_eswitch_mode()
 	devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
 }
 
+flush_ipsec_rules()
+{
+	ip xfrm state flush
+	ip xfrm policy flush
+}
+
 set_eswitch_mode()
 {
 	pci_dev=$1
 	mode=$2
 	shift 2
+
+	flush_ipsec_rules
 
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
 	if [ -n "$compat" ]; then
