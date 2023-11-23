@@ -110,6 +110,14 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
+	# Stop strongSwan temporarily if it's active to remove the offloaded IPsec bypass policies
+	# This is done so we can change the eswtich mode
+	systemctl is-active --quiet strongswan.service
+	strongswan_active=$?
+	if [ "$strongswan_active" -eq "0" ]; then
+		systemctl stop strongswan.service
+	fi
+
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
 	if [ -n "$compat" ]; then
 		echo ${mode} > ${compat}
@@ -121,6 +129,11 @@ set_eswitch_mode()
 		error "Failed to configure ${mode} mode for ${pci_dev}"
 	else
 		info "Configured ${mode} mode for ${pci_dev}"
+	fi
+
+	# Start strongSwan again if it was active
+	if [ "$strongswan_active" -eq "0" ]; then
+		systemctl start strongswan.service
 	fi
 
 	return $rc
