@@ -31,6 +31,7 @@ PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:
 CT_MAX_OFFLOADED_CONNS=${CT_MAX_OFFLOADED_CONNS:-1000000}
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-60}
+SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 
 RC=0
 
@@ -80,17 +81,27 @@ set_steering_mode()
 	mode=$2
 	shift 2
 
+	rc=1
+	i=0
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
-	else
-		devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
-	fi
-	rc=$?
+	while [ $rc -ne 0 ]
+	do
+		if [ -n "$compat" ]; then
+			echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
+		else
+			devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
+		fi
+		rc=$?
+		let i++
+		if [ $i -gt $SET_MODE_RETRY_NUM ]; then
+			break
+		fi
+		sleep 1
+	done
 	if [ $rc -ne 0 ]; then
-		error "Failed to configure steering mode ${mode} for ${pci_dev}"
+		error "Failed to configure steering mode ${mode} for ${pci_dev} after $i retries"
 	else
-		info "Configured mode steering ${mode} for ${pci_dev}"
+		info "Configured mode steering ${mode} for ${pci_dev} on try: $i"
 	fi
 
 	return $rc
@@ -117,18 +128,27 @@ set_eswitch_mode()
 	if [ "$strongswan_active" -eq "0" ]; then
 		systemctl stop strongswan.service
 	fi
-
+	rc=1
+	i=0
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${mode} > ${compat}
-	else
-		devlink dev eswitch set pci/${pci_dev} mode ${mode}
-	fi
-	rc=$?
+	while [ $rc -ne 0 ]
+	do
+		if [ -n "$compat" ]; then
+			echo ${mode} > ${compat}
+		else
+			devlink dev eswitch set pci/${pci_dev} mode ${mode}
+		fi
+		rc=$?
+		let i++
+		if [ $i -gt $SET_MODE_RETRY_NUM ]; then
+			break
+		fi
+		sleep 1
+	done
 	if [ $rc -ne 0 ]; then
-		error "Failed to configure ${mode} mode for ${pci_dev}"
+		error "Failed to configure ${mode} mode for ${pci_dev} after $i retries"
 	else
-		info "Configured ${mode} mode for ${pci_dev}"
+		info "Configured ${mode} mode for ${pci_dev} on try: $i"
 	fi
 
 	# Start strongSwan again if it was active
