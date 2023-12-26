@@ -284,6 +284,8 @@ class Unit:
 		return float(value * Unit.unit_to_ratio[original_unit]) / Unit.unit_to_ratio[wanted_unit]
 
 class OS:
+	ALINUX3_2			= "ALINUX3.2"
+	ANOLIS8_6			= "ANOLIS8.6"
 	CENTOS6_3			= "CentOS6.3"
 	CENTOS6_10			= "CentOS6.10"
 	CENTOS7_2			= "CentOS7.2"
@@ -293,23 +295,49 @@ class OS:
 	CENTOS7_6			= "CentOS7.6"
 	CENTOS7_7			= "CentOS7.7"
 	CENTOS7_8			= "CentOS7.8"
+	CENTOS7_9			= "CentOS7.9"
 	CENTOS8_0			= "CentOS8.0"
 	CENTOS8_1			= "CentOS8.1"
+	CENTOS8_2			= "CentOS8.2"
+	CENTOS8_3			= "CentOS8.3"
+	CENTOS8_4			= "CentOS8.4"
+	CTYUNOS2_0			= "CTYUNOS2.0"
+	CTYUNOS23_01			= "CTYUNOS23.01"
 	DEBIAN8_9			= "Debian8.9"
 	DEBIAN8_11			= "Debian8.11"
 	DEBIAN9_6			= "Debian9.6"
 	DEBIAN9_9			= "Debian9.9"
 	DEBIAN9_11			= "Debian9.11"
+	DEBIAN9_13			= "Debian9.13"
 	DEBIAN10_0			= "Debian10.0"
-	EULEROS2_0_3			= "EulerOS2.0sp3"
-	EULEROS2_0_8			= "EulerOS2.0sp8"
+	DEBIAN10_8			= "Debian10.8"
+	DEBIAN10_9			= "Debian10.9"
+	DEBIAN10_13			= "Debian10.13"
+	DEBIAN11_3			= "Debian11.3"
+	DEBIAN12_1			= "Debian12.1"
+	EULEROS2_0_3			= "EulerOS2.0"
+	EULEROS2_0_8			= "EulerOS2.0"
+	EULEROS2_0_10			= "EulerOS2.0"
+	EULEROS2_0_11			= "EulerOS2.0"
+	EULEROS2_0_12			= "EulerOS2.0"
 	FEDORA30			= "Fedora30"
+	FEDORA32			= "Fedora32"
 	OL6_10				= "OL6.10"
 	OL7_4				= "OL7.4"
 	OL7_7				= "OL7.7"
 	OL7_8				= "OL7.8"
+	OL7_9				= "OL7.9"
 	OL8_0				= "OL8.0"
 	OL8_1				= "OL8.1"
+	OL8_4				= "OL8.4"
+	OL8_6				= "OL8.6"
+	OL8_7				= "OL8.7"
+	OL8_8				= "OL8.8"
+	OL9_0				= "OL9.0"
+	OL9_1				= "OL9.1"
+	OL9_2				= "OL9.2"
+	OPENEULER20_03SP3				= "OPENEULER20.03"
+	OPENEULER22_03				= "OPENEULER22.03"
 	RH6_3				= "RHEL6.3"
 	RH6_10				= "RHEL6.10"
 	RH7_2				= "RHEL7.2"
@@ -334,9 +362,24 @@ class OS:
 	RH9_1				= "RHEL9.1"
 	RH9_2				= "RHEL9.2"
 	RH9_3				= "RHEL9.3"
+	ROCKY8_5				= "Rocky8.5"
+	ROCKY8_6				= "Rocky8.6"
+	ROCKY8_7				= "Rocky8.7"
+	ROCKY8_8				= "Rocky8.8"
+	ROCKY8_9				= "Rocky8.9"
+	ROCKY9_0				= "Rocky9.0"
+	ROCKY9_1				= "Rocky9.1"
+	ROCKY9_2				= "Rocky9.2"
+	ROCKY9_3				= "Rocky9.3"
 	SLES11				= "SLES11"
 	SLES12				= "SLES12"
+	SLES12SP4				= "SLES12.4"
+	SLES12SP5				= "SLES12.5"
 	SLES15				= "SLES15"
+	SLES15SP2				= "SLES15.2"
+	SLES15SP3				= "SLES15.3"
+	SLES15SP4				= "SLES15.4"
+	SLES15SP5				= "SLES15.5"
 	UBUNTU14_04			= "Ubuntu14.04"
 	UBUNTU16_04			= "Ubuntu16.04"
 	UBUNTU18_04			= "Ubuntu18.04"
@@ -345,7 +388,9 @@ class OS:
 	UBUNTU20_04			= "Ubuntu20.04"
 	UBUNTU20_10			= "Ubuntu20.10"
 	UBUNTU22_04         = "Ubuntu22.04"
+	UBUNTU23_04         = "Ubuntu23.04"
 	UBUNTU23_10         = "Ubuntu23.10"
+	UOS20         = "UOS20"
 	ESX				= "ESX"
 	WIN				= "WIN"
 	FREEBSD				= "FREEBSD"
@@ -355,12 +400,17 @@ class OS:
 	UNKNOWN				= "UNKNOWN"
 	ALL				= "ALL"
 	SUPPORTED_OS = [
-		CENTOS6_3, CENTOS6_10, CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7,
-        CENTOS7_8, CENTOS8_0, CENTOS8_1, DEBIAN8_9, DEBIAN8_11, DEBIAN9_6, DEBIAN9_9, DEBIAN9_11,
-        DEBIAN10_0, EULEROS2_0_3, EULEROS2_0_8, FEDORA30, OL6_10, OL7_4, OL7_7, OL7_8, OL8_0, OL8_1,
+		ALINUX3_2, ANOLIS8_6, CENTOS6_3, CENTOS6_10, CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5,
+		CENTOS7_6, CENTOS7_7, CENTOS7_8, CENTOS8_0, CENTOS8_1, CTYUNOS2_0, CTYUNOS23_01,
+		DEBIAN8_9, DEBIAN8_11, DEBIAN9_6, DEBIAN9_9, DEBIAN9_11, DEBIAN9_13, DEBIAN10_0, DEBIAN10_13,
+		EULEROS2_0_3, EULEROS2_0_8, EULEROS2_0_10, EULEROS2_0_11, EULEROS2_0_12, 
+		FEDORA30, FEDORA32, OL6_10, OL7_4, OL7_7, OL7_8, OL8_0, OL8_1, OPENEULER20_03SP3, OPENEULER22_03,
         RH6_3, RH6_10, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2,
-        RH8_3, RH8_4, RH8_5, RH8_6, RH8_7, RH8_8, RH8_9, RH9_0, RH9_1, RH9_2, RH9_3, SLES11, SLES12, SLES15, UBUNTU14_04,
-        UBUNTU16_04, UBUNTU18_04, UBUNTU19_04, UBUNTU19_10, UBUNTU20_04, UBUNTU20_10, UBUNTU22_04, UBUNTU23_10
+        RH8_3, RH8_4, RH8_5, RH8_6, RH8_7, RH8_8, RH8_9, RH9_0, RH9_1, RH9_2, RH9_3,
+		ROCKY8_5, ROCKY8_6, ROCKY8_7, ROCKY8_8, ROCKY8_9, ROCKY9_0, ROCKY9_1, ROCKY9_2, ROCKY9_3,
+		SLES11, SLES12, SLES12SP4, SLES12SP5, SLES15, SLES15SP2, SLES15SP3, SLES15SP4, SLES15SP5,
+		UBUNTU14_04, UBUNTU16_04, UBUNTU18_04, UBUNTU19_04, UBUNTU19_10, UBUNTU20_04, UBUNTU20_10,
+		UBUNTU22_04, UBUNTU23_10, UBUNTU23_04, UOS20
 		]
 	SYSTEMCTL_ACCESS_OS = [
 		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
@@ -412,6 +462,14 @@ class OS:
 				return "SLES" + os_version
 			if 'oracle' in linux_dist:
 				return "OL" + os_version
+			if "debian" in linux_dist:
+				return "Debian" + os_version
+			if "centos" in linux_dist:
+				return "CentOS" + os_version
+			if "rocky" in linux_dist:
+				return "Rocky" + os_version
+			if "openeuler" in linux_dist:
+				return "OPENEULER" + os_version
 			if linux_dist == "freebsd":
 				return OS.FREEBSD
 			if linux_dist == "ibm_powerkvm":
