@@ -1,3 +1,7 @@
+mlnx-tools (24.01)  UNRELEASED; urgency=medium
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Mon, 08 Jan 2024 12:30:27 -0500
+
 mlnx-tools (23.10)  UNRELEASED; urgency=medium
 
   [ Dmytro Linkin ]
