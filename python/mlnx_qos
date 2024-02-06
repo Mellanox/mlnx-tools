@@ -401,6 +401,12 @@ if (options.dcbx != None):
 # ********* pfc command ******************************
 if options.cable_len:
 	pfc_delay = parse_int(options.cable_len, 0, 0xffff, "cable_len")
+	pfc_en = ctrl.get_ieee_pfc_en()
+	try:
+		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
+	except OSError as e:
+		print('mlnx_qos: Error setting pfc delay:' + e)
+		sys.exit(1)
 
 if options.pfc:
 	i = 0
@@ -419,12 +425,11 @@ if options.pfc:
 	if i != 8:
 		print("pfc list must have 8 items")
 		sys.exit(1)
-
-if options.cable_len or options.pfc:
 	try:
+		pfc_delay = ctrl.get_ieee_pfc_delay()
 		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
 	except OSError as e:
-		print(e)
+		print('mlnx_qos: Error setting pfc:' + e)
 		sys.exit(1)
 
 # ********* dscp2prio command ******************************
