@@ -103,22 +103,16 @@ XPS_AFFINITY_MASK_CMD				= "cat /sys/class/net/%s/queues/tx-%s/xps_cpus"
 FIND_INTERFACES_FROM_PCI_BUS_CMD		= "ls /sys/bus/pci/devices/*%s/net/"
 GET_DEV_ID_FROM_PCI_BUS_CMD			= "cat /sys/bus/pci/devices/*%s/device"
 GET_DEV_FW_FROM_MLX_DEVICE			= "cat /sys/class/infiniband/%s/fw_ver"
-FW_VERSION_FROM_PCI				= "cat /sys/bus/pci/devices/0000:%s:%s/infiniband/mlx*_*/fw_ver"
-FW_VERSION_FROM_PCI_PPC				= "cat /sys/bus/pci/devices/%s:%s:%s/infiniband/mlx*_*/fw_ver"
-FW_VERSION_FROM_PCI_PPC_NEW_FORMAT		= "cat /sys/bus/pci/devices/0000:%s:%s.%s/infiniband/mlx*_*/fw_ver"
-RDMA_DEVICE_FROM_PCI				= "ls /sys/bus/pci/devices/0000:%s:%s/infiniband/"
-RDMA_DEVICE_FROM_PCI_PPC			= "ls /sys/bus/pci/devices/%s:%s:%s/infiniband/"
-RDMA_DEVICE_FROM_PCI_PPC_NEW_FORMAT		= "ls /sys/bus/pci/devices/0000:%s:%s.%s/infiniband/"
+FW_VERSION_FROM_PCI				= "cat /sys/bus/pci/devices/%s/infiniband/mlx*_*/fw_ver"
+RDMA_DEVICE_FROM_PCI				= "ls /sys/bus/pci/devices/%s/infiniband/"
 INTERFACE_STATUS_CMD				= "cat /sys/class/net/%s/carrier"
 INTERFACE_MTU_CMD				= "cat /sys/class/net/%s/mtu"
 INTERFACE_PORT_CMD				= "cat /sys/class/net/%s/dev_id"
 INTERFACE_INDEX_CMD				= "cat /sys/class/net/%s/ifindex"
 INTERFACE_SPEED_CMD				= "cat /sys/class/net/%s/speed"
-GET_PORT_LINK_TYPE_CMD_MLX4			= "cat /sys/bus/pci/drivers/mlx4_core/0000:%s:%s/mlx4_port%s"
-GET_PORT_LINK_TYPE_CMD_MLX4_PPC			= "cat /sys/bus/pci/drivers/mlx4_core/%s:%s:%s/mlx4_port%s"
-IS_PORT_LINK_TYPE_IB_CMD_MLX5			= "ls /sys/bus/pci/drivers/mlx5_core/0000:%s:%s/net/%s/mode"
-IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC		= "ls /sys/bus/pci/drivers/mlx5_core/%s:%s:%s/net/%s/mode"
-IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC_NEW_FORMAT	= "ls /sys/bus/pci/drivers/mlx5_core/0000:%s:%s.%s/net/%s/mode"
+GET_PORT_LINK_TYPE_CMD_MLX4			= "cat /sys/bus/pci/drivers/mlx4_core/%s/mlx4_port%s"
+IS_PORT_LINK_TYPE_IB_CMD_MLX5			= "ls /sys/bus/pci/drivers/mlx5_core/%s/net/%s/mode"
+
 
 NUMA_SUPPORT_CMD				= "cat /sys/bus/pci/devices/*%s/numa_node"
 LOCAL_CPUS_CMD					= "cat /sys/bus/pci/devices/*%s/local_cpulist"
@@ -284,113 +278,6 @@ class Unit:
 		return float(value * Unit.unit_to_ratio[original_unit]) / Unit.unit_to_ratio[wanted_unit]
 
 class OS:
-	ALINUX3_2			= "ALINUX3.2"
-	ANOLIS8_6			= "ANOLIS8.6"
-	CENTOS6_3			= "CentOS6.3"
-	CENTOS6_10			= "CentOS6.10"
-	CENTOS7_2			= "CentOS7.2"
-	CENTOS7_3			= "CentOS7.3"
-	CENTOS7_4			= "CentOS7.4"
-	CENTOS7_5			= "CentOS7.5"
-	CENTOS7_6			= "CentOS7.6"
-	CENTOS7_7			= "CentOS7.7"
-	CENTOS7_8			= "CentOS7.8"
-	CENTOS7_9			= "CentOS7.9"
-	CENTOS8_0			= "CentOS8.0"
-	CENTOS8_1			= "CentOS8.1"
-	CENTOS8_2			= "CentOS8.2"
-	CENTOS8_3			= "CentOS8.3"
-	CENTOS8_4			= "CentOS8.4"
-	CTYUNOS2_0			= "CTYUNOS2.0"
-	CTYUNOS23_01			= "CTYUNOS23.01"
-	DEBIAN8_9			= "Debian8.9"
-	DEBIAN8_11			= "Debian8.11"
-	DEBIAN9_6			= "Debian9.6"
-	DEBIAN9_9			= "Debian9.9"
-	DEBIAN9_11			= "Debian9.11"
-	DEBIAN9_13			= "Debian9.13"
-	DEBIAN10_0			= "Debian10.0"
-	DEBIAN10_8			= "Debian10.8"
-	DEBIAN10_9			= "Debian10.9"
-	DEBIAN10_13			= "Debian10.13"
-	DEBIAN11_3			= "Debian11.3"
-	DEBIAN12_1			= "Debian12.1"
-	EULEROS2_0_3			= "EulerOS2.0"
-	EULEROS2_0_8			= "EulerOS2.0"
-	EULEROS2_0_10			= "EulerOS2.0"
-	EULEROS2_0_11			= "EulerOS2.0"
-	EULEROS2_0_12			= "EulerOS2.0"
-	FEDORA30			= "Fedora30"
-	FEDORA32			= "Fedora32"
-	OL6_10				= "OL6.10"
-	OL7_4				= "OL7.4"
-	OL7_7				= "OL7.7"
-	OL7_8				= "OL7.8"
-	OL7_9				= "OL7.9"
-	OL8_0				= "OL8.0"
-	OL8_1				= "OL8.1"
-	OL8_4				= "OL8.4"
-	OL8_6				= "OL8.6"
-	OL8_7				= "OL8.7"
-	OL8_8				= "OL8.8"
-	OL9_0				= "OL9.0"
-	OL9_1				= "OL9.1"
-	OL9_2				= "OL9.2"
-	OPENEULER20_03SP3				= "OPENEULER20.03"
-	OPENEULER22_03				= "OPENEULER22.03"
-	RH6_3				= "RHEL6.3"
-	RH6_10				= "RHEL6.10"
-	RH7_2				= "RHEL7.2"
-	RH7_3				= "RHEL7.3"
-	RH7_4				= "RHEL7.4"
-	RH7_5				= "RHEL7.5"
-	RH7_6				= "RHEL7.6"
-	RH7_7				= "RHEL7.7"
-	RH7_8				= "RHEL7.8"
-	RH7_9				= "RHEL7.9"
-	RH8_0				= "RHEL8.0"
-	RH8_1				= "RHEL8.1"
-	RH8_2				= "RHEL8.2"
-	RH8_3				= "RHEL8.3"
-	RH8_4				= "RHEL8.4"
-	RH8_5				= "RHEL8.5"
-	RH8_6				= "RHEL8.6"
-	RH8_7				= "RHEL8.7"
-	RH8_8				= "RHEL8.8"
-	RH8_9				= "RHEL8.9"
-	RH9_0				= "RHEL9.0"
-	RH9_1				= "RHEL9.1"
-	RH9_2				= "RHEL9.2"
-	RH9_3				= "RHEL9.3"
-	ROCKY8_5				= "Rocky8.5"
-	ROCKY8_6				= "Rocky8.6"
-	ROCKY8_7				= "Rocky8.7"
-	ROCKY8_8				= "Rocky8.8"
-	ROCKY8_9				= "Rocky8.9"
-	ROCKY9_0				= "Rocky9.0"
-	ROCKY9_1				= "Rocky9.1"
-	ROCKY9_2				= "Rocky9.2"
-	ROCKY9_3				= "Rocky9.3"
-	SLES11				= "SLES11"
-	SLES12				= "SLES12"
-	SLES12SP4				= "SLES12.4"
-	SLES12SP5				= "SLES12.5"
-	SLES15				= "SLES15"
-	SLES15SP2				= "SLES15.2"
-	SLES15SP3				= "SLES15.3"
-	SLES15SP4				= "SLES15.4"
-	SLES15SP5				= "SLES15.5"
-	UBUNTU14_04			= "Ubuntu14.04"
-	UBUNTU16_04			= "Ubuntu16.04"
-	UBUNTU18_04			= "Ubuntu18.04"
-	UBUNTU19_04			= "Ubuntu19.04"
-	UBUNTU19_10			= "Ubuntu19.10"
-	UBUNTU20_04			= "Ubuntu20.04"
-	UBUNTU20_10			= "Ubuntu20.10"
-	UBUNTU22_04         = "Ubuntu22.04"
-	UBUNTU23_04         = "Ubuntu23.04"
-	UBUNTU23_10         = "Ubuntu23.10"
-	UOS20         = "UOS20"
 	ESX				= "ESX"
 	WIN				= "WIN"
 	FREEBSD				= "FREEBSD"
@@ -399,30 +286,6 @@ class OS:
 	UEFI				= "UEFI"
 	UNKNOWN				= "UNKNOWN"
 	ALL				= "ALL"
-	SUPPORTED_OS = [
-		ALINUX3_2, ANOLIS8_6, CENTOS6_3, CENTOS6_10, CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5,
-		CENTOS7_6, CENTOS7_7, CENTOS7_8, CENTOS8_0, CENTOS8_1, CTYUNOS2_0, CTYUNOS23_01,
-		DEBIAN8_9, DEBIAN8_11, DEBIAN9_6, DEBIAN9_9, DEBIAN9_11, DEBIAN9_13, DEBIAN10_0, DEBIAN10_13,
-		EULEROS2_0_3, EULEROS2_0_8, EULEROS2_0_10, EULEROS2_0_11, EULEROS2_0_12, 
-		FEDORA30, FEDORA32, OL6_10, OL7_4, OL7_7, OL7_8, OL8_0, OL8_1, OPENEULER20_03SP3, OPENEULER22_03,
-        RH6_3, RH6_10, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2,
-        RH8_3, RH8_4, RH8_5, RH8_6, RH8_7, RH8_8, RH8_9, RH9_0, RH9_1, RH9_2, RH9_3,
-		ROCKY8_5, ROCKY8_6, ROCKY8_7, ROCKY8_8, ROCKY8_9, ROCKY9_0, ROCKY9_1, ROCKY9_2, ROCKY9_3,
-		SLES11, SLES12, SLES12SP4, SLES12SP5, SLES15, SLES15SP2, SLES15SP3, SLES15SP4, SLES15SP5,
-		UBUNTU14_04, UBUNTU16_04, UBUNTU18_04, UBUNTU19_04, UBUNTU19_10, UBUNTU20_04, UBUNTU20_10,
-		UBUNTU22_04, UBUNTU23_10, UBUNTU23_04, UOS20
-		]
-	NO_SYSTEMD_OS = [CENTOS6_3, CENTOS6_10, RH6_3, RH6_10, SLES11, UBUNTU14_04]
-	SUSE = [SLES11, SLES12, SLES15]
-	PPC_DEVICE_NEW_FORMAT_OS = [
-		CENTOS7_2, CENTOS7_3, CENTOS7_4, CENTOS7_5, CENTOS7_6, CENTOS7_7, CENTOS8_0,
-		CENTOS8_1, RH7_2, RH7_3, RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2,
-		]
-	NO_IPV6_FORWARDING_SUPPORT_OS = [UBUNTU14_04]
-	TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS = [
-		RH7_4, RH7_5, RH7_6, RH7_7, RH7_8, RH7_9, RH8_0, RH8_1, RH8_2
-		]
-
 
 	def get_os(self):
 		""" Return local OS Type
@@ -441,57 +304,27 @@ class OS:
 			return OS.SUNOS
 
 		try:
-			import distro
-		except ImportError:
-			import platform as distro
-
-		platform_dist = distro.linux_distribution()
-
-		if os_platform == "linux":
-			linux_dist = platform_dist[0].lower()
+			platform_dist = platform.linux_distribution()
+		except AttributeError:
 			try:
-				os_version = platform_dist[1]
-			except IndexError as err:
-				os_version = ""
-			if any(dist in linux_dist for dist in ['redhat', 'red hat']):
-				return "RHEL" + os_version
-			if 'suse' in linux_dist:
-				return "SLES" + os_version
-			if 'oracle' in linux_dist:
-				return "OL" + os_version
-			if "debian" in linux_dist:
-				return "Debian" + os_version
-			if "centos" in linux_dist:
-				return "CentOS" + os_version
-			if "rocky" in linux_dist:
-				return "Rocky" + os_version
-			if "openeuler" in linux_dist:
-				return "OPENEULER" + os_version
-			if linux_dist == "freebsd":
-				return OS.FREEBSD
-			if linux_dist == "ibm_powerkvm":
-				return OS.POWER_KVM
-			if linux_dist == 'xenserver':
-				if os_version == '6.5.0':
-					return OS.XENSERVER6_5
-				if os_version == '7.1.0':
-					return OS.XENSERVER7_1
+				from distro import linux_distribution
+				platform_dist = linux_distribution()
+			except ImportError:
+				print("python3 module 'distro' is needed")
+				exit()
 
-		return platform_dist[0] + os_version
+		dist = platform_dist[0]
+		try:
+			os_version = platform_dist[1]
+		except IndexError as err:
+			os_version = ""
+
+		return dist + os_version
 
 	def get_kernel(self):
 		""" Return kernel version.
 		"""
 		return platform.release()
-
-	def is_supported_system (self):
-		""" Check if the local OS,ARCH is in the given supportedOSlist and supportedARCHs
-		    return True if true, Otherwise UnkownSystemError is raised.
-		"""
-		currentOS = self.get_os()
-		if currentOS in OS.SUPPORTED_OS:
-			return True
-		return False
 
 class DeviceType:
 	""" A class describing A Mellanox device
@@ -683,6 +516,7 @@ class OsInfo:
 		logging.info("Collecting OS information")
 		self.name		= OS().get_os()
 		self.kernel		= OS().get_kernel()
+		self.support_systemctl = self.is_systemctl_supported()
 
 	def __str__ (self):
 		global INDENT
@@ -734,6 +568,20 @@ class OsInfo:
 			kernel_modules_to_unload = list([kernel_module for kernel_module in self.kernel_modules if kernel_module.name in KernelModule.REMOVE_FOR_VMA and kernel_module.is_loaded()])
 			for kernel_module in kernel_modules_to_unload:
 				kernel_module.unload()
+
+	def is_suse11(self):
+		if "SLES11" in self.name:
+			return True
+		return False
+
+	def is_systemctl_supported(self):
+		cmd = "which systemctl"
+
+		rc, output = run_command(cmd)
+
+		if rc:
+			return False
+		return True
 
 class Cpu:
 	""" Describes the system's CPU
@@ -1370,14 +1218,6 @@ class Service(object):
 		print("%s Status"%self.to_presentation_name())
 		print("%s"%self.status)
 
-	def is_supported(self, node_info):
-		""" Checks if the service is supported by the current OS
-		"""
-		if OS.ALL not in self.supporting_os and node_info.os.name not in self.supporting_os:
-			logging.debug("'%s' service isn't supported on '%s'."%(self.to_presentation_name(), node_info.os.name))
-			return False
-		return True
-
 	def is_active(self):
 		""" Checks if the service is currently active
 		"""
@@ -1390,17 +1230,13 @@ class Service(object):
 		    returns ACTIVE or INACTIVE according to the service state.
 		    any status except for 'running' is treated as 'inactive'.
 		"""
-		if not self.is_supported(node_info):
-			self.status = Status.NOT_SUPPORTED
-			return
-
 		logging.info("Collecting %s information"%self.to_presentation_name())
-		if not node_info.os.name in OS.NO_SYSTEMD_OS:
+		if node_info.os.support_systemctl:
 			status_cmd = "%s is-active %s.service"%(Service.SYSTEMCTL, self.name)
 			exists_cmd = ""
 		else:
-			status_cmd = "%s status"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
-			exists_cmd = "ls -l %s"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+			status_cmd = "%s status"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.is_suse11()]))
+			exists_cmd = "ls -l %s"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.is_suse11()]))
 
 		if exists_cmd:
 			(rc, output) = run_command_warn_when_fail(exists_cmd, warning_message="Unable to check service %s existence" % self.name)
@@ -1424,10 +1260,10 @@ class Service(object):
 			logging.debug("Can only stop active services. %s status is %s"%(self.name, self.status))
 			return
 
-		if not node_info.os.name in OS.NO_SYSTEMD_OS:
+		if node_info.os.support_systemctl:
 			cmd = "%s stop %s.service"%(Service.SYSTEMCTL, self.name)
 		else:
-			cmd = "%s stop"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+			cmd = "%s stop"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.is_suse11()]))
 		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to stop %s service"%self.name)
 		if (not rc):
 			self.read_status(node_info)
@@ -1439,10 +1275,10 @@ class Service(object):
 			logging.debug("Can only start inactive services. %s status is %s"%(self.name, self.status))
 			return
 
-		if not node_info.os.name in OS.NO_SYSTEMD_OS:
+		if node_info.os.support_systemctl:
 			cmd = "%s start %s.service"%(Service.SYSTEMCTL, self.name)
 		else:
-			cmd = "%s start"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.name in OS.SUSE]))
+			cmd = "%s start"%(os.path.join(Service.SERVICE_PATH, (self.name, self.to_suse())[node_info.os.is_suse11()]))
 		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to start %s service"%self.name)
 		if (not rc):
 			self.read_status(node_info)
@@ -1455,13 +1291,13 @@ class IpTable(Service):
 	def flush(self, node_info, table = None):
 		""" Flushes IP tables. If table name is given, flushes the table.
 		"""
-		cmd = "%s%s -F"%((self.name, self.to_suse())[node_info.os.name in OS.SUSE], ("", " -t %s"%table)[self.is_valid_table_name(table)])
+		cmd = "%s%s -F"%((self.name, self.to_suse())[node_info.os.is_suse11()], ("", " -t %s"%table)[self.is_valid_table_name(table)])
 		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to flush %s%s"%(self.name, ("", " (table=%s)"%table)[self.is_valid_table_name(table)]))
 
 	def delete_chain(self, node_info, table = None):
 		""" Deletes chains in IP tables. If table name is given, deletes chains in the table.
 		"""
-		cmd = "%s %s -X"%((self.name, self.to_suse())[node_info.os.name in OS.SUSE], ("", "-t %s"%table)[self.is_valid_table_name(table)])
+		cmd = "%s %s -X"%((self.name, self.to_suse())[node_info.is_suse11()], ("", "-t %s"%table)[self.is_valid_table_name(table)])
 		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to delete chain in  %s%s"%(self.name, ("", " (table=%s)"%table)[self.is_valid_table_name(table)]))
 
 	def is_valid_table_name(self, table):
@@ -1521,7 +1357,7 @@ class Firewall:
 	def stop(self, node_info):
 		""" stop the firewall
 		"""
-		if node_info.os.name in OS.SUSE:
+		if node_info.os.is_suse11():
 			cmd = Service.FIREWALL_SUSE%'stop'
 			(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to stop firewall.")
 		else:
@@ -1800,6 +1636,7 @@ class RingInfo:
 		"""
 		cmd = XPS_AFFINITY_MASK_CMD%(interface_name, self.number)
 		( rc, mask ) = run_command_warn_when_fail(cmd, shell=True, warning_message="Unable to set XPS affinity mask to interface_name: %s ring: %s."%(interface_name, self.number))
+		print("%s \n\n"% cmd)
 		self.xps_mask = mask
 
 	def get_irqs(self, interface_name, ring_number=None):
@@ -2132,11 +1969,12 @@ class EthInterfaceInfo(InterfaceInfo):
 	def disable_qdisc_tx(self, node_info):
 		""" Disable QDISC tx queue. Use no queue method for supporting OS or set to 0 length otherwise
 		"""
-		if node_info.os.name in OS.TC_QDISC_NO_QUEUE_METHOD_SUPPORT_OS:
-			logging.debug("Setting %s to no queue." % (self.name))
-			cmd = ADD_INTERFACE_QDISC_NO_QUEUE_CMD % (self.name)
-			run_command_warn_when_fail(cmd, warning_message="Failed to set %s to no queue." % (self.name))
-		else:
+		logging.debug("Try setting %s to no queue." % (self.name))
+		cmd = ADD_INTERFACE_QDISC_NO_QUEUE_CMD % (self.name)
+		rc, output = run_command_warn_when_fail(cmd, warning_message="Failed to set %s to no queue." % (self.name))
+
+		if rc != 0:
+			logging.debug("Applying %s QDISC tx queue to 0." % (self.name))
 			self.apply_qdisc_tx_len(0)
 
 	def optimize_qdisc_tx_len(self, ratio=1):
@@ -2346,17 +2184,29 @@ class PciDeviceInfo:
 				if match:
 					self.pci_max_read_request = int(match.group(0).split(" ")[1])
 
-	def set_rdma_device_info(self, node_info):
+	def get_full_pci_slot(self):
+		cmd = "ls /sys/bus/pci/devices/"
+		( rc, output ) = getstatusoutput(cmd)
+		pci_slots = output.split()
+
+		try:
+			full_pci_slot = [bus for bus in pci_slots if self.pci_slot in bus][0]
+
+			return full_pci_slot
+
+		except IndexError:
+			logging.debug("Couldn't get full PCI slot from PCI device - '%s' failed"%self.pci_slot)
+
+			return None
+
+	def set_rdma_device_info(self):
 		""" set RDMA device information
 		"""
-		if node_info.cpu.vendor == CPUVendor.IBM:
-			if  node_info.os.name in OS.PPC_DEVICE_NEW_FORMAT_OS:
-				cmd = RDMA_DEVICE_FROM_PCI_PPC_NEW_FORMAT%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split('.')[1])
-			else:
-				cmd = RDMA_DEVICE_FROM_PCI_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2])
-		else:
-			cmd = RDMA_DEVICE_FROM_PCI%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1])
+		full_pci_slot = self.get_full_pci_slot()
+
+		cmd = RDMA_DEVICE_FROM_PCI % full_pci_slot
 		( rc, output ) = getstatusoutput(cmd)
+
 		if rc:
 			logging.debug("Couldn't get RDMA device information from PCI device - '%s' failed"%cmd)
 		else:
@@ -2405,7 +2255,7 @@ class PciDeviceInfo:
 		self.psid = dev_id
 		return True
 
-	def set_fw_version(self, node_info):
+	def set_fw_version(self):
 		""" set device fw versio
 		"""
 		rc = 0
@@ -2426,14 +2276,10 @@ class PciDeviceInfo:
 					if 'FW Version:' in line:
 						self.firmware_version = line.split(":")[1].strip()
 		if (self.rdma_device == NA and self.mst_device == NA) or rc:
-			if node_info.cpu.vendor == CPUVendor.IBM:
-				if  node_info.os.name in OS.PPC_DEVICE_NEW_FORMAT_OS:
-					cmd = FW_VERSION_FROM_PCI_PPC_NEW_FORMAT%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split('.')[1])
-				else:
-					cmd = FW_VERSION_FROM_PCI_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2])
-			else:
-				cmd = FW_VERSION_FROM_PCI%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1])
+			full_pci_slot = self.get_full_pci_slot()
+			cmd = FW_VERSION_FROM_PCI % full_pci_slot
 			( rc, output ) = getstatusoutput(cmd)
+
 			if rc:
 				logging.debug("Couldn't get Firmware version from PCI device - '%s' failed"%cmd)
 			else:
@@ -2454,7 +2300,7 @@ class PciDeviceInfo:
 			logging.warning("Can't determine device NUMA node for device: %s"%(self.pci_string))
 		self.numa = numa
 
-	def get_interface_link_type(self, interface_name, node_info):
+	def get_interface_link_type(self, interface_name):
 		""" get interface link type ib/eth
 		"""
 		if self.type == Devices.ConnectIB:
@@ -2471,10 +2317,8 @@ class PciDeviceInfo:
 
 		if self.type in Devices.MLX4_CONSUMERS:
 			# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
-			if node_info.cpu.vendor == CPUVendor.IBM:
-				cmd = GET_PORT_LINK_TYPE_CMD_MLX4_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2] ,port)
-			else:
-				cmd = GET_PORT_LINK_TYPE_CMD_MLX4%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], port)
+			full_pci_slot = self.get_full_pci_slot()
+			cmd = GET_PORT_LINK_TYPE_CMD_MLX4%(full_pci_slot, port)
 			( rc, output ) = run_command_warn_when_fail(cmd, warning_message="Failed to find interface type. interface: %s"%interface_name)
 			if rc:
 				assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
@@ -2484,13 +2328,8 @@ class PciDeviceInfo:
 				return 'eth'
 		elif self.type in Devices.MLX5_CONSUMERS:
 			# PPC support - Need to work above OS/ARCH access modules in order to get a 'smoother' flow.
-			if node_info.cpu.vendor == CPUVendor.IBM:
-				if  node_info.os.name in OS.PPC_DEVICE_NEW_FORMAT_OS:
-					cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC_NEW_FORMAT%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split('.')[1], interface_name)
-				else:
-					cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5_PPC%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], self.pci_slot.split(':')[2], interface_name)
-			else:
-				cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5%(self.pci_slot.split(':')[0], self.pci_slot.split(':')[1], interface_name)
+			full_pci_slot = self.get_full_pci_slot()
+			cmd = IS_PORT_LINK_TYPE_IB_CMD_MLX5%(full_pci_slot, interface_name)
 			( rc, output ) = getstatusoutput(cmd)
 			if rc:
 				return 'eth'
@@ -2508,7 +2347,7 @@ class PciDeviceInfo:
 		interfaces_names = [x for x in output.split('\n')]
 
 		for interface_name in interfaces_names:
-			link_type = self.get_interface_link_type(interface_name, node_info)
+			link_type = self.get_interface_link_type(interface_name)
 			if link_type == 'eth':
 				interface = EthInterfaceInfo(interface_name)
 			else:
@@ -3105,11 +2944,11 @@ def mlnx_pci_devices_status(node_info):
 			device = PciDeviceInfo(line.strip())
 			device.set_core_driver()
 			device.set_pci_width_and_speed()
-			device.set_rdma_device_info(node_info)
+			device.set_rdma_device_info()
 			if not (device.set_mst_info()):
 				logging.warning("Failed to create MST device for the following PCI entry: '%s'"%line)
 			device.set_id()
-			device.set_fw_version(node_info)
+			device.set_fw_version()
 			device.set_closest_numa()
 			device.set_numa_aware_core_list(node_info)
 			device.interfaces = device.get_interfaces(node_info)
@@ -3493,9 +3332,6 @@ if __name__ == '__main__':
 	if options.version:
 		logging.info("Version: {major}.{minor}-{build}".format(
 			major=VERSION_MAJOR, minor=VERSION_MINOR, build=VERSION_BUILD))
-		exit(0)
-	if options.list_os:
-		logging.info("Supported OS: %s"%OS.SUPPORTED_OS)
 		exit(0)
 	options = force_dependencies(options)
 	force_sw_dependencies(options.profile)
