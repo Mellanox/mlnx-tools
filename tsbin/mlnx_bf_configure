@@ -432,11 +432,7 @@ if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 	exit 0
 fi
 
-if [ "$ovs_service" == "openvswitch-switch.service" ]; then
-	ovs_restart="/etc/init.d/openvswitch-switch restart"
-else
-	ovs_restart="systemctl restart $ovs_service"
-fi
+ovs_restart="systemctl restart $ovs_service"
 
 ovs_restart()
 {
