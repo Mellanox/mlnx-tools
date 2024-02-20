@@ -188,7 +188,7 @@ ovs_delete_conf()
 {
 	for ovs_br in $ovs_brs
 	do
-		ovs-vsctl -t 10 del-br $ovs_br
+		ovs-vsctl -t 1 del-br $ovs_br
 		rc=$?
 		if [ $rc -eq 0 ]; then
 			info "Removed $ovs_br"
