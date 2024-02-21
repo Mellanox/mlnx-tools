@@ -661,11 +661,14 @@ class Cpu:
 		""" Collects CPU information common for all systems
 		"""
 		arr = []
+		pattern = r'node(\d+)'
 		(rc, output) = run_command_warn_when_fail(NUMA_NODES_CMD, warning_message="Unable to collect NUMA node info.")
 		if not rc:
 			for line in output.split("\n"):
 				if "node" in line:
-					arr.append(int(line.replace('node','').strip()))
+					node_index = re.search(pattern, line)
+					if node_index:
+						arr.append(int(node_index.group(1)))
 			self.sockets = len(arr)
 
 		socket_dict = {}
