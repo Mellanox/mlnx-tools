@@ -53,7 +53,7 @@ class skprio2up:
 	                        "* 2> /dev/null", shell=True, bufsize=4096,
 	                        stdout=PIPE).stdout
 	        for line in output:
-	                param, val = line.decode("utf-8").strip().split(":", 1)
+	                param, val=line.decode("utf-8").strip().split(":", 1)
 	                vlan = param.split('.')[-1]
 	                for item in val.split(":", 1)[1].split():
 	                        skprio, up = item.split(':')
