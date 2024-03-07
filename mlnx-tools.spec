@@ -99,7 +99,7 @@ rm -rf %{buildroot}
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
-%{_sysconfdir}/*
+%{_sysconfdir}/modprobe.d/*
 /lib/udev/*
 %{_mandir}/man8/*.8*
 %{python_dir}/dcbnetlink.py*
