@@ -1,3 +1,15 @@
+mlnx-tools (24.03) UNRELEASED; urgency=medium
+
+  [ Bodong Wang ]
+  * vf-net-link-name.sh: Fix net link name for socket direct and multihost BFs
+
+  [ Vladimir Sokolovsky ]
+  * udev scripts: Support network interfaces rename on DPU only
+  * mlnx-tools.spec: Removed ownership of %{sysconfdir}
+  * tsbin/mlnx_bf_configure: Decrease ovs-vsctl bridge delete timeout
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Fri, 08 Mar 2024 11:03:48 -0600
+
 mlnx-tools (23.07.3) UNRELEASED; urgency=medium
 
   [ Bodong Wang ]
