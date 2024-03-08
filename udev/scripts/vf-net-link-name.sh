@@ -7,7 +7,12 @@ PORT_NAME=`echo ${1} | sed -e "s/c[[:digit:]]\+//"`
 IFINDEX=$3
 
 # need the PATH for BF ARM lspci to work
-PATH=/bin:/sbin:/usr/bin:/usr/sbin
+PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin
+
+is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
+if [ $is_bf -ne 1 ]; then
+	exit 0
+fi
 
 if [[ "$ID_NET_DRIVER" != *"mlx5"* ]]; then
     exit 1
@@ -46,7 +51,6 @@ function get_mh_bf_rep_name() {
         done
 }
 
-is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -eq 1 ]; then
         num_of_pf=`lspci 2> /dev/null | grep -w "network" | wc -l`
         if [ $num_of_pf -gt 2 ]; then

@@ -15,6 +15,13 @@
 SFNUM=$1
 IFINDEX=$2
 
+PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin
+
+is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
+if [ $is_bf -ne 1 ]; then
+	exit 0
+fi
+
 for sf_ndev in `ls /sys/class/net/`; do
 	_ifindex=`cat /sys/class/net/$sf_ndev/ifindex | head -1 2>/dev/null`
 	if [ "$_ifindex" = "$IFINDEX" ]
