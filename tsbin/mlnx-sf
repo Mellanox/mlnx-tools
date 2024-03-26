@@ -252,6 +252,26 @@ class SF:
 
             time.sleep(0.05)
 
+        # Enable netdev and rdma devices
+        cmd = MLXDEVM + " dev param set auxiliary/{} name enable_eth value true cmode driverinit".format(
+                self.aux_dev
+                )
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+
+        cmd = MLXDEVM + " dev param set auxiliary/{} name enable_rdma value true cmode driverinit".format(
+                self.aux_dev
+                )
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+
+        cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+
         if self.cpu_list:
             cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
                     self.aux_dev, self.cpu_list
