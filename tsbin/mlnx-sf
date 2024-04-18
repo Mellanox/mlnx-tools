@@ -267,6 +267,14 @@ class SF:
         if result['status']:
             return result
 
+        if not self.disable_roce:
+            cmd = MLXDEVM + " dev param set auxiliary/{} name enable_roce value true cmode driverinit".format(
+                    self.aux_dev
+                    )
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
         cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
         result['status'], result['output'] = get_status_output(cmd, self.verbose)
         if result['status']:
