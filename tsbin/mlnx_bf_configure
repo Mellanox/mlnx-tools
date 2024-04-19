@@ -419,12 +419,12 @@ ovs_restart()
 {
 if [ -f /etc/mellanox/mlnx-sf.conf ]; then
     # Wait until NetworkManager is active to avoid race condition
+    NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
     SECONDS=0
     while ! (systemctl is-active NetworkManager)
     do
-        if [ $SECONDS -gt 60 ]; then
-            info "NetworkManager timeout"
-            exit $RC
+        if [ $SECONDS -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
+            info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
             break;
         fi
         sleep 0.1
