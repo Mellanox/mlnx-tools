@@ -412,7 +412,9 @@ ovs_restart()
 
 	for p in $OVS_BRIDGE1_PORTS $OVS_BRIDGE2_PORTS
 	do
-		ethtool -K $p hw-tc-offload on
+		if [ -d /sys/class/net/$p ]; then
+			ethtool -K $p hw-tc-offload on
+		fi
 	done
 }
 
