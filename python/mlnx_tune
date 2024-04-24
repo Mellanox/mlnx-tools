@@ -1300,7 +1300,7 @@ class IpTable(Service):
 	def delete_chain(self, node_info, table = None):
 		""" Deletes chains in IP tables. If table name is given, deletes chains in the table.
 		"""
-		cmd = "%s %s -X"%((self.name, self.to_suse())[node_info.is_suse11()], ("", "-t %s"%table)[self.is_valid_table_name(table)])
+		cmd = "%s %s -X"%((self.name, self.to_suse())[node_info.os.is_suse11()], ("", "-t %s"%table)[self.is_valid_table_name(table)])
 		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to delete chain in  %s%s"%(self.name, ("", " (table=%s)"%table)[self.is_valid_table_name(table)]))
 
 	def is_valid_table_name(self, table):
