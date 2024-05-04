@@ -81,6 +81,11 @@ class SF:
         self.info = {}
         self.info_error = 0
 
+
+    def show(self):
+        """
+        Show configurations
+        """
         # Get existing devices
         cmd = MLXDEVM + " --pretty --json port show "
         if self.sfindex:
@@ -91,11 +96,6 @@ class SF:
             return
         self.info = json.loads(output)
 
-
-    def show(self):
-        """
-        Show configurations
-        """
         result = {'status': self.info_error, 'output': 'No SF device found'}
 
         if not self.info:
