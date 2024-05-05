@@ -62,6 +62,16 @@ parser.add_option("-f", "--pfc", dest="pfc",
 			"comma separated value for each priority starting from 0 to 7. " +
 			"Example: 0,0,0,0,1,1,1,1 enable PFC on TC4-7",
 		  metavar="LIST")
+parser.add_option("-F", "--specific_pfc", dest="specific_pfc",
+		  help="Set priority flow control for specific priorities. " +
+			"LIST is comma separated value for each priority starting from 0 to 7. unwanted prirotiy need to mark with x. " +
+			"run in silent mode and exit when finish config. " +
+			"Example: x,x,x,x,1,1,1,1 enables PFC on TC4-7 and keeps TC0-3 with current state ",
+		  metavar="LIST")
+parser.add_option("-P", "--get_pfc", dest="get_pfc",
+		  help="Get priority flow control status for specific priority. " +
+			"An index value of requested priority starting from 0 to 7."
+			"Example: 2 returns status of TC2")
 parser.add_option("-p", "--prio_tc", dest="prio_tc",
 		  help="maps UPs to TCs. LIST is 8 comma separated TC numbers. " +
 			"Example: 0,0,0,0,1,1,1,1 maps UPs 0-3 to TC0, and UPs 4-7 to " +
@@ -402,11 +412,52 @@ if (options.dcbx != None):
 if options.cable_len:
 	pfc_delay = parse_int(options.cable_len, 0, 0xffff, "cable_len")
 	pfc_en = ctrl.get_ieee_pfc_en()
+
 	try:
 		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
 	except OSError as e:
 		print('mlnx_qos: Error setting pfc delay:' + e)
 		sys.exit(1)
+
+if options.get_pfc:
+	pfc_en = ctrl.get_ieee_pfc_en()
+	pfc_en = list(bin(pfc_en)[2:].zfill(8))[::-1] # Convert integer to binary string
+	index = int(options.get_pfc)
+
+	if index not in range(0,8):
+		print("pfc index must be in range of 0-7")
+		sys.exit(1)
+
+	print(pfc_en[index])
+	exit(0)
+
+if options.specific_pfc:
+	i = 0
+	pfc_en = ctrl.get_ieee_pfc_en()
+	pfc_en = list(bin(pfc_en)[2:].zfill(8)) # Convert integer to binary string
+
+	specific_pfc = options.specific_pfc.split(",")[::-1]
+	if len(specific_pfc) != 8:
+		print("pfc list must have 8 items")
+		sys.exit(1)
+
+	for t in specific_pfc:
+		if t != 'x':
+			if t not in ['0','1']:
+				print("Bad value for 'PFC': %s" % t)
+				sys.exit(1)
+			pfc_en[i] = t
+
+		i += 1
+
+	try:
+		pfc_en = int(''.join(pfc_en), 2)
+		pfc_delay = ctrl.get_ieee_pfc_delay()
+		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
+	except OSError as e:
+		print('mlnx_qos: Error setting pfc:' + e)
+		sys.exit(1)
+	exit(0)
 
 if options.pfc:
 	i = 0
