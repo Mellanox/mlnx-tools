@@ -756,7 +756,7 @@ class Cpu:
 		"""
 		raw_cpuinfo = raw_cpuinfo.split('\n')
 		total_cores = 0
-		processor_pattern = re.compile("processor( *): \d+")
+		processor_pattern = re.compile(r"processor( *): \d+")
 		for line in raw_cpuinfo:
 			match = processor_pattern.search(line)
 			if match:
@@ -813,7 +813,7 @@ class Cpu:
 		if rc:
 			self.max_freq = None
 		else:
-			max_freq_pattern = re.compile("\d+ MHz")
+			max_freq_pattern = re.compile(r"\d+ MHz")
 			for line in output.split("\n"):
 				match = max_freq_pattern.search(line)
 				if match:
@@ -1018,7 +1018,7 @@ class Hugepages:
 				if not rc and int(output) > 0:
 					self.numa_hugepages[numa][page_size]	= int(output)
 
-		policy_pattern	= re.compile("\[\w+\]")
+		policy_pattern	= re.compile(r"\[\w+\]")
 		(rc, output) = run_command_warn_when_fail(GET_TRANSPARENT_HUGEPAGES_ENABLED_CMD, warning_message="Unable to collect transparent hugepages info.")
 		if not rc:
 			match = policy_pattern.search(output)
@@ -2159,10 +2159,10 @@ class PciDeviceInfo:
 		cmd = "%s -vvv -s %s"%(LSPCI, self.pci_slot)
 		( rc, pci_device_parameters) = getstatusoutput(cmd)
 		assert (not rc), "Unexpected error - cmd: %s bad exit status."%(cmd)
-		pci_width_pattern		= re.compile("Width x\d+")
-		pci_speed_pattern		= re.compile("Speed \d+")
-		pci_max_payload_pattern		= re.compile("MaxPayload \d+")
-		pci_max_read_request_pattern	= re.compile("MaxReadReq \d+")
+		pci_width_pattern		= re.compile(r"Width x\d+")
+		pci_speed_pattern		= re.compile(r"Speed \d+")
+		pci_max_payload_pattern		= re.compile(r"MaxPayload \d+")
+		pci_max_read_request_pattern	= re.compile(r"MaxReadReq \d+")
 		for parameter in pci_device_parameters.split('\n'):
 			if "LnkSta:" in parameter:
 				match = pci_width_pattern.search(parameter)
