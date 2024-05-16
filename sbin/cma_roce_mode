@@ -87,12 +87,15 @@ fi
 
 cd rdma_cm
 
+need_clean=0
+
 if [ ! -d $DEVICE ]; then
 	mkdir $DEVICE
 	if [ $? -ne 0 ]; then
 		echo "Failed to create configuration for $DEVICE"
 		exit 1
 	fi
+	need_clean=1
 fi
 
 if [ ! -d $DEVICE/ports/$PORT ]; then
@@ -110,6 +113,6 @@ fi
 cat default_roce_mode
 
 cd ../../..
-rmdir $DEVICE
+[[ "$need_clean" -eq 1 ]] && rmdir $DEVICE
 
 exit 0
