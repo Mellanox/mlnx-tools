@@ -551,6 +551,9 @@ if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 fi
 } &
 
+#Indication that the script has finished and other underlying services can start
+systemctl stop --no-block mlnx_bf_configure_sync
+
 sync
 
 exit $RC
