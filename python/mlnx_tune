@@ -3171,7 +3171,8 @@ def set_ip_forwarding_profile_multi_stream(node_info, use_all_cores, zero_loss):
 	node_info.ip_forwarding.start()
 
 	if not any(node_info.pci_devices):
-		return
+		logging.warning("No Mellanox pci devices found over system.")
+		return node_info
 
 	need_limit = any(node_info.cpu.vendor == v for v in CPUVendor.LIMIT_TO_32_QUEUES)
 
@@ -3238,7 +3239,8 @@ def set_ip_forwarding_profile_single_stream(node_info, force_single = False, zer
 	wanted_number_of_rings = 2
 
 	if not any(node_info.pci_devices):
-		return
+		logging.warning("No Mellanox pci devices found over system.")
+		return node_info
 
 	for device in node_info.pci_devices:
 		number_of_active_ethernet_interfaces = 0
