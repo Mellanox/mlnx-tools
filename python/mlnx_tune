@@ -835,6 +835,13 @@ class Cpu:
 	def set_high_performance(self):
 		""" Sets CPU power management to 'high performance'
 		"""
+		cmd = "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
+		rc, _ = run_command(cmd)
+
+		if rc:
+			logging.debug("No scaling governor available")
+			return
+
 		for i in range(self.total_cores):
 			logging.debug("Setting core number %s to high perforamnce"%i)
 			rc = run_command_warn_when_fail(CPU_MAX_PERFORMANCE_CMD%i, shell=True)
