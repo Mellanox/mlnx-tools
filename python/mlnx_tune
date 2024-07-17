@@ -1133,8 +1133,9 @@ class KernelModule(object):
 	def unload(self):
 		""" Unloads the kernel module
 		"""
-		cmd = UNLOAD_MODULE_CMD%self.name
-		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to unload kernel module '%s'"%self.name)
+		if self.is_loaded():
+			cmd = UNLOAD_MODULE_CMD%self.name
+			(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to unload kernel module '%s', please resolve dependencies to unload."%self.name)
 
 
 class ServiceState(object):
