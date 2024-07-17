@@ -46,6 +46,7 @@ import subprocess as sp
 from optparse 					import OptionParser
 from threading import Timer
 from functools import reduce
+import warnings
 
 VERSION_MAJOR					= "5"
 VERSION_MINOR					= "0"
@@ -3330,6 +3331,7 @@ def status_warning_string_monochromed():
 
 
 if __name__ == '__main__':
+	warnings.filterwarnings("ignore", category=DeprecationWarning)
 	parser = OptionParser()
 	add_options(parser)
 	(options, args) = parser.parse_args()
