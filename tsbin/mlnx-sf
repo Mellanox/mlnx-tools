@@ -46,6 +46,8 @@ DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
 DEVLINK_DEV_TIMEOUT = 20
+SF_CFG_DRIVER_TIMEOUT = 20
+
 verbose = False
 
 if os.path.exists("/usr/bin/mlxconfig"):
@@ -208,6 +210,15 @@ class SF:
                 break
             self.aux_dev = lookup_aux_dev(self.device, self.sfnum)
             if self.aux_dev:
+                break
+            time.sleep(0.001)
+
+        # Wait for sf_cfg link to be created
+        start = time.process_time()
+        while True:
+            if time.process_time() - start > SF_CFG_DRIVER_TIMEOUT:
+                break
+            if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
                 break
             time.sleep(0.001)
 
