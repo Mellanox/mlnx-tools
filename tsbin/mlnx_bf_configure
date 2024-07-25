@@ -443,9 +443,15 @@ ovs_restart()
 
 	# Re-apply udev settings removed by OVS
 	if [ -x /lib/udev/mlnx_bf_udev ]; then
-		for p in $(cd /sys/class/net; /bin/ls -d p* e*)
+		for p in $(cd /sys/class/net; /bin/ls -d *)
 		do
-			/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+			case "$p" in
+				p*|e*)
+				ALLOW_SHARED_RQ=$ALLOW_SHARED_RQ /lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+				;;
+				*)
+				;;
+			esac
 		done
 	fi
 

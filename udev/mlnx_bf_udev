@@ -14,7 +14,9 @@ case "$1" in
 	;;
 	*)
 	ethtool -L $1 combined 2
-	ethtool -G $1 rx 256
+	if [ "X$ALLOW_SHARED_RQ" != "Xyes" ]; then
+		ethtool -G $1 rx 256
+	fi
 	;;
 esac
 
