@@ -552,7 +552,9 @@ fi
 } &
 
 #Indication that the script has finished and other underlying services can start
-systemctl stop --no-block mlnx_bf_configure_sync
+if systemctl is-active --quiet mlnx_bf_configure_sync.service; then
+	systemctl stop --no-block mlnx_bf_configure_sync
+fi
 
 sync
 
