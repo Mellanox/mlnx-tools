@@ -96,7 +96,6 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
-/sbin/mlnx_bf_configure_ct
 /sbin/mlnx-sf
 %{_sbindir}/*
 %{_bindir}/*
