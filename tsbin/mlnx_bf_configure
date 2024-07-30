@@ -243,9 +243,9 @@ is_smartnic_mode()
 	port=$2
 	shift 2
 
-	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER")
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL")
 
-	if (echo $mft_output | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
+	if (echo $mft_output | grep -o INTERNAL_CPU_MODEL.* | awk '{print$3}' | grep -q "EMBEDDED_CPU(1)"); then
 		info "Device ${dev} is in SmartNIC mode"
 		return 0
 	fi
@@ -282,7 +282,7 @@ num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
 do
 	SECONDS=0
-	while ! ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER > /dev/null 2>&1); do
+	while ! ($mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
 		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
 			error "Failed to run $mftconfig query on $dev"
 			break
