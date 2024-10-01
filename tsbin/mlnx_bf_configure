@@ -28,6 +28,7 @@
 # and/or other materials provided with the distribution.
 
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 
 RC=0
 
@@ -160,6 +161,24 @@ set_dev_param()
 	return $rc
 }
 
+run_mlxconfig()
+{
+	cmd="$*"
+	mft_output=""
+
+	SECONDS=0
+	mft_output="$($cmd 2>&1)"
+	while (echo "$mft_output" | grep -q "Failed to open"); do
+		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
+			error "Failed to run $cmd"
+			exit 1
+		fi
+		sleep 1
+		mft_output=$($cmd 2>&1)
+	done
+	echo "$mft_output"
+}
+
 wait_for_netdev()
 {
 	port=$1
@@ -222,6 +241,20 @@ ovs_restore_conf()
 }
 
 vsctl=`which ovs-vsctl 2> /dev/null`
+
+is_port_ib()
+{
+	dev=$1
+	port=$2
+	shift 2
+
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q LINK_TYPE_P$port")
+
+	if (echo "$mft_output" | grep -o LINK_TYPE_P.* | awk '{print $3}' | grep -q "IB(1)"); then
+		return 0
+	fi
+	return 1
+}
 
 is_smartnic_mode()
 {
@@ -286,8 +319,17 @@ fi
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
 do
+	SECONDS=0
+	while ! ($mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
+		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
+			error "Failed to run $mftconfig query on $dev"
+			break
+		fi
+		sleep 1
+	done
+
 	port=$(( ${dev: -1} + 1 ))
-	if ($mftconfig -d ${dev} -e q LINK_TYPE_P$port 2> /dev/null | grep -o LINK_TYPE_P.* | awk '{print $3}' | grep -q "IB(1)"); then
+	if (is_port_ib "$dev" "$port"); then
 		info "Link type is IB for ${dev}. Skipping mode confiugration."
 		continue
 	fi
@@ -462,7 +504,7 @@ if [[ $OVS_CONF_SAVED -eq 1 && "$OVS_CONF_RESTORE" == "yes" ]]; then
 else
 	ovsbr_number=`$vsctl list-br | wc -l`
 	if [ $ovsbr_number -gt 0 ]; then
-		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"'); then
+		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"'); then
 			ovs_restart
 		fi
 		exit $RC
