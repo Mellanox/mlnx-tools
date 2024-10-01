@@ -223,6 +223,22 @@ ovs_restore_conf()
 
 vsctl=`which ovs-vsctl 2> /dev/null`
 
+is_smartnic_mode()
+{
+	dev=$1
+	port=$2
+	shift 2
+
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL")
+
+	if (echo $mft_output | grep -o INTERNAL_CPU_MODEL.* | awk '{print$3}' | grep -q "EMBEDDED_CPU(1)"); then
+		info "Device ${dev} is in SmartNIC mode"
+		return 0
+	fi
+	info "Device ${dev} is in SEPERATED_HOST mode"
+	return 1
+}
+
 is_SecureBoot=0
 if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
 	is_SecureBoot=1
@@ -276,7 +292,7 @@ do
 		continue
 	fi
 
-	if ($mftconfig -d ${dev} -e q ECPF_ESWITCH_MANAGER 2> /dev/null | grep -o ECPF_ESWITCH_MANAGER.* | awk '{print$3}' | grep -q "ECPF(1)"); then
+	if (is_smartnic_mode "$dev" "$port"); then
 		if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
 			set_dev_param ${dev} lag_port_select_mode queue_affinity
 		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
