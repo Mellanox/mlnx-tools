@@ -1,21 +1,24 @@
 #!/bin/bash
 
-SWID=$2
+ORIG_NAME=$1
+SWID=$3
 # might be pf0vf1 so only get vf number
-PORT=${1##*f}
-PORT_NAME=`echo ${1} | sed -e "s/c[[:digit:]]\+//"`
-IFINDEX=$3
+PORT=${2##*f}
+PORT_NAME=`echo ${2} | sed -e "s/c[[:digit:]]\+//"`
+IFINDEX=$4
 
 # need the PATH for BF ARM lspci to work
 PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -ne 1 ]; then
+        echo "NAME=$ORIG_NAME"
 	exit 0
 fi
 
 if [[ "$ID_NET_DRIVER" != *"mlx5"* ]]; then
-    exit 1
+        echo "NAME=$ORIG_NAME"
+        exit 1
 fi
 
 function get_mh_bf_rep_name() {
