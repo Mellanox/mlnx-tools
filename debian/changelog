@@ -1,4 +1,4 @@
-mlnx-tools (24.10) UNRELEASED; urgency=medium
+mlnx-tools (24.10.1) UNRELEASED; urgency=medium
 
   * Sync with mlnx_ofed branch
 
