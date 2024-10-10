@@ -3,6 +3,7 @@
 ORIG_NAME=$1
 SWID=$3
 # might be pf0vf1 so only get vf number
+ORIG_PORT=$2
 PORT=${2##*f}
 PORT_NAME=`echo ${2} | sed -e "s/c[[:digit:]]\+//"`
 IFINDEX=$4
@@ -61,7 +62,7 @@ if [ $is_bf -eq 1 ]; then
                 exit 0
         fi
 
-        echo NAME=`echo ${1} | sed -e "s/\(pf[[:digit:]]\+\)$/\1hpf/;s/c[[:digit:]]\+//"`
+        echo NAME=`echo ${ORIG_PORT} | sed -e "s/\(pf[[:digit:]]\+\)$/\1hpf/;s/c[[:digit:]]\+//"`
         exit 0
 fi
 
