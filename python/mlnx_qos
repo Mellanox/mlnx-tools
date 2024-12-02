@@ -108,9 +108,6 @@ parser.add_option("--dscp2prio", dest="dscp2prio",
 		  action="append",
 		  help="set/del a (dscp,prio) mapping, or 'flush' to delete all. Example 'set,30,2' maps dscp 30 to priority 2. " +
 		       "'del,30,2' deletes the mapping. Deleting last dscp or using 'flush' will automatically change trust to pcp.")
-parser.add_option("--defltprio", dest="defltprio",
-                  help="set/del default priority. Example 'set,2' sets default priority to 2. " +
-                       "'del,2' deletes this setting.")
 parser.add_option("--cable_len", dest="cable_len",
                   help="set cable_len for buffer's xoff and xon thresholds")
 parser.add_option("--prio2buffer", dest="prio2buffer",
@@ -307,8 +304,6 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer
 			print_dscp2prio_sysfs()
 		else:
 			appTable.printAppSelector(IEEE_8021QAZ_APP_SEL_DSCP)
-	print("default priority:")
-	appTable.printDefaultPriority()
 
 	if (not buffer_error):
 		msg = "Receive buffer size (bytes): "
@@ -554,34 +549,6 @@ except Exception as e:
 	else:
 		if (not is_trust_sysfs):
 			appTable = DcbAppTable()
-
-# ********* defltprio command ******************************
-try:
-	if options.defltprio:
-		action, prio = options.defltprio.split(",")
-		prio = int(prio)
-
-		if action not in ("set", "del") or prio < 0 or prio > 7:
-			raise Exception()
-except:
-	print("Invalid defltprio command. Refer to the help.")
-	sys.exit(1)
-
-try:
-	if options.defltprio:
-		if action == "set":
-			ctrl.set_ieee_app(IEEE_8021QAZ_APP_SEL_ETHERTYPE,prio,0)
-		elif action == "del":
-			ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_ETHERTYPE,prio,0)
-
-	appTable = ctrl.get_ieee_app_table()
-except Exception as e:
-	check_privilege(e)
-	if options.defltprio:
-		print("defltprio command failed")
-		sys.exit(1)
-	else:
-		appTable = DcbAppTable()
 
 # ********* trust command ******************************
 if options.trust:
