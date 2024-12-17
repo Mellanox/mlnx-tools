@@ -95,7 +95,9 @@ class SF:
 
         self.info_error, output = get_status_output(cmd)
         if self.info_error:
-            return
+            result = {'status': self.info_error, 'output': f'Command: "{cmd}" failed with exit code {self.info_error}.\nError: {output}'}
+            return result
+
         self.info = json.loads(output)
 
         result = {'status': self.info_error, 'output': 'No SF device found'}
