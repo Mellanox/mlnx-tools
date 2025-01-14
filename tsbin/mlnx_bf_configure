@@ -30,7 +30,7 @@
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 CT_MAX_OFFLOADED_CONNS=${CT_MAX_OFFLOADED_CONNS:-1000000}
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
-RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-60}
+RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-30}
 SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 
 RC=0
@@ -282,6 +282,22 @@ IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
 
+if ! (rdma system show netns 2>&1 | grep -q exclusive); then
+	SECONDS=0
+	while ! (rdma system set netns exclusive); do
+		if [ $SECONDS -gt $RDMA_SET_NETNS_TIMEOUT ]; then
+			break
+		fi
+		sleep 1
+	done
+fi
+
+if (rdma system show netns 2>&1 | grep -q exclusive); then
+	info "The RDMA subsystem is set in network namespace exclusive mode."
+else
+	error "Failed to set rdma exclusive mode"
+fi
+
 num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
 do
@@ -368,15 +384,6 @@ do
 		fi
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
-			if ! (rdma system show netns 2>&1 | grep -q exclusive); then
-				SECONDS=0
-				while ! (rdma system set netns exclusive); do
-					if [ $SECONDS -gt $RDMA_SET_NETNS_TIMEOUT ]; then
-						break
-					fi
-					sleep 1
-				done
-			fi
 			if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
 			fi
