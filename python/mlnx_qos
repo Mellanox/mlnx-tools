@@ -30,6 +30,7 @@ import sys
 import os
 import subprocess
 import array
+import errno
 
 if os.path.exists('/usr/share/mlnx-tools/python'):
 	sys.path.append('/usr/share/mlnx-tools/python')
@@ -62,6 +63,16 @@ parser.add_option("-f", "--pfc", dest="pfc",
 			"comma separated value for each priority starting from 0 to 7. " +
 			"Example: 0,0,0,0,1,1,1,1 enable PFC on TC4-7",
 		  metavar="LIST")
+parser.add_option("-F", "--specific_pfc", dest="specific_pfc",
+		  help="Set priority flow control for specific priorities. " +
+			"LIST is comma separated value for each priority starting from 0 to 7. unwanted prirotiy need to mark with x. " +
+			"run in silent mode and exit when finish config. " +
+			"Example: x,x,x,x,1,1,1,1 enables PFC on TC4-7 and keeps TC0-3 with current state ",
+		  metavar="LIST")
+parser.add_option("-P", "--get_pfc", dest="get_pfc",
+		  help="Get priority flow control status for specific priority. " +
+			"An index value of requested priority starting from 0 to 7."
+			"Example: 2 returns status of TC2")
 parser.add_option("-p", "--prio_tc", dest="prio_tc",
 		  help="maps UPs to TCs. LIST is 8 comma separated TC numbers. " +
 			"Example: 0,0,0,0,1,1,1,1 maps UPs 0-3 to TC0, and UPs 4-7 to " +
@@ -97,9 +108,6 @@ parser.add_option("--dscp2prio", dest="dscp2prio",
 		  action="append",
 		  help="set/del a (dscp,prio) mapping, or 'flush' to delete all. Example 'set,30,2' maps dscp 30 to priority 2. " +
 		       "'del,30,2' deletes the mapping. Deleting last dscp or using 'flush' will automatically change trust to pcp.")
-parser.add_option("--defltprio", dest="defltprio",
-                  help="set/del default priority. Example 'set,2' sets default priority to 2. " +
-                       "'del,2' deletes this setting.")
 parser.add_option("--cable_len", dest="cable_len",
                   help="set cable_len for buffer's xoff and xon thresholds")
 parser.add_option("--prio2buffer", dest="prio2buffer",
@@ -296,8 +304,6 @@ def pretty_print(prio_tc, tsa, tcbw, ratelimit, pfc_en, trust, pfc_delay, buffer
 			print_dscp2prio_sysfs()
 		else:
 			appTable.printAppSelector(IEEE_8021QAZ_APP_SEL_DSCP)
-	print("default priority:")
-	appTable.printDefaultPriority()
 
 	if (not buffer_error):
 		msg = "Receive buffer size (bytes): "
@@ -374,6 +380,16 @@ def parse_int(str, min, max, description):
 		sys.exit(1)
 
 
+def is_privilege_excp(excp):
+	return errno.EPERM == excp.errno
+
+def check_privilege(excp):
+	if is_privilege_excp(excp):
+		print(excp)
+		sys.exit(1)
+
+# ********* MAIN *************************************
+
 pfc_en = 0
 pfc_delay = 0
 tsa = [IEEE_8021QAZ_TSA_STRICT, IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT,IEEE_8021QAZ_TSA_STRICT]
@@ -401,6 +417,55 @@ if (options.dcbx != None):
 # ********* pfc command ******************************
 if options.cable_len:
 	pfc_delay = parse_int(options.cable_len, 0, 0xffff, "cable_len")
+	pfc_en = ctrl.get_ieee_pfc_en()
+
+	try:
+		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
+	except OSError as e:
+		check_privilege(e)
+		print('mlnx_qos: Error setting pfc delay:' + e)
+		sys.exit(1)
+
+if options.get_pfc:
+	pfc_en = ctrl.get_ieee_pfc_en()
+	pfc_en = list(bin(pfc_en)[2:].zfill(8))[::-1] # Convert integer to binary string
+	index = int(options.get_pfc)
+
+	if index not in range(0,8):
+		print("pfc index must be in range of 0-7")
+		sys.exit(1)
+
+	print(pfc_en[index])
+	exit(0)
+
+if options.specific_pfc:
+	i = 0
+	pfc_en = ctrl.get_ieee_pfc_en()
+	pfc_en = list(bin(pfc_en)[2:].zfill(8)) # Convert integer to binary string
+
+	specific_pfc = options.specific_pfc.split(",")[::-1]
+	if len(specific_pfc) != 8:
+		print("pfc list must have 8 items")
+		sys.exit(1)
+
+	for t in specific_pfc:
+		if t != 'x':
+			if t not in ['0','1']:
+				print("Bad value for 'PFC': %s" % t)
+				sys.exit(1)
+			pfc_en[i] = t
+
+		i += 1
+
+	try:
+		pfc_en = int(''.join(pfc_en), 2)
+		pfc_delay = ctrl.get_ieee_pfc_delay()
+		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
+	except OSError as e:
+		check_privilege(e)
+		print('mlnx_qos: Error setting pfc:' + e)
+		sys.exit(1)
+	exit(0)
 
 if options.pfc:
 	i = 0
@@ -419,12 +484,12 @@ if options.pfc:
 	if i != 8:
 		print("pfc list must have 8 items")
 		sys.exit(1)
-
-if options.cable_len or options.pfc:
 	try:
+		pfc_delay = ctrl.get_ieee_pfc_delay()
 		ctrl.set_ieee_pfc(_pfc_en = pfc_en, _delay = pfc_delay)
 	except OSError as e:
-		print(e)
+		check_privilege(e)
+		print('mlnx_qos: Error setting pfc:' + e)
 		sys.exit(1)
 
 # ********* dscp2prio command ******************************
@@ -448,7 +513,8 @@ try:
 				sys.exit(1)
 			dscp2prio.append((action, dscp, prio))
 
-except:
+except Exception as e:
+	check_privilege(e)
 	print("Invalid dscp2prio command. Refer to the help.")
 	sys.exit(1)
 
@@ -475,40 +541,14 @@ try:
 	if (not is_trust_sysfs):
 		appTable = ctrl.get_ieee_app_table()
 
-except:
+except Exception as e:
+	check_privilege(e)
 	if options.dscp2prio:
 		print("dscp2prio command failed")
 		sys.exit(1)
 	else:
 		if (not is_trust_sysfs):
 			appTable = DcbAppTable()
-
-# ********* defltprio command ******************************
-try:
-	if options.defltprio:
-		action, prio = options.defltprio.split(",")
-		prio = int(prio)
-
-		if action not in ("set", "del") or prio < 0 or prio > 7:
-			raise Exception()
-except:
-	print("Invalid defltprio command. Refer to the help.")
-	sys.exit(1)
-
-try:
-	if options.defltprio:
-		if action == "set":
-			ctrl.set_ieee_app(IEEE_8021QAZ_APP_SEL_ETHERTYPE,prio,0)
-		elif action == "del":
-			ctrl.del_ieee_app(IEEE_8021QAZ_APP_SEL_ETHERTYPE,prio,0)
-
-	appTable = ctrl.get_ieee_app_table()
-except:
-	if options.defltprio:
-		print("defltprio command failed")
-		sys.exit(1)
-	else:
-		appTable = DcbAppTable()
 
 # ********* trust command ******************************
 if options.trust:
@@ -525,7 +565,8 @@ try:
 		if (not is_trust_sysfs):
 			appTable = ctrl.get_ieee_app_table()
 
-except:
+except Exception as e:
+	check_privilege(e)
 	print ("Priority trust state is not supported on your system")
 	if options.trust:
 		sys.exit(1)
@@ -543,7 +584,8 @@ try:
 	else:
 		prio2buffer, buffer_size, tot_size = ctrl.get_ieee_dcb_buffer()
 
-except:
+except Exception as e:
+	check_privilege(e)
 	buffer_error = 1
 	buffer_size = [0, 0, 0, 0, 0, 0, 0, 0]
 	prio2buffer = [0, 0, 0, 0, 0, 0, 0, 0]
@@ -588,7 +630,8 @@ try:
 			ctrl.set_dcb_buffer(_prio2buffer = prio2buffer, _buffer_size = buffer_size,
 					    _tot_size = tot_size)
 			prio2buffer, buffer_size, tot_size = ctrl.get_ieee_dcb_buffer()
-except:
+except Exception as e:
+	check_privilege(e)
 	buffer_error = 1
 	if options.buffer_size or options.prio2buffer:
 		print ("Buffers commands error")
@@ -639,7 +682,8 @@ try:
 	pfc_en = ctrl.get_ieee_pfc_en()
 	pfc_delay = ctrl.get_ieee_pfc_delay()
 
-except:
+except Exception as e:
+	check_privilege(e)
 	print("ETS features are not supported on your system")
 	sys.exit(1)
 
