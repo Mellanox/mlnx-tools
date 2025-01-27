@@ -200,6 +200,11 @@ ovs_save_conf()
 	for ovs_br in $ovs_brs
 	do
 		eval ${ovs_br}_ports=\"$(ovs-vsctl list-ports $ovs_br | tr -s '[=\n=]' ' ')\"
+		for port in $(eval echo \$$(echo ${ovs_br}_ports))
+		do
+			eval ${port}_options="\"$(ovs-vsctl get Interface $port options | sed 's/[{},]//g')\""
+			eval ${port}_type="\"$(ovs-vsctl get Interface $port type | sed 's/[{},]//g')\""
+		done
 		info "Saved $ovs_br: $(eval echo \$$(echo ${ovs_br}_ports))"
 	done
 }
@@ -229,13 +234,22 @@ ovs_restore_conf()
 		info "Created bridge: $ovs_br"
 		for port in $ovs_br_ports
 		do
-			wait_for_netdev $port
-			if [ -d /sys/class/net/$port ]; then
-				$vsctl add-port $ovs_br $port
-				info "bridge $ovs_br: added port $port"
-			else
-				info "port device $port for bridge $ovs_br is missing."
+			cmd="$vsctl add-port $ovs_br $port"
+			port_options="$(eval echo \$$(echo ${port}_options))"
+			if [ -n "$port_options" ]; then
+				port_options="$(echo ${port_options} | sed 's/^/options:/g' | sed 's/[[:space:]]/ options:/g')"
 			fi
+			port_type="$(eval echo \$$(echo ${port}_type))"
+			if [ -n "$port_type" ]; then
+				port_type="type=$port_type"
+			else
+				wait_for_netdev $port
+			fi
+			if [[ -n "$port_type" || -n "$port_options" ]]; then
+				cmd="$cmd -- set interface $port $port_type $port_options"
+			fi
+			eval $cmd
+			info "bridge $ovs_br: added port $port $port_type $port_options"
 		done
 		ip link set $ovs_br up
 	done
