@@ -29,7 +29,7 @@
 
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
-RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-30}
+RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-3}
 
 RC=0
 
@@ -335,18 +335,22 @@ RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	if ! (rdma system show netns 2>&1 | grep -q exclusive); then
 		SECONDS=0
-		while ! (rdma system set netns exclusive); do
+		output=$(rdma system set netns exclusive 2>&1)
+		rc=$?
+		while [ $rc -ne 0 ]; do
 			if [ $SECONDS -gt $RDMA_SET_NETNS_TIMEOUT ]; then
 				break
 			fi
 			sleep 1
+			output=$(rdma system set netns exclusive 2>&1)
+			rc=$?
 		done
 	fi
 
 	if (rdma system show netns 2>&1 | grep -q exclusive); then
 		info "The RDMA subsystem is set in network namespace exclusive mode."
 	else
-		error "Failed to set rdma exclusive mode"
+		error "Failed to set rdma exclusive mode: $output"
 	fi
 fi
 
