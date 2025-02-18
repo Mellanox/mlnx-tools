@@ -409,11 +409,42 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
 	. /etc/mellanox/mlnx-sf.conf
 fi
 
-# Configure the default OVS bridge
+HUGEPAGES_TOOL=/usr/sbin/mlnx-hugepages.py
+OVS_DEFAULT_HUGEPAGE_SIZE=2048
+OVS_DEFAULT_HUGEPAGE_NUM=512
+
+add_default_hugepages_configurations()
+{
+	if [ "X${OVS_DOCA}" == "Xyes" ]; then
+		info "Adding ovs-doca default hugepages configuration"
+		python $HUGEPAGES_TOOL config --force ovs-doca $OVS_DEFAULT_HUGEPAGE_SIZE $OVS_DEFAULT_HUGEPAGE_NUM
+	fi
+}
+
+config_hugepages()
+{
+	add_default_hugepages_configurations
+	info "Applying hugepages configuration"
+	python $HUGEPAGES_TOOL reload
+}
+
+cleanup_hugepages()
+{
+	if [ "X${OVS_DOCA}" == "Xno" ] && python $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
+		info "Removing ovs-doca default hugepages configuration"
+		python $HUGEPAGES_TOOL remove ovs-doca
+		python $HUGEPAGES_TOOL reload
+	fi
+}
+
 if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
 	. /etc/mellanox/mlnx-ovs.conf
 fi
 
+# Configure hugepages
+config_hugepages
+
+# Configure the default OVS bridge
 vsctl=`which ovs-vsctl 2> /dev/null`
 if [ ! -n "$vsctl" ]; then
 	info "OVS is not installed. Skipping OVS bridges creation."
@@ -444,11 +475,19 @@ fi
 
 ovs_restart="systemctl restart $ovs_service"
 
+need_restart=false
+
 ovs_restart()
 {
+	if [ "$need_restart" == "false" ]; then
+		info "Restarting of $ovs_service is not required"
+		return 0
+	fi
+
 	if [ -n "$ovs_service" ]; then
 		info "Restarting $ovs_service"
 		$ovs_restart
+		need_restart=false
 	fi
 
 	# Re-apply udev settings removed by OVS
@@ -482,9 +521,70 @@ do
 	sleep 1
 done
 
+ovs_config_default_datapath()
+{
+	ovs_default_datapath=${1:-"system"}
+
+	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
+		$vsctl set Open_vSwitch . Other_config:default-datapath-type=$ovs_default_datapath 2> /dev/null
+		if [ $? -eq 0 ]; then
+			info "OVS default-datapath-type is set"
+		fi
+	fi
+
+	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
+		error "Failed setting OVS default-datapath-type"
+		return 1
+	fi
+}
+
+ovs_cleanup_doca()
+{
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'default-datapath-type'); then
+		info "OVS cleanup default-datapath-type"
+		ovs-vsctl remove Open_vSwitch . other_config default-datapath-type
+	fi
+
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
+		info "OVS cleanup doca-init"
+		ovs-vsctl remove Open_vSwitch . other_config doca-init
+		need_restart=true
+	fi
+}
+
+ovs_config_doca()
+{
+	local doca_initialized=`$vsctl get Open_vSwitch . doca_initialized`
+
+	if [ "X${OVS_DOCA}" != "Xyes" ]; then
+		ovs_cleanup_doca
+		return 0
+	fi
+
+	if [ "$doca_intialized" == "true" ]; then
+		return 0
+	fi
+
+	$vsctl set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init="true"'); then
+		info "OVS doca-init is set to true"
+		need_restart=true
+	else
+		info "OVS failed setting doca-init to true"
+	fi
+
+	ovs_config_default_datapath netdev
+}
+
+#Enable OVS-DOCA
+ovs_config_doca
+
+#Cleanup hugepage if neccessary
+cleanup_hugepages
+
 ovsbr_number=`$vsctl list-br | wc -l`
 if [ $ovsbr_number -gt 0 ]; then
-	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"'); then
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"') || [ "$need_restart" == true ]; then
 		ovs_restart
 	fi
 	exit $RC
@@ -562,7 +662,7 @@ if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 	if [ $? -eq 0 ]; then
 		info "OVS HW offload is set"
 		info "Going to restart $ovs_service to activate hw-offload"
-		ovs_restart
+		need_restart=true
 	fi
 fi
 } &
@@ -570,6 +670,10 @@ fi
 #Indication that the script has finished and other underlying services can start
 if systemctl is-active --quiet mlnx_bf_configure_sync.service; then
 	systemctl stop --no-block mlnx_bf_configure_sync
+fi
+
+if [ $need_restart == true ];then
+	ovs_restart
 fi
 
 sync
