@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import json
+import subprocess
+import textwrap
+import glob
+import logging
+
+CONFIG_DIR = "/etc/mellanox/hugepages.d"
+ORIGINAL_CONFIG_FILE = "/etc/mellanox/hugepages.d/mlnx-hugepages-original.conf"
+
+def save_original_config():
+    if os.path.exists(ORIGINAL_CONFIG_FILE):
+        return
+
+    original_config = {}
+    valid_sizes = get_valid_hugepage_sizes()
+
+    for size in valid_sizes:
+        try:
+            cmd = f"cat /sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages"
+            result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+            original_config[size] = int(result.stdout.strip())
+        except subprocess.CalledProcessError as e:
+            print(f"Error reading original hugepages of size {size}kB: {e.stderr.strip()}")
+
+    with open(ORIGINAL_CONFIG_FILE, 'w') as f:
+        json.dump(original_config, f, indent=2)
+
+def load_original_config():
+    if os.path.exists(ORIGINAL_CONFIG_FILE):
+        with open(ORIGINAL_CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return None
+
+def restore_original_config():
+    original_config = load_original_config()
+    if not original_config:
+        print("No original configuration found. Cannot restore.")
+        return
+
+    for size, num in original_config.items():
+        cmd = f"echo {num} | sudo tee /sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages"
+        try:
+            subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error restoring hugepages of size {size}kB: {e.stderr.strip()}")
+
+    remove_original_config()
+    print("Original configuration restored.")
+
+def remove_original_config():
+    if os.path.exists(ORIGINAL_CONFIG_FILE):
+        os.remove(ORIGINAL_CONFIG_FILE)
+    else:
+        print("No original configuration found. Resetting all hugepages to zero.")
+        valid_sizes = get_valid_hugepage_sizes()
+        for size in valid_sizes:
+            cmd = f"echo 0 | sudo tee /sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages"
+            try:
+                subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+                print(f"Reset hugepages of size {size}kB to 0")
+            except subprocess.CalledProcessError as e:
+                print(f"Error resetting hugepages of size {size}kB: {e.stderr.strip()}")
+
+def load_config():
+    config = {}
+    if not os.path.exists(CONFIG_DIR):
+        return config
+
+    for config_file in glob.glob(os.path.join(CONFIG_DIR, "*.json")):
+        with open(config_file, 'r') as f:
+            app_name = os.path.splitext(os.path.basename(config_file))[0]
+            config[app_name] = json.load(f)
+    return config
+
+def save_config(config):
+    if not os.path.isdir(CONFIG_DIR):
+        raise FileNotFoundError(f"Directory {CONFIG_DIR} does not exist")
+
+    for app_name, app_config in config.items():
+        file_path = os.path.join(CONFIG_DIR, f"{app_name}.json")
+        with open(file_path, 'w') as f:
+            json.dump(app_config, f, indent=2)
+
+"""Get a list of valid hugepage sizes supported by the system."""
+def get_valid_hugepage_sizes():
+    hugepage_dir = "/sys/kernel/mm/hugepages"
+    return sorted([int(d.split('-')[1][:-2]) for d in os.listdir(hugepage_dir) if d.startswith("hugepages-")])
+
+def configure_hugepages(config):
+    valid_sizes = get_valid_hugepage_sizes()
+    original_config = load_original_config() or {}
+
+    size_totals = {}
+    successfully_configured_apps = []
+
+    # Calculate the total hugepages needed for each size, including original configuration
+    for app, app_configs in config.items():
+        for size, size_config in app_configs.items():
+            size = int(size)
+            num = size_config['num']
+            size_totals[size] = size_totals.get(size, 0) + num
+
+    # Add original configuration to size_totals
+    for size, num in original_config.items():
+        size = int(size)
+        size_totals[size] = size_totals.get(size, 0) + num
+
+    for size, total in size_totals.items():
+        memory_gb = total * size / (1024 * 1024)
+        cmd = f"echo {total} | sudo tee /sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages"
+        try:
+            subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+
+            for app, app_configs in config.items():
+                if str(size) in app_configs:
+                    app_configs[str(size)]['is_active'] = "active"
+                    successfully_configured_apps.append(app)
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error configuring hugepages of size {size}kB: {e.stderr.strip()}")
+
+    # Save the updated configuration back to the database
+    if successfully_configured_apps:
+        save_config(config)
+
+    show_config()
+
+def reload_config(args):
+    config = load_config()
+
+    if not config:
+        print("No configuration found. Restoring original hugepages configuration.")
+        restore_original_config()
+        return
+
+    print("Reloading hugepages configuration...")
+    configure_hugepages(config)
+
+def get_available_memory_kb():
+    try:
+        result = subprocess.run(["grep", "MemAvailable", "/proc/meminfo"], capture_output=True, text=True, check=True)
+        mem_available = int(result.stdout.split()[1])
+        return mem_available
+    except subprocess.CalledProcessError:
+        print("Error: Unable to retrieve available memory information.")
+        return None
+
+def add_app_config(args):
+    # Validate the hugepage size
+    valid_sizes = get_valid_hugepage_sizes()
+    if args.size not in valid_sizes:
+        print(f"Error: The hugepage size {args.size}kB is not supported by your system.")
+        print(f"Supported sizes are: {', '.join(map(str, valid_sizes))}")
+        return
+
+    config = load_config()
+
+    # Check if the app already exists in the configuration
+    if args.app in config:
+        # Check if the specific size is already configured
+        if str(args.size) in config[args.app]:
+            if not args.force:
+                print(f"Configuration for {args.app} with size {args.size}kB already exists.")
+                update = input("Do you want to update it? (y/n): ").lower().strip()
+                if update != 'y':
+                    print("Configuration not updated.")
+                    return
+            action = 'updated'
+        else:
+            action = 'appended'
+    else:
+        # Add new app configuration
+        config[args.app] = {}
+        action = 'added'
+
+    # Check if there is enough available memory
+    new_config_memory_kb = args.size * args.num
+
+    total_allocated_memory_kb = sum(
+        int(size) * size_config['num']
+        for app_config in config.values()
+        for size, size_config in app_config.items()
+    )
+
+    available_memory_kb = get_available_memory_kb()
+
+    if total_allocated_memory_kb + new_config_memory_kb > available_memory_kb:
+        print(f"Error: Not enough available memory for this configuration.")
+        print(f"Requested: {new_config_memory_kb / 1024:.2f} MB, "
+              f"Available: {available_memory_kb / 1024:.2f} MB, "
+              f"Currently Allocated: {total_allocated_memory_kb / 1024:.2f} MB")
+        return
+
+    # Add, update, or append the configuration for the specific size
+    config[args.app][str(args.size)] = {
+        "num": args.num,
+        "is_active": "inactive"
+    }
+
+    save_config(config)
+    print(f"Configuration for {args.app} with size {args.size}kB {action}.")
+
+def show_config(args=None):
+    config = load_config()
+    original_config = load_original_config()
+    has_inactive_config = False
+
+    if config:
+        print("\nCurrent Mlnx-Hugepages Configuration:")
+        print(f"{'Application':<20}{'Page Size (kB)':<20}{'Number of Pages':<20}{'Allocated (GB)':<20}{'Is Active':<20}")
+        print("=" * 100)
+
+        total_size_kb = 0
+        # Show original configuration if it exists
+        if original_config:
+            print("Original System Configuration:")
+            for size, num in original_config.items():
+                size_kb = int(size)
+                allocated_gb = (size_kb * num) / (1024 * 1024)
+                print(f"{'System':<20}{size_kb:<20}{num:<20}{allocated_gb:<20.2f}{'N/A':<20}")
+                total_size_kb += size_kb * num
+            print("-" * 100)
+
+        for app, app_configs in config.items():
+            for size, size_config in app_configs.items():
+                page_size_kb = int(size)
+                number_of_pages = size_config['num']
+                app_allocated_kb = page_size_kb * number_of_pages
+                app_allocated_gb = app_allocated_kb / (1024 * 1024)
+                total_size_kb += app_allocated_kb
+                is_active = size_config.get('is_active', 'unknown')
+
+                if is_active.lower() == 'inactive':
+                    has_inactive_config = True
+
+                print(f"{app:<20}{page_size_kb:<20}{number_of_pages:<20}{app_allocated_gb:<20.2f}{is_active:<20}")
+
+        total_size_gb = total_size_kb / (1024 * 1024)
+        print("=" * 100)
+        print(f"{'Total':<20}{'':<20}{'':<20}{total_size_gb:<20.2f}")
+
+        if has_inactive_config:
+            print("\nNote: The configurations marked as 'inactive' are saved but not currently in use.")
+            print("To enable these configurations and allocate the required hugepages, execute the 'reload' command.")
+    else:
+        print("No Mlnx-Hugepages configuration found. Try adding one.")
+
+def remove_app_config(args):
+    app_name = args.app
+    remove_all = args.all
+
+    config = load_config()
+    if app_name in config:
+        file_path = os.path.join(CONFIG_DIR, f"{app_name}.json")
+
+        if len(config[app_name]) > 1 and not remove_all:
+            print(f"Multiple configurations found for {app_name}:")
+            for i, (size, size_config) in enumerate(config[app_name].items(), 1):
+                print(f"{i}. Size: {size}kB, Number of Pages: {size_config['num']}")
+
+            choice = input("Enter the number of the configuration to remove (or 'all' to remove all): ")
+
+            if choice.lower() == 'all':
+                remove_all = True
+            else:
+                try:
+                    index = int(choice) - 1
+                    size_to_remove = list(config[app_name].keys())[index]
+                    del config[app_name][size_to_remove]
+                    print(f"Configuration for {app_name} with size {size_to_remove}kB removed.")
+
+                    if not config[app_name]:
+                        remove_all = True
+                    else:
+                        with open(file_path, 'w') as f:
+                            json.dump(config[app_name], f, indent=2)
+                except (ValueError, IndexError):
+                    print("Invalid choice. No configurations removed.")
+                    return
+
+        if remove_all or len(config[app_name]) == 1:
+            del config[app_name]
+            os.remove(file_path)
+            print(f"All configurations for {app_name} removed.")
+
+        save_config(config)
+
+        # Add warning message
+        print("\nWarning: Configuration changes have been made.")
+        print("To apply these changes and deallocate the associated hugepages, execute the 'reload' command.")
+    else:
+        print(f"App {app_name} not found in configuration")
+
+def create_parser():
+    parser = argparse.ArgumentParser(
+        prog='mlnx-hugepages',
+        description="Manage hugepages configuration for applications.",
+        usage='mlnx-hugepages [-h] {config,reload,remove,show}',
+        add_help=True
+    )
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        metavar="",
+        title="Available commands",
+        help=""
+    )
+
+    # Config subparser
+    config_parser = subparsers.add_parser(
+        "config",
+        usage='mlnx-hugepages config [--force] <app> <size> <num>',
+        help="Add/update app configuration",
+        description=textwrap.fill(
+                "Adds a configuration for a specific application to the database. "
+                "This command only adds/updates the stored configuration and does not apply changes. "
+                "Use the 'reload' command to actually allocate hugepages based on the database configurations.",
+                width=90
+            ),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    config_parser.add_argument("--app", required=True, help="Name of the application. (Could be anything)")
+    config_parser.add_argument("--size", required=True, type=int, help=f"Hugepage size in kB. Available sizes: { get_valid_hugepage_sizes()}")
+    config_parser.add_argument("--num", required=True, type=int, help="Number of hugepages to allocate.")
+    config_parser.add_argument("--force", action="store_true", help="Force updating the configuration without prompting.")
+
+    # Reload subparser
+    reload_parser = subparsers.add_parser(
+        "reload",
+        usage='mlnx-hugepages reload',
+        help="Reload the hugepages configuration",
+        description=textwrap.fill(
+                "Reload the hugepages configuration for all applications based on the current settings in the database. "
+                "This will bring your system in line with the stored configurations. ",
+                width=90
+            ),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    # Remove subparser
+    remove_parser = subparsers.add_parser(
+        "remove",
+        usage='mlnx-hugepages remove <app>',
+        help="Remove app configuration",
+        description=(
+            "Remove a configuration from the database."
+        ),
+    )
+    remove_parser.add_argument("app", help="An application to remove from the configuration")
+    remove_parser.add_argument('--all', action='store_true', help='Remove all configurations for the app without prompting')
+
+    # Show subparser
+    show_parser = subparsers.add_parser(
+        "show",
+        usage='mlnx-hugepages show',
+        help="Display current configuration",
+        description=(
+            "Dump the current hugepages configuration for all applications in the database."
+        ),
+    )
+
+    return parser
+
+def execute_command(args, parser):
+    command_functions = {
+        "config": add_app_config,
+        "reload": reload_config,
+        "remove": remove_app_config,
+        "show": show_config
+    }
+
+    if args.command in command_functions:
+        command_functions[args.command](args)
+    else:
+        parser.print_help()
+
+def main():
+    save_original_config()
+    parser = create_parser()
+    args = parser.parse_args()
+    execute_command(args, parser)
+
+if __name__ == "__main__":
+    main()
