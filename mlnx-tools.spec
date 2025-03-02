@@ -97,7 +97,6 @@ rm -rf %{buildroot}
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
 /sbin/mlnx-sf
-/sbin/mlnx-hugepages.py
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}/man8/*.8*
