@@ -82,6 +82,7 @@ sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/* \
 	add_env %{buildroot}$conf_env PATH %{_sbindir}
 	echo $conf_env >> mlnx-tools-files
 %endif
+install -d %{buildroot}/etc/mellanox/hugepages.d
 
 %clean
 rm -rf %{buildroot}
@@ -97,6 +98,7 @@ rm -rf %{buildroot}
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
 /sbin/mlnx-sf
+/sbin/mlnx-hugepages
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}/man8/*.8*
@@ -104,6 +106,7 @@ rm -rf %{buildroot}
 %{python_dir}/netlink.py*
 %exclude %{python_dir}/__pycache__/*.pyc
 /lib/udev/mlnx_bf_udev
+/etc/mellanox/hugepages.d
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1
