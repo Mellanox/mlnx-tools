@@ -409,7 +409,7 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
 	. /etc/mellanox/mlnx-sf.conf
 fi
 
-HUGEPAGES_TOOL=/usr/sbin/mlnx-hugepages.py
+HUGEPAGES_TOOL=/usr/sbin/mlnx-hugepages
 OVS_DEFAULT_HUGEPAGE_SIZE=2048
 OVS_DEFAULT_HUGEPAGE_NUM=512
 
@@ -417,7 +417,7 @@ add_default_hugepages_configurations()
 {
 	if [ "X${OVS_DOCA}" == "Xyes" ]; then
 		info "Adding ovs-doca default hugepages configuration"
-		python $HUGEPAGES_TOOL config --force ovs-doca $OVS_DEFAULT_HUGEPAGE_SIZE $OVS_DEFAULT_HUGEPAGE_NUM
+		python $HUGEPAGES_TOOL config --force --app ovs-doca --size $OVS_DEFAULT_HUGEPAGE_SIZE --num $OVS_DEFAULT_HUGEPAGE_NUM
 	fi
 }
 
