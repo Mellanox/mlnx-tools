@@ -278,6 +278,17 @@ is_smartnic_mode()
 	return 0
 }
 
+pci_id=$(lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1 | head -1)
+host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
+
+decimal=$(( host_en ))
+is_power_of_two=$(( (decimal & (decimal - 1)) == 0 ))
+
+if [[ $decimal != 0 && $is_power_of_two == 1 ]]; then
+	info "Detected Controller device. Exiting..."
+	exit 0
+fi
+
 is_SecureBoot=0
 if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
 	is_SecureBoot=1
