@@ -299,21 +299,14 @@ def create_parser():
     parser = argparse.ArgumentParser(
         prog='mlnx-hugepages',
         description="Manage hugepages configuration for applications.",
-        usage='mlnx-hugepages [-h] {config,reload,remove,show}',
         add_help=True
     )
 
-    subparsers = parser.add_subparsers(
-        dest="command",
-        metavar="",
-        title="Available commands",
-        help=""
-    )
+    subparsers = parser.add_subparsers(title="Available commands")
 
     # Config subparser
     config_parser = subparsers.add_parser(
         "config",
-        usage='mlnx-hugepages config [--force] <app> <size> <num>',
         help="Add/update app configuration",
         description=textwrap.fill(
                 "Adds a configuration for a specific application to the database. "
@@ -323,6 +316,7 @@ def create_parser():
             ),
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    config_parser.set_defaults(func=add_app_config)
     config_parser.add_argument("--app", required=True, help="Name of the application. (Could be anything)")
     config_parser.add_argument("--size", required=True, type=int, help=f"Hugepage size in kB. Available sizes: { get_valid_hugepage_sizes()}")
     config_parser.add_argument("--num", required=True, type=int, help="Number of hugepages to allocate.")
@@ -331,7 +325,6 @@ def create_parser():
     # Reload subparser
     reload_parser = subparsers.add_parser(
         "reload",
-        usage='mlnx-hugepages reload',
         help="Reload the hugepages configuration",
         description=textwrap.fill(
                 "Reload the hugepages configuration for all applications based on the current settings in the database. "
@@ -340,49 +333,42 @@ def create_parser():
             ),
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    reload_parser.set_defaults(func=reload_config)
 
     # Remove subparser
     remove_parser = subparsers.add_parser(
         "remove",
-        usage='mlnx-hugepages remove <app>',
         help="Remove app configuration",
         description=(
             "Remove a configuration from the database."
         ),
     )
+    remove_parser.set_defaults(func=remove_app_config)
     remove_parser.add_argument("app", help="An application to remove from the configuration")
     remove_parser.add_argument('--all', action='store_true', help='Remove all configurations for the app without prompting')
 
     # Show subparser
     show_parser = subparsers.add_parser(
         "show",
-        usage='mlnx-hugepages show',
         help="Display current configuration",
         description=(
             "Dump the current hugepages configuration for all applications in the database."
         ),
     )
+    show_parser.set_defaults(func=show_config)
 
     return parser
-
-def execute_command(args, parser):
-    command_functions = {
-        "config": add_app_config,
-        "reload": reload_config,
-        "remove": remove_app_config,
-        "show": show_config
-    }
-
-    if args.command in command_functions:
-        command_functions[args.command](args)
-    else:
-        parser.print_help()
 
 def main():
     save_original_config()
     parser = create_parser()
     args = parser.parse_args()
-    execute_command(args, parser)
+
+    if 'func' not in args:
+        parser.print_help()
+        return
+
+    args.func(args)
 
 if __name__ == "__main__":
     main()
