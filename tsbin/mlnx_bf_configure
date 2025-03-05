@@ -434,6 +434,7 @@ add_default_hugepages_configurations()
 
 config_hugepages()
 {
+	python $HUGEPAGES_TOOL original-config update
 	add_default_hugepages_configurations
 	info "Applying hugepages configuration"
 	python $HUGEPAGES_TOOL reload
