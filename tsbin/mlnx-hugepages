@@ -10,8 +10,8 @@ import logging
 CONFIG_DIR = "/etc/mellanox/hugepages.d"
 ORIGINAL_CONFIG_FILE = "/etc/mellanox/hugepages.d/mlnx-hugepages-original.conf"
 
-def save_original_config():
-    if os.path.exists(ORIGINAL_CONFIG_FILE):
+def save_original_config(force=False):
+    if os.path.exists(ORIGINAL_CONFIG_FILE) and not force:
         return
 
     original_config = {}
@@ -26,6 +26,9 @@ def save_original_config():
 
     with open(ORIGINAL_CONFIG_FILE, 'w') as f:
         json.dump(original_config, f, indent=2)
+
+def update_original_config(args):
+    save_original_config(True)
 
 def load_original_config():
     if os.path.exists(ORIGINAL_CONFIG_FILE):
@@ -247,6 +250,26 @@ def show_config(args=None):
     else:
         print("No Mlnx-Hugepages configuration found. Try adding one.")
 
+def show_original_config(args=None):
+    original_config = load_original_config()
+    if original_config:
+        print("\nOriginal System Configuration:")
+        print(f"{'Page Size (kB)':<20}{'Number of Pages':<20}{'Allocated (GB)':<20}")
+        print("=" * 60)
+
+        total_size_kb = 0
+        for size, num in original_config.items():
+            size_kb = int(size)
+            allocated_gb = (size_kb * num) / (1024 * 1024)
+            print(f"{size_kb:<20}{num:<20}{allocated_gb:<20.2f}")
+            total_size_kb += size_kb * num
+
+        total_size_gb = total_size_kb / (1024 * 1024)
+        print("=" * 60)
+        print(f"{'Total':<20}{'':<20}{total_size_gb:<20.2f}")
+    else:
+        print("No original system configuration found.")
+
 def remove_app_config(args):
     app_name = args.app
     remove_all = args.all
@@ -354,6 +377,32 @@ def create_parser():
         ),
     )
     show_parser.set_defaults(func=show_config)
+
+   # Original system config subparser
+    original_config_parser = subparsers.add_parser(
+        "original-config",
+        help="Manage and display the original system configuration saved by the tool.",
+        description="Commands to manage and display the original system configuration."
+    )
+
+    original_config_subparsers = original_config_parser.add_subparsers(
+        title="Available commands",
+        metavar="",
+    )
+
+    show_parser = original_config_subparsers.add_parser(
+        "show",
+        help="Display the original system configuration.",
+        description=f"Show the original system configuration saved in {ORIGINAL_CONFIG_FILE}."
+    )
+    show_parser.set_defaults(func=show_original_config)
+
+    update_parser = original_config_subparsers.add_parser(
+        "update",
+        help="Update the original system configuration.",
+        description="Update and save the current system's hugepages configuration."
+    )
+    update_parser.set_defaults(func=update_original_config)
 
     return parser
 
