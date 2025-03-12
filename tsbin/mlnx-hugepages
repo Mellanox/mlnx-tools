@@ -6,9 +6,18 @@ import json
 import textwrap
 import glob
 import logging
+import platform
+import sys
 
 CONFIG_DIR = "/etc/mellanox/hugepages.d"
 ORIGINAL_CONFIG_FILE = "/etc/mellanox/hugepages.d/mlnx-hugepages-original.conf"
+
+def check_system_compatibility():
+    architecture = platform.machine()
+
+    if "arm" not in architecture.lower():
+        print("Warning: This tool is only compatible with BlueField's ARM architecture.")
+        sys.exit(1)
 
 def save_original_config(force=False):
     if os.path.exists(ORIGINAL_CONFIG_FILE) and not force:
@@ -407,6 +416,7 @@ def create_parser():
     return parser
 
 def main():
+    check_system_compatibility()
     save_original_config()
     parser = create_parser()
     args = parser.parse_args()
