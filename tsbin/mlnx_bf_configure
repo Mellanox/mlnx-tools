@@ -604,6 +604,9 @@ fi
 
 CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
 if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
+    if [ "$need_restart" == true ]; then
+		ovs_restart
+    fi
 	exit $RC
 fi
 
