@@ -1,0 +1,9 @@
+[Unit]
+Description=Monitor mlnx-hugepages configuration changes
+
+[Path]
+PathModified=/etc/mellanox/hugepages.d/
+Unit=mlnx-hugepages-reload.service
+
+[Install]
+WantedBy=multi-user.target

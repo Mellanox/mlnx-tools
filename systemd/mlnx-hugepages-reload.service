@@ -1,0 +1,9 @@
+[Unit]
+Description=Reload mlnx-hugepages
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/mlnx-hugepages reload
+
+[Install]
+WantedBy=multi-user.target
