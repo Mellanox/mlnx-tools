@@ -29,3 +29,4 @@ install:
 	$(INSTALL) -m 0644 python/Python/*.py -t $(DESTDIR)$(PYTHON_DIR)/
 	$(INSTALL) -m 0755 $(PYTHON_SBIN) -t $(DESTDIR)$(SBIN_DIR)/
 	$(INSTALL) -m 0755 $(PYTHON_BIN) -t $(DESTDIR)$(BIN_DIR)/
+	mkdir -p /etc/mellanox/hugepages.d/
