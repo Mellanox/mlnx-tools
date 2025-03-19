@@ -6,16 +6,21 @@ import json
 import textwrap
 import glob
 import logging
-import platform
 import sys
+import subprocess
 
 CONFIG_DIR = "/etc/mellanox/hugepages.d"
 ORIGINAL_CONFIG_FILE = "/etc/mellanox/hugepages.d/mlnx-hugepages-original.conf"
 
-def check_system_compatibility():
-    architecture = platform.machine()
+def is_bluefield():
+    try:
+        output = subprocess.check_output(['lspci', '-s', '00:00.0']).decode()
+        return "PCI bridge: Mellanox Technologies" in output
+    except subprocess.CalledProcessError:
+        return False
 
-    if "arm" not in architecture.lower():
+def check_system_compatibility():
+    if not is_bluefield():
         print("Warning: This tool is only compatible with BlueField's ARM architecture.")
         sys.exit(1)
 
