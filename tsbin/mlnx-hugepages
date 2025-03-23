@@ -8,9 +8,16 @@ import glob
 import logging
 import sys
 import subprocess
+import syslog
 
 CONFIG_DIR = "/etc/mellanox/hugepages.d"
 ORIGINAL_CONFIG_FILE = "/etc/mellanox/hugepages.d/mlnx-hugepages-original.conf"
+
+def info(message):
+    syslog.syslog(syslog.LOG_INFO, f"INFO: {message}")
+
+def error(message):
+    syslog.syslog(syslog.LOG_ERR, f"ERROR: {message}")
 
 def is_bluefield():
     try:
@@ -21,6 +28,7 @@ def is_bluefield():
 
 def check_system_compatibility():
     if not is_bluefield():
+        error("This tool is only compatible with BlueField's ARM architecture.")
         print("Warning: This tool is only compatible with BlueField's ARM architecture.")
         sys.exit(1)
 
@@ -36,6 +44,7 @@ def save_original_config(force=False):
             with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "r") as f:
                 original_config[size] = int(f.read().strip())
         except Exception as e:
+            error(f"reading original hugepages of size {size}kB: {e}")
             print(f"Error reading original hugepages of size {size}kB: {e}")
 
     with open(ORIGINAL_CONFIG_FILE, 'w') as f:
@@ -70,6 +79,7 @@ def remove_original_config():
     if os.path.exists(ORIGINAL_CONFIG_FILE):
         os.remove(ORIGINAL_CONFIG_FILE)
     else:
+        info("No original configuration found. Resetting all hugepages to zero.")
         print("No original configuration found. Resetting all hugepages to zero.")
         valid_sizes = get_valid_hugepage_sizes()
         for size in valid_sizes:
@@ -78,6 +88,7 @@ def remove_original_config():
                     f.write('0')
                 print(f"Reset hugepages of size {size}kB to 0")
             except Exception as e:
+                error(f"resetting hugepages of size {size}kB: {e}")
                 print(f"Error resetting hugepages of size {size}kB: {e}")
 
 def load_config():
@@ -113,6 +124,7 @@ def configure_hugepages(config):
 
     # Calculate the total hugepages needed for each size, including original configuration
     for app, app_configs in config.items():
+        info(f"Reading config file of app {app}")
         for size, size_config in app_configs.items():
             size = int(size)
             num = size_config['num']
@@ -126,6 +138,7 @@ def configure_hugepages(config):
     for size, total in size_totals.items():
         try:
             with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "w") as f:
+                info(f"Allocating {total} hugepages of size {size}")
                 f.write(str(total))
 
             for app, app_configs in config.items():
@@ -134,6 +147,7 @@ def configure_hugepages(config):
                     successfully_configured_apps.append(app)
 
         except Exception as e:
+            error(f"configuring hugepages of size {size}kB: {e}s")
             print(f"Error configuring hugepages of size {size}kB: {e}")
 
     # Save the updated configuration back to the database
@@ -146,6 +160,7 @@ def reload_config(args):
     config = load_config()
 
     if not config:
+        info("No configuration found. Restoring original hugepages configuration.")
         print("No configuration found. Restoring original hugepages configuration.")
         restore_original_config()
         return
@@ -160,6 +175,7 @@ def get_available_memory_kb():
                 if line.startswith("MemAvailable:"):
                     return int(line.split()[1])
     except Exception as e:
+        error(f"Unable to retrieve available memory information: {e}")
         print(f"Error: Unable to retrieve available memory information: {e}")
 
     return None
@@ -168,6 +184,7 @@ def add_app_config(args):
     # Validate the hugepage size
     valid_sizes = get_valid_hugepage_sizes()
     if args.size not in valid_sizes:
+        error(f"The hugepage size {args.size}kB is not supported by your system.")
         print(f"Error: The hugepage size {args.size}kB is not supported by your system.")
         print(f"Supported sizes are: {', '.join(map(str, valid_sizes))}")
         return
@@ -204,6 +221,7 @@ def add_app_config(args):
     available_memory_kb = get_available_memory_kb()
 
     if total_allocated_memory_kb + new_config_memory_kb > available_memory_kb:
+        error(f"Not enough available memory for this configuration.")
         print(f"Error: Not enough available memory for this configuration.")
         print(f"Requested: {new_config_memory_kb / 1024:.2f} MB, "
               f"Available: {available_memory_kb / 1024:.2f} MB, "
