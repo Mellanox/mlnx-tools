@@ -428,24 +428,24 @@ add_default_hugepages_configurations()
 {
 	if [ "X${OVS_DOCA}" == "Xyes" ]; then
 		info "Adding ovs-doca default hugepages configuration"
-		python $HUGEPAGES_TOOL config --force --app ovs-doca --size $OVS_DEFAULT_HUGEPAGE_SIZE --num $OVS_DEFAULT_HUGEPAGE_NUM
+		$HUGEPAGES_TOOL config --force --app ovs-doca --size $OVS_DEFAULT_HUGEPAGE_SIZE --num $OVS_DEFAULT_HUGEPAGE_NUM
 	fi
 }
 
 config_hugepages()
 {
-	python $HUGEPAGES_TOOL original-config update
+	$HUGEPAGES_TOOL original-config update
 	add_default_hugepages_configurations
 	info "Applying hugepages configuration"
-	python $HUGEPAGES_TOOL reload
+	$HUGEPAGES_TOOL reload
 }
 
 cleanup_hugepages()
 {
-	if [ "X${OVS_DOCA}" == "Xno" ] && python $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
+	if [ "X${OVS_DOCA}" == "Xno" ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
 		info "Removing ovs-doca default hugepages configuration"
-		python $HUGEPAGES_TOOL remove ovs-doca
-		python $HUGEPAGES_TOOL reload
+		$HUGEPAGES_TOOL remove ovs-doca
+		$HUGEPAGES_TOOL reload
 	fi
 }
 
