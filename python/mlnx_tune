@@ -2903,7 +2903,6 @@ def add_options (parser):
 	parser.add_option("-q","--verbosity",		help = "print debug information to the screen [default %default]", action="store_true", default = False)
 	parser.add_option("-v","--version",		help = "print tool version and exit [default %default]", action="store_true", default = False)
 	parser.add_option("-i","--info_file_path",	help = "info_file path. [default %s]", default ="/tmp/mlnx_tune_%s.log"%(datetime.datetime.now().strftime("%y%m%d_%H%M%S")))
-	parser.add_option("-l","--list_os",		help = "List supported OS [default %default]", action="store_true", default = False)
 
 def force_dependencies(options):
 	""" Force dependencies between input arguments
