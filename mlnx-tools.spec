@@ -98,7 +98,7 @@ rm -rf %{buildroot}
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
 /sbin/mlnx-sf
-/sbin/nv-hugepages
+/sbin/doca-hugepages
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}/man8/*.8*
