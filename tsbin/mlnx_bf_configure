@@ -420,7 +420,7 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
 	. /etc/mellanox/mlnx-sf.conf
 fi
 
-HUGEPAGES_TOOL=/usr/sbin/mlnx-hugepages
+HUGEPAGES_TOOL=/usr/sbin/nv-hugepages
 OVS_DEFAULT_HUGEPAGE_SIZE=2048
 OVS_DEFAULT_HUGEPAGE_NUM=512
 
