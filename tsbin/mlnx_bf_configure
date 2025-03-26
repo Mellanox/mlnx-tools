@@ -442,7 +442,7 @@ config_hugepages()
 
 cleanup_hugepages()
 {
-	if [ "X${OVS_DOCA}" == "Xno" ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
+	if [ "X${OVS_DOCA}" != "Xyes" ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
 		info "Removing ovs-doca default hugepages configuration"
 		$HUGEPAGES_TOOL remove ovs-doca
 		$HUGEPAGES_TOOL reload
