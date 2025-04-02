@@ -315,11 +315,32 @@ class SF:
         delete SF
         """
         result = {}
-        # Deactivate SF
-        cmd = MLXDEVM + " port function set {} state inactive".format(self.sfindex)
-        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        sf_info = {}
+
+        cmd_show = MLXDEVM + " port show {} -jp".format(self.sfindex)
+
+        result['status'], result['output'] = get_status_output(cmd_show, self.verbose)
         if result['status']:
+            result['output'] = result['output'].splitlines()[0]
             return result
+
+        sf_info = json.loads(result['output'])
+        if sf_info["port"][self.sfindex]["function"]["state"] == "active":
+            # Deactivate SF
+            cmd = MLXDEVM + " port function set {} state inactive".format(self.sfindex)
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
+        # Wait for the SF to be detached
+        while True:
+            result['status'], result['output'] = get_status_output(cmd_show, self.verbose)
+            if result['status']:
+                break
+            sf_info = json.loads(result['output'])
+            if sf_info["port"][self.sfindex]["function"]["opstate"] == "detached":
+                break
+            time.sleep(0.1)
 
         # Delete SF
         cmd = MLXDEVM + " port del {}".format(self.sfindex)
