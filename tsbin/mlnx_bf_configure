@@ -554,12 +554,12 @@ ovs_cleanup_doca()
 {
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'default-datapath-type'); then
 		info "OVS cleanup default-datapath-type"
-		ovs-vsctl remove Open_vSwitch . other_config default-datapath-type
+		$vsctl remove Open_vSwitch . other_config default-datapath-type
 	fi
 
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
 		info "OVS cleanup doca-init"
-		ovs-vsctl remove Open_vSwitch . other_config doca-init
+		$vsctl remove Open_vSwitch . other_config doca-init
 		need_restart=true
 	fi
 }
