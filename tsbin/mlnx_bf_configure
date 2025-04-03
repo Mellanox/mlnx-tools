@@ -538,7 +538,7 @@ ovs_config_default_datapath()
 	ovs_default_datapath=${1:-"system"}
 
 	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
-		$vsctl set Open_vSwitch . Other_config:default-datapath-type=$ovs_default_datapath 2> /dev/null
+		$vsctl --no-wait set Open_vSwitch . Other_config:default-datapath-type=$ovs_default_datapath 2> /dev/null
 		if [ $? -eq 0 ]; then
 			info "OVS default-datapath-type is set"
 		fi
@@ -554,12 +554,12 @@ ovs_cleanup_doca()
 {
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'default-datapath-type'); then
 		info "OVS cleanup default-datapath-type"
-		$vsctl remove Open_vSwitch . other_config default-datapath-type
+		$vsctl --no-wait remove Open_vSwitch . other_config default-datapath-type
 	fi
 
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
 		info "OVS cleanup doca-init"
-		$vsctl remove Open_vSwitch . other_config doca-init
+		$vsctl --no-wait remove Open_vSwitch . other_config doca-init
 		need_restart=true
 	fi
 }
@@ -577,7 +577,7 @@ ovs_config_doca()
 		return 0
 	fi
 
-	$vsctl set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
+	$vsctl --no-wait set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init="true"'); then
 		info "OVS doca-init is set to true"
 		need_restart=true
@@ -673,7 +673,7 @@ do
 done
 
 if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
-	$vsctl set Open_vSwitch . Other_config:hw-offload=true
+	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload=true
 	if [ $? -eq 0 ]; then
 		info "OVS HW offload is set"
 		info "Going to restart $ovs_service to activate hw-offload"
