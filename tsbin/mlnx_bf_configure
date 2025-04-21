@@ -437,7 +437,6 @@ add_default_hugepages_configurations()
 
 config_hugepages()
 {
-	$HUGEPAGES_TOOL original-config update
 	add_default_hugepages_configurations
 	info "Applying hugepages configuration"
 	$HUGEPAGES_TOOL reload
