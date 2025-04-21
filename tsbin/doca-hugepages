@@ -11,7 +11,6 @@ import subprocess
 import syslog
 
 CONFIG_DIR = "/etc/mellanox/hugepages.d"
-ORIGINAL_CONFIG_FILE = "/etc/mellanox/hugepages.d/mlnx-hugepages-original.conf"
 
 def info(message):
     syslog.syslog(syslog.LOG_INFO, f"INFO: {message}")
@@ -31,65 +30,6 @@ def check_system_compatibility():
         error("This tool is only compatible with BlueField's ARM architecture.")
         print("Warning: This tool is only compatible with BlueField's ARM architecture.")
         sys.exit(1)
-
-def save_original_config(force=False):
-    if os.path.exists(ORIGINAL_CONFIG_FILE) and not force:
-        return
-
-    original_config = {}
-    valid_sizes = get_valid_hugepage_sizes()
-
-    for size in valid_sizes:
-        try:
-            with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "r") as f:
-                original_config[size] = int(f.read().strip())
-        except Exception as e:
-            error(f"reading original hugepages of size {size}kB: {e}")
-            print(f"Error reading original hugepages of size {size}kB: {e}")
-
-    with open(ORIGINAL_CONFIG_FILE, 'w') as f:
-        json.dump(original_config, f, indent=2)
-
-def update_original_config(args):
-    save_original_config(True)
-
-def load_original_config():
-    if os.path.exists(ORIGINAL_CONFIG_FILE):
-        with open(ORIGINAL_CONFIG_FILE, 'r') as f:
-            return json.load(f)
-    return None
-
-def restore_original_config():
-    original_config = load_original_config()
-    if not original_config:
-        print("No original configuration found. Cannot restore.")
-        return
-
-    for size, num in original_config.items():
-        try:
-            with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "w") as f:
-                f.write(str(num))
-        except Exception as e:
-            print(f"Error restoring hugepages of size {size}kB: {e}")
-
-    remove_original_config()
-    print("Original configuration restored.")
-
-def remove_original_config():
-    if os.path.exists(ORIGINAL_CONFIG_FILE):
-        os.remove(ORIGINAL_CONFIG_FILE)
-    else:
-        info("No original configuration found. Resetting all hugepages to zero.")
-        print("No original configuration found. Resetting all hugepages to zero.")
-        valid_sizes = get_valid_hugepage_sizes()
-        for size in valid_sizes:
-            try:
-                with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "w") as f:
-                    f.write('0')
-                print(f"Reset hugepages of size {size}kB to 0")
-            except Exception as e:
-                error(f"resetting hugepages of size {size}kB: {e}")
-                print(f"Error resetting hugepages of size {size}kB: {e}")
 
 def load_config():
     config = {}
@@ -117,23 +57,16 @@ def get_valid_hugepage_sizes():
     return sorted([int(d.split('-')[1][:-2]) for d in os.listdir(hugepage_dir) if d.startswith("hugepages-")])
 
 def configure_hugepages(config):
-    original_config = load_original_config() or {}
-
     size_totals = {}
     successfully_configured_apps = []
 
-    # Calculate the total hugepages needed for each size, including original configuration
+    # Calculate the total hugepages needed for each size.
     for app, app_configs in config.items():
         info(f"Reading config file of app {app}")
         for size, size_config in app_configs.items():
             size = int(size)
             num = size_config['num']
             size_totals[size] = size_totals.get(size, 0) + num
-
-    # Add original configuration to size_totals
-    for size, num in original_config.items():
-        size = int(size)
-        size_totals[size] = size_totals.get(size, 0) + num
 
     for size, total in size_totals.items():
         try:
@@ -156,13 +89,23 @@ def configure_hugepages(config):
 
     show_config()
 
+def check_grub_hugepages_configured():
+    cmdline = ""
+    if os.path.exists("/proc/cmdline"):
+        with open("/proc/cmdline") as f:
+            cmdline = f.read()
+
+    if "hugepage" in cmdline:
+        info("Not supported when hugepages are configured through grub.")
+        print("Not supported when hugepages are configured through grub.")
+        sys.exit(1)
+
 def reload_config(args):
     config = load_config()
 
     if not config:
-        info("No configuration found. Restoring original hugepages configuration.")
-        print("No configuration found. Restoring original hugepages configuration.")
-        restore_original_config()
+        info("No configuration found.")
+        print("No configuration found.")
         return
 
     print("Reloading hugepages configuration...")
@@ -239,24 +182,13 @@ def add_app_config(args):
 
 def show_config(args=None):
     config = load_config()
-    original_config = load_original_config()
     has_inactive_config = False
+    total_size_kb = 0
 
     if config:
         print("\nCurrent Mlnx-Hugepages Configuration:")
         print(f"{'Application':<20}{'Page Size (kB)':<20}{'Number of Pages':<20}{'Allocated (GB)':<20}{'Is Active':<20}")
         print("=" * 100)
-
-        total_size_kb = 0
-        # Show original configuration if it exists
-        if original_config:
-            print("Original System Configuration:")
-            for size, num in original_config.items():
-                size_kb = int(size)
-                allocated_gb = (size_kb * num) / (1024 * 1024)
-                print(f"{'System':<20}{size_kb:<20}{num:<20}{allocated_gb:<20.2f}{'N/A':<20}")
-                total_size_kb += size_kb * num
-            print("-" * 100)
 
         for app, app_configs in config.items():
             for size, size_config in app_configs.items():
@@ -281,26 +213,6 @@ def show_config(args=None):
             print("To enable these configurations and allocate the required hugepages, execute the 'reload' command.")
     else:
         print("No Mlnx-Hugepages configuration found. Try adding one.")
-
-def show_original_config(args=None):
-    original_config = load_original_config()
-    if original_config:
-        print("\nOriginal System Configuration:")
-        print(f"{'Page Size (kB)':<20}{'Number of Pages':<20}{'Allocated (GB)':<20}")
-        print("=" * 60)
-
-        total_size_kb = 0
-        for size, num in original_config.items():
-            size_kb = int(size)
-            allocated_gb = (size_kb * num) / (1024 * 1024)
-            print(f"{size_kb:<20}{num:<20}{allocated_gb:<20.2f}")
-            total_size_kb += size_kb * num
-
-        total_size_gb = total_size_kb / (1024 * 1024)
-        print("=" * 60)
-        print(f"{'Total':<20}{'':<20}{total_size_gb:<20.2f}")
-    else:
-        print("No original system configuration found.")
 
 def remove_app_config(args):
     app_name = args.app
@@ -410,37 +322,11 @@ def create_parser():
     )
     show_parser.set_defaults(func=show_config)
 
-   # Original system config subparser
-    original_config_parser = subparsers.add_parser(
-        "original-config",
-        help="Manage and display the original system configuration saved by the tool.",
-        description="Commands to manage and display the original system configuration."
-    )
-
-    original_config_subparsers = original_config_parser.add_subparsers(
-        title="Available commands",
-        metavar="",
-    )
-
-    show_parser = original_config_subparsers.add_parser(
-        "show",
-        help="Display the original system configuration.",
-        description=f"Show the original system configuration saved in {ORIGINAL_CONFIG_FILE}."
-    )
-    show_parser.set_defaults(func=show_original_config)
-
-    update_parser = original_config_subparsers.add_parser(
-        "update",
-        help="Update the original system configuration.",
-        description="Update and save the current system's hugepages configuration."
-    )
-    update_parser.set_defaults(func=update_original_config)
-
     return parser
 
 def main():
     check_system_compatibility()
-    save_original_config()
+    check_grub_hugepages_configured()
     parser = create_parser()
     args = parser.parse_args()
 
