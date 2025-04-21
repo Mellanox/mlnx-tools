@@ -243,7 +243,7 @@ def show_config(args=None):
     has_inactive_config = False
 
     if config:
-        print("\nCurrent Mlnx-Hugepages Configuration:")
+        print("\nCurrent Hugepages Configuration:")
         print(f"{'Application':<20}{'Page Size (kB)':<20}{'Number of Pages':<20}{'Allocated (GB)':<20}{'Is Active':<20}")
         print("=" * 100)
 
@@ -280,7 +280,7 @@ def show_config(args=None):
             print("\nNote: The configurations marked as 'inactive' are saved but not currently in use.")
             print("To enable these configurations and allocate the required hugepages, execute the 'reload' command.")
     else:
-        print("No Mlnx-Hugepages configuration found. Try adding one.")
+        print("No hugepages configuration found. Try adding one.")
 
 def show_original_config(args=None):
     original_config = load_original_config()
@@ -350,7 +350,6 @@ def remove_app_config(args):
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        prog='mlnx-hugepages',
         description="Manage hugepages configuration for applications.",
         add_help=True
     )
@@ -440,9 +439,9 @@ def create_parser():
 
 def main():
     check_system_compatibility()
-    save_original_config()
     parser = create_parser()
     args = parser.parse_args()
+    save_original_config()
 
     if 'func' not in args:
         parser.print_help()
