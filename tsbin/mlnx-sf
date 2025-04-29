@@ -321,11 +321,11 @@ class SF:
         result = {}
         sf_info = {}
 
-        cmd_show = MLXDEVM + " port show {} -jp".format(self.sfindex)
+        cmd_show = MLXDEVM + " port show {} -jp 2> /dev/null".format(self.sfindex)
 
         result['status'], result['output'] = get_status_output(cmd_show, self.verbose)
         if result['status']:
-            result['output'] = result['output'].splitlines()[0]
+            result['output'] = "ERROR: SF {} not found".format(self.sfindex)
             return result
 
         sf_info = json.loads(result['output'])
