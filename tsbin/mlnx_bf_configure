@@ -32,6 +32,7 @@ CT_MAX_OFFLOADED_CONNS=${CT_MAX_OFFLOADED_CONNS:-1000000}
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-30}
 SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
+RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 
 RC=0
 
@@ -61,6 +62,26 @@ error()
 	logger -t $prog -i "ERR: $*"
 }
 
+run_command_with_retry()
+{
+	cmd=$1
+	shift
+
+	i=0
+	while ! (eval "$cmd"); do
+		if [ $i -gt $RUN_CMD_RETRY_NUM ]; then
+			error "Failed to run $cmd after $i retries"
+			return 1
+		fi
+		let i++
+		sleep 1
+	done
+	if [ $i -gt 0 ]; then
+		info "$cmd passed after $i retries"
+	fi
+
+	return 0
+}
 
 get_steering_mode()
 {
@@ -87,9 +108,9 @@ set_steering_mode()
 	while [ $rc -ne 0 ]
 	do
 		if [ -n "$compat" ]; then
-			echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
+			run_command_with_retry "echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode"
 		else
-			devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
+			run_command_with_retry "devlink dev param set pci/${pci_dev} name flow_steering_mode value ${mode} cmode runtime"
 		fi
 		rc=$?
 		let i++
@@ -191,9 +212,9 @@ set_dev_param()
 
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
 	if [ -n "$compat" ]; then
-		echo ${value} > ${compat}
+		run_command_with_retry "echo ${value} > ${compat}"
 	else
-		devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime
+		run_command_with_retry "devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime"
 	fi
 	rc=$?
 	if [ $rc -ne 0 ]; then
