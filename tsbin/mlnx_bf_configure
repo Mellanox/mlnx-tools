@@ -383,7 +383,6 @@ fi
 if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 	. /etc/mellanox/mlnx-bf.conf
 fi
-ALLOW_SHARED_RQ=${ALLOW_SHARED_RQ:-"yes"}
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
@@ -478,9 +477,6 @@ do
 
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" != "switchdev" ]; then
-			if [ "X${ALLOW_SHARED_RQ}" == "Xyes" ]; then
-				set_dev_param ${dev} esw_pet_insert true "Shared RQ:"
-			fi
 			if [ "X${LEGACY_METADATA_MATCH_MODE}" == "Xyes" ]; then
 				set_dev_param ${dev} vport_match_mode legacy
 			fi
@@ -609,7 +605,7 @@ ovs_restart()
 		do
 			case "$p" in
 				p*|e*)
-				ALLOW_SHARED_RQ=$ALLOW_SHARED_RQ /lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+				/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
 				;;
 				*)
 				;;
