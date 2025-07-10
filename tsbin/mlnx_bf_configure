@@ -137,6 +137,42 @@ set_eswitch_mode()
 		info "Stopped strongswan.service successfully"
 	fi
 
+	# If OVS service is detectedi and is active, stop it temporarily (to allow eswitch mode change)
+	if [ -n "$ovs_service" ]; then
+		if (systemctl is-active --quiet "$ovs_service" 2>/dev/null); then
+			need_restart=true
+
+			# Backup OVS db if exists before deleting OVS bridges
+			if [ -f /var/lib/openvswitch/conf.db ]; then
+				ovsdb-tool backup /var/lib/openvswitch/conf.db "$ovs_backup_file"
+				if [ $? -ne 0 ]; then
+					error "WARNING: Failed to create OVS database backup"
+				fi
+			fi
+
+			# Delete all OVS bridges
+			for br in $(ovs-vsctl list-br 2>/dev/null); do
+				ovs-vsctl del-br "$br" 2>/dev/null
+			done
+			sleep 2
+
+			# Restore OVS database from backup if it exists
+			if [ -f "$ovs_backup_file" ]; then
+				systemctl stop "$ovs_service" 2>/dev/null  # Ensure service is stopped
+				cp "$ovs_backup_file" /var/lib/openvswitch/conf.db
+				if [ $? -ne 0 ]; then
+					error "WARNING: Failed to restore OVS database from backup"
+				fi
+			fi
+
+			# Stop OVS service
+			systemctl stop "$ovs_service"
+			if systemctl is-active --quiet "$ovs_service"; then
+				error "ERROR: Failed to stop $ovs_service"
+			fi
+		fi
+	fi
+
 	rc=1
 	i=0
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
