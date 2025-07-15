@@ -108,8 +108,10 @@ class SF:
 
         info = self.info["port"]
 
+        not_sf = []
         for pci_dev_index in info:
             if (not "sfnum" in info[pci_dev_index]):
+                not_sf.append(pci_dev_index)
                 continue
             info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
             info[pci_dev_index]["sfindex"] = pci_dev_index
@@ -121,6 +123,8 @@ class SF:
             if "eswitch" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["eswitch"] = "NA"
 
+        for idx in not_sf:
+            del info[idx]
 
         if self.json:
             if self.pretty:
@@ -130,8 +134,6 @@ class SF:
         else:
             result['output'] = ""
             for pci_dev_index in info:
-                if (not "sfnum" in info[pci_dev_index]):
-                    continue
                 result['output'] += "\n"
                 result['output'] += "SF Index: " + pci_dev_index + "\n"
                 result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
