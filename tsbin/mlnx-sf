@@ -83,21 +83,24 @@ class SF:
         self.info = {}
         self.info_error = 0
 
-        # Get existing devices
-        cmd = MLXDEVM + " --pretty --json port show "
-        if self.sfindex:
-            cmd += self.sfindex
-
-        self.info_error, output = get_status_output(cmd)
-        if self.info_error:
-            return
-        self.info = json.loads(output)
-
 
     def show(self):
         """
         Show configurations
         """
+        # Get existing devices
+        cmd = MLXDEVM + " --pretty --json port show "
+        if self.sfindex:
+            cmd += self.sfindex
+        cmd += " 2> /dev/null"
+
+        self.info_error, output = get_status_output(cmd)
+        if self.info_error:
+            result = {'status': self.info_error, 'output': f'Command: "{cmd}" failed with exit code {self.info_error}.\nError: {output}'}
+            return result
+
+        self.info = json.loads(output)
+
         result = {'status': self.info_error, 'output': 'No SF device found'}
 
         if not self.info:
@@ -105,9 +108,16 @@ class SF:
 
         info = self.info["port"]
 
+        not_sf = []
+        ignore_list = []
         for pci_dev_index in info:
-            if "sfnum" not in info[pci_dev_index]:
+            if (not "sfnum" in info[pci_dev_index]):
+                not_sf.append(pci_dev_index)
                 continue
+            if self.device and self.device not in pci_dev_index:
+                ignore_list.append(pci_dev_index)
+                continue
+
             info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
             info[pci_dev_index]["sfindex"] = pci_dev_index
             info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
@@ -118,23 +128,17 @@ class SF:
             if "eswitch" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["eswitch"] = "NA"
 
+        for idx in not_sf + ignore_list:
+            del info[idx]
 
         if self.json:
-            is_sf = 0
-            for pci_dev_index in info:
-                if "sfnum" in info[pci_dev_index]:
-                    is_sf += 1
-
-            if is_sf:
-                if self.pretty:
-                    result['output'] = json.dumps(info, indent=4)
-                else:
-                    result['output'] = json.dumps(info)
+            if self.pretty:
+                result['output'] = json.dumps(info, indent=4)
+            else:
+                result['output'] = json.dumps(info)
         else:
             result['output'] = ""
             for pci_dev_index in info:
-                if "sfnum" not in info[pci_dev_index]:
-                    continue
                 result['output'] += "\n"
                 result['output'] += "SF Index: " + pci_dev_index + "\n"
                 result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
