@@ -109,10 +109,15 @@ class SF:
         info = self.info["port"]
 
         not_sf = []
+        ignore_list = []
         for pci_dev_index in info:
             if (not "sfnum" in info[pci_dev_index]):
                 not_sf.append(pci_dev_index)
                 continue
+            if self.device and self.device not in pci_dev_index:
+                ignore_list.append(pci_dev_index)
+                continue
+
             info[pci_dev_index]["device"] = pci_dev_index.split('/')[1]
             info[pci_dev_index]["sfindex"] = pci_dev_index
             info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
@@ -123,7 +128,7 @@ class SF:
             if "eswitch" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["eswitch"] = "NA"
 
-        for idx in not_sf:
+        for idx in not_sf + ignore_list:
             del info[idx]
 
         if self.json:
