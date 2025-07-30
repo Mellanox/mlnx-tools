@@ -305,9 +305,13 @@ is_smartnic_mode()
 	if (echo $mft_output | grep -o INTERNAL_CPU_MODEL.* | awk '{print$3}' | grep -q "EMBEDDED_CPU(1)"); then
 		info "Device ${dev} is in SmartNIC mode"
 		return 0
+	elif (echo $mft_output | grep -o INTERNAL_CPU_MODEL.* | awk '{print$3}' | grep -q "SEPARATED_HOST(0)"); then
+		info "Device ${dev} is in SEPERATED_HOST mode"
+		return 1
 	fi
-	info "Device ${dev} is in SEPERATED_HOST mode"
-	return 1
+	# Assume SmartNIC mode if no match is found
+	info "Device ${dev} is in SmartNIC mode"
+	return 0
 }
 
 pci_id=$(lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1 | head -1)
@@ -368,7 +372,9 @@ num_of_devs=0
 for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
 do
 	SECONDS=0
-	while ! ($mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
+	port=$(( ${dev: -1} + 1 ))
+
+	while ! ($mftconfig -d ${dev} -e q LINK_TYPE_P$port > /dev/null 2>&1); do
 		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
 			error "Failed to run $mftconfig query on $dev"
 			break
@@ -376,7 +382,6 @@ do
 		sleep 1
 	done
 
-	port=$(( ${dev: -1} + 1 ))
 	if (is_port_ib "$dev" "$port"); then
 		info "Link type is IB for ${dev}. Skipping mode confiugration."
 		continue
