@@ -374,7 +374,7 @@ do
 	SECONDS=0
 	port=$(( ${dev: -1} + 1 ))
 
-	while ! ($mftconfig -d ${dev} -e q LINK_TYPE_P$port > /dev/null 2>&1); do
+	while ! ($mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
 		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
 			error "Failed to run $mftconfig query on $dev"
 			break
