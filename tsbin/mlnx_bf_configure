@@ -136,6 +136,92 @@ get_eswitch_mode()
 	devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
 }
 
+ovs_backup_and_cleanup()
+{
+	local curr_pci_dev=$1
+	local ovs_backup_file=""
+	# Extract function number from PCI device (e.g., 0000:03:00.1 -> 1)
+	local pci_func_num=$(echo "${curr_pci_dev}" | sed 's/.*\.//')
+	
+	# Get all bridges and filter only those containing ports for current PCI function
+	local all_bridges=$(ovs-vsctl list-br 2>/dev/null || echo "")
+	local curr_pci_bridges=""
+	
+	for br in $all_bridges; do
+		# Get ports for this bridge
+		local bridge_ports=$(ovs-vsctl list-ports "$br" 2>/dev/null || echo "")
+		
+		# Check if any port matches the current PCI function pattern
+		if echo "$bridge_ports" | grep -qE "(^|[[:space:]])p${pci_func_num}([[:space:]]|$)|(^|[[:space:]])pf${pci_func_num}|(^|[[:space:]])en[0-9]+f${pci_func_num}"; then
+			curr_pci_bridges="$curr_pci_bridges $br"
+		fi
+	done
+	
+	# Remove leading/trailing whitespace
+	curr_pci_bridges=$(echo $curr_pci_bridges | xargs)
+
+	# Check if we need cleanup (either service running or bridges exist)
+	if ! systemctl is-active --quiet "$ovs_service" 2>/dev/null && [ -z "$curr_pci_bridges" ]; then
+		return 0
+	fi
+
+	info "Backup and cleanup OVS bridges, ports and flow rules before changing the eswitch mode"
+
+	# Backup OVS db before cleanup so we can later restore all bridges, ports and rules we had before the cleanup
+	if [ -f "/var/lib/openvswitch/conf.db" ]; then
+		ovs_backup_file="/tmp/ovsdb-backup-eswitch-$$.db"
+		cp /var/lib/openvswitch/conf.db "$ovs_backup_file"
+		if [ $? -ne 0 ]; then
+			error "WARNING: Failed to create backup for OVS database"
+		else
+			info "Backed up OVS database to $ovs_backup_file"
+		fi
+	fi
+
+	# Perform comprehensive cleanup - remove all rules, ports and bridges
+	for br in $curr_pci_bridges; do
+		info "Clearing OpenFlow rules from bridge: $br"
+		ovs-ofctl del-flows "$br" 2>/dev/null || true
+		for port in $(ovs-vsctl list-ports "$br" 2>/dev/null); do
+			info "Removing port $port from bridge $br"
+			ovs-vsctl del-port "$br" "$port" 2>/dev/null || true
+		done
+		ovs-vsctl del-br "$br" 2>/dev/null || true
+	done
+
+	# Stop OVS service if it's running
+	if systemctl is-active --quiet "$ovs_service" 2>/dev/null; then
+		info "Stopping OVS service: $ovs_service"
+		systemctl stop "$ovs_service"
+
+		if systemctl is-active --quiet "$ovs_service"; then
+			error "ERROR: Failed to stop $ovs_service"
+		else
+			info "Successfully stopped $ovs_service"
+		fi
+	fi
+
+	# Restore OVS database from backup if we created one
+	if [ -n "$ovs_backup_file" ] && [ -f "$ovs_backup_file" ]; then
+		cp "$ovs_backup_file" /var/lib/openvswitch/conf.db
+		if [ $? -ne 0 ]; then
+			error "WARNING: Failed to restore OVS database from backup"
+		else
+			info "Restored OVS database from backup"
+		fi
+		
+		# Clean up the temporary backup file
+		rm -f "$ovs_backup_file"
+		if [ $? -eq 0 ]; then
+			info "Cleaned up temporary backup file: $ovs_backup_file"
+		else
+			error "WARNING: Failed to remove temporary backup file: $ovs_backup_file"
+		fi
+	fi
+
+	need_restart=true
+}
+
 set_eswitch_mode()
 {
 	pci_dev=$1
@@ -158,40 +244,9 @@ set_eswitch_mode()
 		info "Stopped strongswan.service successfully"
 	fi
 
-	# If OVS service is detectedi and is active, stop it temporarily (to allow eswitch mode change)
+	# If OVS service is detected, handle cleanup and service management
 	if [ -n "$ovs_service" ]; then
-		if (systemctl is-active --quiet "$ovs_service" 2>/dev/null); then
-			need_restart=true
-
-			# Backup OVS db if exists before deleting OVS bridges
-			if [ -f /var/lib/openvswitch/conf.db ]; then
-				ovsdb-tool backup /var/lib/openvswitch/conf.db "$ovs_backup_file"
-				if [ $? -ne 0 ]; then
-					error "WARNING: Failed to create OVS database backup"
-				fi
-			fi
-
-			# Delete all OVS bridges
-			for br in $(ovs-vsctl list-br 2>/dev/null); do
-				ovs-vsctl del-br "$br" 2>/dev/null
-			done
-			sleep 2
-
-			# Restore OVS database from backup if it exists
-			if [ -f "$ovs_backup_file" ]; then
-				systemctl stop "$ovs_service" 2>/dev/null  # Ensure service is stopped
-				cp "$ovs_backup_file" /var/lib/openvswitch/conf.db
-				if [ $? -ne 0 ]; then
-					error "WARNING: Failed to restore OVS database from backup"
-				fi
-			fi
-
-			# Stop OVS service
-			systemctl stop "$ovs_service"
-			if systemctl is-active --quiet "$ovs_service"; then
-				error "ERROR: Failed to stop $ovs_service"
-			fi
-		fi
+		ovs_backup_and_cleanup ${pci_dev}
 	fi
 
 	rc=1
@@ -348,6 +403,17 @@ fi
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
+
+ovs_service=""
+if [ -e /etc/init.d/openvswitch-switch ]; then
+	ovs_service="openvswitch-switch.service"
+elif [ -e /usr/lib/systemd/system/openvswitch.service ]; then
+	ovs_service="openvswitch.service"
+else
+	ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
+fi
+
+need_restart=false
 
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
@@ -530,15 +596,6 @@ OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf en3f1pf1sf0"}
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 OVS_TIMEOUT=${OVS_TIMEOUT:-30}
 
-ovs_service=""
-if [ -e /etc/init.d/openvswitch-switch ]; then
-	ovs_service="openvswitch-switch.service"
-elif [ -e /usr/lib/systemd/system/openvswitch.service ]; then
-	ovs_service="openvswitch.service"
-else
-	ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
-fi
-
 if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 	# OVS service is not enabled
 	info "$ovs_service is not enabled. Exiting..."
@@ -546,8 +603,6 @@ if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
 fi
 
 ovs_restart="systemctl restart $ovs_service"
-
-need_restart=false
 
 ovs_restart()
 {
