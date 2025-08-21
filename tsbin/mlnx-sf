@@ -123,6 +123,9 @@ class SF:
             info[pci_dev_index]["aux_dev"] = lookup_aux_dev(info[pci_dev_index]["device"], info[pci_dev_index]["sfnum"])
             info[pci_dev_index]["sf_netdev"] = get_sf_netdev(info[pci_dev_index]["aux_dev"])
             info[pci_dev_index]["rdma_dev"] = get_sf_rdmadev(info[pci_dev_index]["aux_dev"])
+            # Ensure function key exists before accessing it
+            if "function" not in info[pci_dev_index]:
+                info[pci_dev_index]["function"] = {}
             if "trust" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["trust"] = "NA"
             if "eswitch" not in info[pci_dev_index]["function"]:
@@ -141,9 +144,39 @@ class SF:
             for pci_dev_index in info:
                 result['output'] += "\n"
                 result['output'] += "SF Index: " + pci_dev_index + "\n"
+
+                # Add JSON fields that weren't in original console output
+                if "type" in info[pci_dev_index]:
+                    result['output'] += "  Type: " + info[pci_dev_index]["type"] + "\n"
+                if "flavour" in info[pci_dev_index]:
+                    result['output'] += "  Flavour: " + info[pci_dev_index]["flavour"] + "\n"
+                if "controller" in info[pci_dev_index]:
+                    result['output'] += "  Controller: " + str(info[pci_dev_index]["controller"]) + "\n"
+                if "pfnum" in info[pci_dev_index]:
+                    result['output'] += "  PF Number: " + str(info[pci_dev_index]["pfnum"]) + "\n"
+                if "sfnum" in info[pci_dev_index]:
+                    result['output'] += "  SF Number: " + str(info[pci_dev_index]["sfnum"]) + "\n"
+                if "splittable" in info[pci_dev_index]:
+                    result['output'] += "  Splittable: " + str(info[pci_dev_index]["splittable"]).lower() + "\n"
+
+                # Original console fields (keep these even if not in JSON)
                 result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
                 result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
                 result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
+
+                # Additional JSON function fields
+                if "function" in info[pci_dev_index]:
+                    func = info[pci_dev_index]["function"]
+                    if "state" in func:
+                        result['output'] += "  Function state: " + func["state"] + "\n"
+                    if "opstate" in func:
+                        result['output'] += "  Function opstate: " + func["opstate"] + "\n"
+                    if "max_uc_macs" in func:
+                        result['output'] += "  Function max_uc_macs: " + str(func["max_uc_macs"]) + "\n"
+                    if "max_io_eqs" in func:
+                        result['output'] += "  Function max_io_eqs: " + str(func["max_io_eqs"]) + "\n"
+
+                # Original console fields (always show these)
                 result['output'] += "  Function trust: " + info[pci_dev_index]["function"]["trust"] + "\n"
                 result['output'] += "  Function roce: " + info[pci_dev_index]["function"]["roce"] + "\n"
                 result['output'] += "  Function eswitch: " + info[pci_dev_index]["function"]["eswitch"] + "\n"
