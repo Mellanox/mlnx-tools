@@ -92,7 +92,7 @@ get_steering_mode()
 	if [ -n "$compat" ]; then
 		cat ${compat} 2> /dev/null
 	else
-		devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
+		run_devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
 	fi
 }
 
@@ -110,7 +110,7 @@ set_steering_mode()
 		if [ -n "$compat" ]; then
 			run_command_with_retry "echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/*/steering_mode"
 		else
-			run_command_with_retry "devlink dev param set pci/${pci_dev} name flow_steering_mode value ${mode} cmode runtime"
+			run_command_with_retry "run_devlink dev param set pci/${pci_dev} name flow_steering_mode value ${mode} cmode runtime"
 		fi
 		rc=$?
 		let i++
@@ -137,7 +137,7 @@ get_eswitch_mode()
 	if [ -n "$compat" ]; then
 		cat ${compat}
 	else
-		devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
+		run_devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
 	fi
 }
 
@@ -171,7 +171,7 @@ set_eswitch_mode()
 		if [ -n "$compat" ]; then
 			echo ${mode} > ${compat}
 		else
-			devlink dev eswitch set pci/${pci_dev} mode ${mode}
+			run_devlink dev eswitch set pci/${pci_dev} mode ${mode}
 		fi
 		rc=$?
 		let i++
@@ -203,7 +203,7 @@ get_dev_param()
 	if [ -n "$compat" ]; then
 		cat ${compat} 2> /dev/null
 	else
-		devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
+		run_devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
 	fi
 }
 
@@ -219,7 +219,7 @@ set_dev_param()
 	if [ -n "$compat" ]; then
 		run_command_with_retry "echo ${value} > ${compat}"
 	else
-		run_command_with_retry "devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime"
+		run_command_with_retry "run_devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime"
 	fi
 	rc=$?
 	if [ $rc -ne 0 ]; then
@@ -247,6 +247,23 @@ run_mlxconfig()
 		mft_output=$($cmd 2>&1)
 	done
 	echo "$mft_output"
+}
+
+run_devlink()
+{
+	cmd="$*"
+	output=$(devlink $cmd 2>&1)
+	if [ $? -ne 0 ]; then
+		error "Failed to run devlink $cmd: $output"
+		if command -v mlxdevm > /dev/null 2>&1; then
+			output=$(mlxdevm $cmd 2>&1)
+			if [ $? -ne 0 ]; then
+				error "Failed to run mlxdevm $cmd: $output"
+				return 1
+			fi
+		fi
+		return 1
+	fi
 }
 
 is_port_ib()
