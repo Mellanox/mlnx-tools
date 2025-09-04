@@ -35,13 +35,12 @@ import json
 import errno
 
 __author__ = "Vladimir Sokolovsky <vlad@nvidia.com>"
-__version__ = "1.1"
+__version__ = "1.2"
 
 prog = os.path.basename(sys.argv[0])
 os.environ['PATH'] = '/opt/mellanox/iproute2/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 MLXREG = '/usr/bin/mlxreg'
-MLXDEVM = 'mlxdevm'
 DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
@@ -89,7 +88,7 @@ class SF:
         Show configurations
         """
         # Get existing devices
-        cmd = MLXDEVM + " --pretty --json port show "
+        cmd = DEVLINK + " --pretty --json port show "
         if self.sfindex:
             cmd += self.sfindex
         cmd += " 2> /dev/null"
@@ -194,7 +193,7 @@ class SF:
         result = {}
         self.sfindex = None
 
-        cmd = MLXDEVM + " port add pci/{device} flavour pcisf pfnum {pfnum} sfnum {sfnum}".format(
+        cmd = DEVLINK + " port add pci/{device} flavour pcisf pfnum {pfnum} sfnum {sfnum}".format(
                 device=self.device, pfnum=self.pfnum, sfnum=self.sfnum
                 )
 
@@ -217,7 +216,7 @@ class SF:
             return result
 
         if self.hw_addr:
-            cmd = MLXDEVM + " port function set {idx} hw_addr {hw_addr}".format(
+            cmd = DEVLINK + " port function set {idx} hw_addr {hw_addr}".format(
                     idx=self.sfindex, hw_addr=self.hw_addr
                     )
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
@@ -225,7 +224,7 @@ class SF:
                 return result
 
         if self.enable_trust:
-            cmd = MLXDEVM + " port function set {idx} trust on".format(
+            cmd = DEVLINK + " port function set {idx} trust on".format(
                     idx=self.sfindex
                     )
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
@@ -233,20 +232,20 @@ class SF:
                 return result
 
         if self.disable_roce:
-            cmd = MLXDEVM + " port function cap set {} roce false".format(self.sfindex)
+            cmd = DEVLINK + " port function cap set {} roce false".format(self.sfindex)
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
 
         if self.enable_eswitch:
-            cmd = MLXDEVM + " port function cap set {idx} eswitch true".format(idx=self.sfindex)
+            cmd = DEVLINK + " port function cap set {idx} eswitch true".format(idx=self.sfindex)
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
 
 
         # Activate SF
-        cmd = MLXDEVM + " port function set {} state active".format(self.sfindex)
+        cmd = DEVLINK + " port function set {} state active".format(self.sfindex)
         result['status'], result['output'] = get_status_output(cmd, self.verbose)
         if result['status']:
             return result
@@ -259,32 +258,6 @@ class SF:
             if self.aux_dev:
                 break
             time.sleep(0.001)
-
-        # Wait for sf_cfg link to be created
-        start = time.perf_counter()
-        while not os.path.exists("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev)):
-            if time.perf_counter() - start >= SF_CFG_DRIVER_TIMEOUT:
-                sf_log("ERROR: timed out waiting for the config driver /sys/bus/auxiliary/devices/{}/driver to appear".format(self.aux_dev), True)
-                sf_log("ERROR: Failed to create SF {} for device {}".format(self.sfnum, self.device), True)
-                self.delete()
-                sys.exit(1)
-            time.sleep(0.01)
-
-        # Unbind the SF from the default config driver and bind the actual SF driver
-        if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
-            try:
-                fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf_cfg/unbind"
-                with open(fname, 'w') as f:
-                    f.write(self.aux_dev)
-                fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf/bind"
-                with open(fname, 'w') as f:
-                    f.write(self.aux_dev)
-            except IOError as e:
-                sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
-            except FileNotFoundError:
-                sf_log("ERROR: File {} does not exist".format(fname))
-            except:
-                sf_log("Unexpected error:", sys.exc_info()[0])
 
         # Wait for devlink to see SF before running devlink commands
         start = time.process_time()
@@ -300,8 +273,36 @@ class SF:
 
             time.sleep(0.05)
 
+        # Enable netdev and rdma devices
+        cmd = DEVLINK + " dev param set auxiliary/{} name enable_eth value true cmode driverinit".format(
+                self.aux_dev
+                )
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+
+        cmd = DEVLINK + " dev param set auxiliary/{} name enable_rdma value true cmode driverinit".format(
+                self.aux_dev
+                )
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+
+        if not self.disable_roce:
+            cmd = DEVLINK + " dev param set auxiliary/{} name enable_roce value true cmode driverinit".format(
+                    self.aux_dev
+                    )
+            result['status'], result['output'] = get_status_output(cmd, self.verbose)
+            if result['status']:
+                return result
+
+        cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
+        result['status'], result['output'] = get_status_output(cmd, self.verbose)
+        if result['status']:
+            return result
+
         if self.cpu_list:
-            cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
+            cmd = DEVLINK + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
                     self.aux_dev, self.cpu_list
                     )
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
@@ -325,7 +326,7 @@ class SF:
         result = {}
         sf_info = {}
 
-        cmd_show = MLXDEVM + " port show {} -jp 2> /dev/null".format(self.sfindex)
+        cmd_show = DEVLINK + " port show {} -jp 2> /dev/null".format(self.sfindex)
 
         result['status'], result['output'] = get_status_output(cmd_show, self.verbose)
         if result['status']:
@@ -335,7 +336,7 @@ class SF:
         sf_info = json.loads(result['output'])
         if sf_info["port"][self.sfindex]["function"]["state"] == "active":
             # Deactivate SF
-            cmd = MLXDEVM + " port function set {} state inactive".format(self.sfindex)
+            cmd = DEVLINK + " port function set {} state inactive".format(self.sfindex)
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
@@ -351,7 +352,7 @@ class SF:
             time.sleep(0.1)
 
         # Delete SF
-        cmd = MLXDEVM + " port del {}".format(self.sfindex)
+        cmd = DEVLINK + " port del {}".format(self.sfindex)
         result['status'], result['output'] = get_status_output(cmd, self.verbose)
         return result
 
