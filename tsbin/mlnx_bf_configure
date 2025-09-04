@@ -283,8 +283,7 @@ is_port_ib()
 is_smartnic_mode()
 {
 	dev=$1
-	port=$2
-	shift 2
+	shift 1
 
 	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL")
 
@@ -354,26 +353,27 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	fi
 fi
 
-num_of_devs=0
-for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
-do
-	SECONDS=0
-	port=$(( ${dev: -1} + 1 ))
+ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1 | head -1)
 
-	while ! ($mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
-		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
-			error "Failed to run $mftconfig query on $dev"
-			break
-		fi
-		sleep 1
-	done
-
-	if (is_port_ib "$dev" "$port"); then
-		info "Link type is IB for ${dev}. Skipping mode confiugration."
-		continue
+SECONDS=0
+while ! ($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
+	if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
+		error "Failed to run $mftconfig query on $ctrl_dev"
+		break
 	fi
+	sleep 1
+done
 
-	if (is_smartnic_mode "$dev" "$port"); then
+num_of_devs=0
+if (is_smartnic_mode "$ctrl_dev"); then
+	for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
+	do
+		port=$(( ${dev: -1} + 1 ))
+		if (is_port_ib "$dev" "$port"); then
+			info "Link type is IB for ${dev}. Skipping mode confiugration."
+			continue
+		fi
+
 		if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
 			set_dev_param ${dev} lag_port_select_mode queue_affinity
 		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
@@ -442,8 +442,8 @@ do
 			fi
 			num_of_devs=$((num_of_devs+1))
 		fi
-	fi
-done
+	done
+fi
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
