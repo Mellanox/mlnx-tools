@@ -299,7 +299,7 @@ is_smartnic_mode()
 	return 0
 }
 
-pci_id=$(lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1 | head -1)
+pci_id=$(lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
 decimal=$(( host_en ))
@@ -353,7 +353,7 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	fi
 fi
 
-ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1 | head -1)
+ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1 | head -1)
 
 SECONDS=0
 while ! ($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
@@ -366,7 +366,7 @@ done
 
 num_of_devs=0
 if (is_smartnic_mode "$ctrl_dev"); then
-	for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
+	for dev in `lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1`
 	do
 		port=$(( ${dev: -1} + 1 ))
 		if (is_port_ib "$dev" "$port"); then
