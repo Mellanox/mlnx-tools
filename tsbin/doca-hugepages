@@ -153,7 +153,13 @@ def add_app_config(args):
         action = 'added'
 
     # Check if there is enough available memory
+    # When updating an existing app/size, only the delta should be considered.
     new_config_memory_kb = args.size * args.num
+
+    existing_num_for_entry = 0
+    if args.app in config and str(args.size) in config[args.app]:
+        existing_num_for_entry = int(config[args.app][str(args.size)]['num'])
+    existing_config_memory_kb = args.size * existing_num_for_entry
 
     total_allocated_memory_kb = sum(
         int(size) * size_config['num']
@@ -163,10 +169,19 @@ def add_app_config(args):
 
     available_memory_kb = get_available_memory_kb()
 
-    if total_allocated_memory_kb + new_config_memory_kb > available_memory_kb:
+    if available_memory_kb is None:
+        error("Unable to determine available memory. Aborting.")
+        print("Error: Unable to determine available memory. Aborting.")
+        return
+
+    # We only need to ensure the incremental increase (delta) fits in available memory.
+    # Decreases or no-ops always pass.
+    delta_kb = max(0, new_config_memory_kb - existing_config_memory_kb)
+
+    if delta_kb > available_memory_kb:
         error(f"Not enough available memory for this configuration.")
         print(f"Error: Not enough available memory for this configuration.")
-        print(f"Requested: {new_config_memory_kb / 1024:.2f} MB, "
+        print(f"Requested: {delta_kb / 1024:.2f} MB, "
               f"Available: {available_memory_kb / 1024:.2f} MB, "
               f"Currently Allocated: {total_allocated_memory_kb / 1024:.2f} MB")
         return
