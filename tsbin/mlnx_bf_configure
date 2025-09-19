@@ -264,6 +264,7 @@ run_devlink()
 		fi
 		return 1
 	fi
+	echo $output
 }
 
 is_port_ib()
