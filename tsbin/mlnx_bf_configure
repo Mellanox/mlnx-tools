@@ -30,6 +30,8 @@
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-3}
+SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
+RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 
 RC=0
 
@@ -59,18 +61,33 @@ error()
 	logger -t $prog -i "ERR: $*"
 }
 
+run_command_with_retry()
+{
+	cmd=$1
+	shift
+
+	i=0
+	while ! (eval "$cmd"); do
+		if [ $i -gt $RUN_CMD_RETRY_NUM ]; then
+			error "Failed to run $cmd after $i retries"
+			return 1
+		fi
+		let i++
+		sleep 1
+	done
+	if [ $i -gt 0 ]; then
+		info "$cmd passed after $i retries"
+	fi
+
+	return 0
+}
 
 get_steering_mode()
 {
 	pci_dev=$1
 	shift
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		cat ${compat} 2> /dev/null
-	else
-		devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
-	fi
+	run_devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
 }
 
 set_steering_mode()
@@ -79,17 +96,22 @@ set_steering_mode()
 	mode=$2
 	shift 2
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
-	else
-		devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
-	fi
-	rc=$?
+	rc=1
+	i=0
+	while [ $rc -ne 0 ]
+	do
+		run_command_with_retry "run_devlink dev param set pci/${pci_dev} name flow_steering_mode value ${mode} cmode runtime"
+		rc=$?
+		let i++
+		if [ $i -gt $SET_MODE_RETRY_NUM ]; then
+			break
+		fi
+		sleep 1
+	done
 	if [ $rc -ne 0 ]; then
-		error "Failed to configure steering mode ${mode} for ${pci_dev}"
+		error "Failed to configure steering mode ${mode} for ${pci_dev} after $i retries"
 	else
-		info "Configured mode steering ${mode} for ${pci_dev}"
+		info "Configured mode steering ${mode} for ${pci_dev} on try: $i"
 	fi
 
 	return $rc
@@ -100,7 +122,7 @@ get_eswitch_mode()
 	pci_dev=$1
 	shift
 
-	devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
+	run_devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
 }
 
 set_eswitch_mode()
@@ -109,17 +131,26 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${mode} > ${compat}
+	rc=0
+	i=1
+	run_devlink dev eswitch set pci/${pci_dev} mode ${mode}
+	eswitch_mode=$(get_eswitch_mode ${dev})
+	while [ "${eswitch_mode}" != "$mode" ]
+	do
+		if [ $i -gt $SET_MODE_RETRY_NUM ]; then
+			break
+		fi
+		sleep 1
+		run_devlink dev eswitch set pci/${pci_dev} mode ${mode}
+		eswitch_mode=`get_eswitch_mode ${dev}`
+		let i++
+	done
+	if [ "${eswitch_mode}" != "$mode" ]; then
+		error "Failed to configure ${mode} mode for ${pci_dev} after $i retries"
+		rc=1
 	else
-		devlink dev eswitch set pci/${pci_dev} mode ${mode}
-	fi
-	rc=$?
-	if [ $rc -ne 0 ]; then
-		error "Failed to configure ${mode} mode for ${pci_dev}"
-	else
-		info "Configured ${mode} mode for ${pci_dev}"
+		info "Configured ${mode} mode for ${pci_dev} on try: $i"
+		rc=0
 	fi
 
 	return $rc
@@ -130,12 +161,8 @@ get_dev_param()
 	pci_dev=$1
 	name=$2
 	shift 2
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
-	if [ -n "$compat" ]; then
-		cat ${compat} 2> /dev/null
-	else
-		devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
-	fi
+
+	run_devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
 }
 
 set_dev_param()
@@ -146,12 +173,7 @@ set_dev_param()
 	msg=$4
 	shift 4
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${value} > ${compat}
-	else
-		devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime
-	fi
+	run_command_with_retry "run_devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime"
 	rc=$?
 	if [ $rc -ne 0 ]; then
 		error "${msg} Failed to set parameter ${name} to ${value} value for ${pci_dev}"
@@ -178,6 +200,17 @@ run_mlxconfig()
 		mft_output=$($cmd 2>&1)
 	done
 	echo "$mft_output"
+}
+
+run_devlink()
+{
+	cmd="$*"
+	output=$(devlink $cmd 2>&1)
+	if [ $? -ne 0 ]; then
+		error "Failed to run devlink $cmd: $output"
+		return 1
+	fi
+	echo $output
 }
 
 wait_for_netdev()
@@ -274,17 +307,20 @@ is_port_ib()
 is_smartnic_mode()
 {
 	dev=$1
-	port=$2
-	shift 2
+	shift 1
 
 	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL")
 
 	if (echo $mft_output | grep -o INTERNAL_CPU_MODEL.* | awk '{print$3}' | grep -q "EMBEDDED_CPU(1)"); then
 		info "Device ${dev} is in SmartNIC mode"
 		return 0
+	elif (echo $mft_output | grep -o INTERNAL_CPU_MODEL.* | awk '{print$3}' | grep -q "SEPARATED_HOST(0)"); then
+		info "Device ${dev} is in SEPERATED_HOST mode"
+		return 1
 	fi
-	info "Device ${dev} is in SEPERATED_HOST mode"
-	return 1
+	# Assume SmartNIC mode if no match is found
+	info "Device ${dev} is in SmartNIC mode"
+	return 0
 }
 
 is_SecureBoot=0
@@ -319,16 +355,18 @@ OVS_CONF_SAVED=0
 OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
 
 if [ -n "$vsctl" ]; then
-	ovsbr_number=`$vsctl list-br | wc -l`
-	if [ $ovsbr_number -gt 0 ]; then
-		ovs_save_conf
-		if [ -n "$ovs_brs" ]; then
-			OVS_CONF_SAVED=1
+	if [ -e /var/run/openvswitch/db.sock ]; then
+		ovsbr_number=`$vsctl list-br | wc -l`
+		if [ $ovsbr_number -gt 0 ]; then
+			ovs_save_conf
+			if [ -n "$ovs_brs" ]; then
+				OVS_CONF_SAVED=1
+			fi
 		fi
-	fi
 
-	ovs_delete_conf
-	for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
+		ovs_delete_conf
+		for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
+	fi
 fi
 
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
@@ -354,25 +392,35 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	fi
 fi
 
-num_of_devs=0
-for dev in `lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1`
-do
-	SECONDS=0
-	while ! ($mftconfig -d ${dev} -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
-		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
-			error "Failed to run $mftconfig query on $dev"
-			break
-		fi
-		sleep 1
-	done
+ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1 | head -1)
 
-	port=$(( ${dev: -1} + 1 ))
-	if (is_port_ib "$dev" "$port"); then
-		info "Link type is IB for ${dev}. Skipping mode confiugration."
-		continue
+SECONDS=0
+while ! ($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
+	if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
+		error "Failed to run $mftconfig query on $ctrl_dev"
+		break
 	fi
+	sleep 1
+done
 
-	if (is_smartnic_mode "$dev" "$port"); then
+num_of_devs=0
+if (is_smartnic_mode "$ctrl_dev"); then
+	for dev in `lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1`
+	do
+		SECONDS=0
+		while ! (devlink dev show pci/${dev} > /dev/null 2>&1); do
+			if [ $SECONDS -gt $SET_MODE_RETRY_NUM ]; then
+				error "No such device: pci/${dev}"
+				exit 1
+			fi
+			sleep 1
+		done
+		port=$(( ${dev: -1} + 1 ))
+		if (is_port_ib "$dev" "$port"); then
+			info "Link type is IB for ${dev}. Skipping mode confiugration."
+			continue
+		fi
+
 		if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
 			set_dev_param ${dev} lag_port_select_mode queue_affinity
 		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
@@ -439,8 +487,8 @@ do
 			fi
 			num_of_devs=$((num_of_devs+1))
 		fi
-	fi
-done
+	done
+fi
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
@@ -606,7 +654,7 @@ else
 fi
 
 if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
-	$vsctl set Open_vSwitch . Other_config:hw-offload=true
+	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload=true
 	if [ $? -eq 0 ]; then
 		info "OVS HW offload is set"
 		info "Going to restart $ovs_service to activate hw-offload"
