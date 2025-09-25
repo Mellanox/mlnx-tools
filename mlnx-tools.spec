@@ -40,11 +40,6 @@ Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
 %description
 Mellanox userland tools and scripts
 
-%global RHEL8 0%{?rhel} >= 8
-%global FEDORA3X 0%{?fedora} >= 30
-%global SLES15 0%{?suse_version} >= 1500
-%global OPENEULER 0%{?openEuler} >= 2
-%global PYTHON3 %{RHEL8} || %{FEDORA3X} || %{SLES15} || %{OPENEULER}
 %global python_dir %{_datadir}/%{name}/python
 
 %prep
@@ -70,10 +65,6 @@ EOF
 touch mlnx-tools-files
 export PKG_VERSION="%{version}"
 %make_install
-%if %PYTHON3
-sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/* \
-	%{buildroot}%{python_dir}/*.py
-%endif
 
 %if "%{_prefix}" != "/usr"
 	conf_env=/etc/profile.d/mlnx-tools.sh
