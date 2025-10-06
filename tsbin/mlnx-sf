@@ -127,6 +127,8 @@ class SF:
                 info[pci_dev_index]["function"] = {}
             if "trust" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["trust"] = "NA"
+            if "roce" not in info[pci_dev_index]["function"]:
+                info[pci_dev_index]["function"]["roce"] = "NA"
             if "eswitch" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["eswitch"] = "NA"
 
