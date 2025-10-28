@@ -231,10 +231,11 @@ run_mlxconfig()
 	cmd="$*"
 	mft_output=""
 
-	SECONDS=0
+	start_time=$(awk '{print $1}' /proc/uptime)
 	mft_output="$($cmd 2>&1)"
 	while (echo "$mft_output" | grep -q "Failed to open"); do
-		if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
+		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+		if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
 			error "Failed to run $cmd"
 			exit 1
 		fi
@@ -316,9 +317,10 @@ ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	if ! (rdma system show netns 2>&1 | grep -q exclusive); then
-		SECONDS=0
+		start_time=$(awk '{print $1}' /proc/uptime)
 		while ! (rdma system set netns exclusive); do
-			if [ $SECONDS -gt $RDMA_SET_NETNS_TIMEOUT ]; then
+			elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+			if [ $elapsed -gt $RDMA_SET_NETNS_TIMEOUT ]; then
 				break
 			fi
 			sleep 1
@@ -334,9 +336,10 @@ fi
 
 ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26c]' | cut -d ' ' -f 1 | head -1)
 
-SECONDS=0
+start_time=$(awk '{print $1}' /proc/uptime)
 while ! ($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
-	if [ $SECONDS -gt $MLXCONFIG_TIMEOUT ]; then
+	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+	if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
 		error "Failed to run $mftconfig query on $ctrl_dev"
 		break
 	fi
@@ -509,10 +512,11 @@ ovs_restart()
 }
 
 {
-SECONDS=0
+start_time=$(awk '{print $1}' /proc/uptime)
 while ! ($vsctl show > /dev/null 2>&1)
 do
-	if [ $SECONDS -gt $OVS_TIMEOUT ]; then
+	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+	if [ $elapsed -gt $OVS_TIMEOUT ]; then
 		info "$ovs_service is not up. Exiting..."
 		exit 1
 	fi
@@ -552,10 +556,11 @@ do
 	ovs_br_ports=""
 	for port in $br_ports
 	do
-		SECONDS=0
+		start_time=$(awk '{print $1}' /proc/uptime)
 		while ! [ -d /sys/class/net/$port ]
 		do
-			if [ $SECONDS -gt $OVS_BR_PORTS_TIMEOUT ]; then
+			elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+			if [ $elapsed -gt $OVS_BR_PORTS_TIMEOUT ]; then
 				break
 			fi
 			sleep 1
