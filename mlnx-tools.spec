@@ -26,14 +26,27 @@
 #
 #
 
+%if 0%{?_ver:1}
+%define ver %{_ver}
+%else
+%define ver 25.10
+%endif
+
+%if 0%{?_rel:1}
+%define rel %{_rel}
+%else
+%define rel 1
+%endif
+
+%{echo: rel=%{?rel} _rel=%{?_rel} ver=%{?ver} _ver=%{?_ver}}
 Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
-Version: 25.10
-Release: 0%{?_dist}
+Version: %{?ver}
+Release: %{?rel}%{?dist}
 License: GPLv2 or BSD
 Url: https://github.com/Mellanox/mlnx-tools
 Group: Applications/System
-Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tar.gz
+Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{?ver}/%{name}-%{?ver}.tar.gz
 BuildRoot: %{?build_root:%{build_root}}%{!?build_root:/var/tmp/%{name}}
 Vendor: Mellanox Technologies
 Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
@@ -48,7 +61,7 @@ Mellanox userland tools and scripts
 %endif
 
 %prep
-%setup -n %{name}-%{version}
+%setup -n %{name}-%{?ver}
 %if %{PYTHON2}
 sed -i -e '1s/python3/python/' \
 	python/ib2ib_setup python/mlnx_dump_parser python/mlnx_perf \
@@ -74,7 +87,7 @@ EOF
 }
 
 touch mlnx-tools-files
-export PKG_VERSION="%{version}"
+export PKG_VERSION="%{?ver}"
 %make_install
 
 %if "%{_prefix}" != "/usr"
