@@ -1,3 +1,9 @@
+mlnx-tools (24.10.1-1) UNRELEASED; urgency=medium
+
+  * New release cycle.
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 19 Nov 2025 16:55:34 -0500
+
 mlnx-tools (24.10-1) UNRELEASED; urgency=medium
 
   * New release cycle.
