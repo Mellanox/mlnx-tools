@@ -239,13 +239,16 @@ run_mlxconfig()
 	start_time=$(awk '{print $1}' /proc/uptime)
 	mft_output="$($cmd 2>&1)"
 	while (echo "$mft_output" | grep -q "Failed to open"); do
+		echo "$mft_output" >> ${MLXCONFIG_DEBUG_LOG}
 		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
 		if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
 			error "Failed to run $cmd"
 			exit 1
 		fi
 		sleep 1
+		export MLXCONFIG_DEBUG=1
 		mft_output=$($cmd 2>&1)
+		export MLXCONFIG_DEBUG=0
 	done
 	echo "$mft_output"
 }
@@ -335,6 +338,7 @@ fi
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
+MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
 
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
