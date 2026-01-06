@@ -475,11 +475,24 @@ if [ ! -n "$vsctl" ]; then
 	exit 0
 fi
 
-# Configure the default OVS bridge
-OVS_BRIDGE1=${OVS_BRIDGE1:-"ovsbr1"}
-OVS_BRIDGE1_PORTS=${OVS_BRIDGE1_PORTS:-"p0 pf0hpf en3f0pf0sf0"}
-OVS_BRIDGE2=${OVS_BRIDGE2:-"ovsbr2"}
-OVS_BRIDGE2_PORTS=${OVS_BRIDGE2_PORTS:-"p1 pf1hpf en3f1pf1sf0"}
+# Set default OVS bridge configurations based on num_of_devs
+for i in `seq $num_of_devs`
+do
+	bridge_var=OVS_BRIDGE${i}
+	ports_var=OVS_BRIDGE${i}_PORTS
+	idx=$((i-1))
+
+	# Set default bridge name if not already set
+	if [ -z "${!bridge_var}" ]; then
+		eval "${bridge_var}=ovsbr${i}"
+	fi
+
+	# Set default ports if not already set
+	if [ -z "${!ports_var}" ]; then
+		eval "${ports_var}=\"p${idx} pf${idx}hpf en3f${idx}pf${idx}sf0\""
+	fi
+done
+
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 OVS_TIMEOUT=${OVS_TIMEOUT:-30}
 
@@ -515,11 +528,15 @@ ovs_restart()
 		done
 	fi
 
-	for p in $OVS_BRIDGE1_PORTS $OVS_BRIDGE2_PORTS
+	# Enable hw-tc-offload for all bridge ports dynamically
+	for i in `seq $num_of_devs`
 	do
-		if [ -d /sys/class/net/$p ]; then
+		br_ports=OVS_BRIDGE${i}_PORTS
+		br_ports=${!br_ports}
+		for p in $br_ports
+		do
 			ethtool -K $p hw-tc-offload on
-		fi
+		done
 	done
 }
 
