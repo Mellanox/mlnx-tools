@@ -484,7 +484,7 @@ add_default_hugepages_configurations()
 	[ -z "$OVS_HUGEPAGE_SIZE" ] && OVS_HUGEPAGE_SIZE=$OVS_DEFAULT_HUGEPAGE_SIZE
 	[ -z "$OVS_HUGEPAGE_NUM" ] && OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM
 	info "Adding ovs-doca default hugepages configuration"
-	$HUGEPAGES_TOOL config --force --app ovs-doca --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
+	$HUGEPAGES_TOOL config --force --app "ovs-doca (default)" --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
 }
 
 config_hugepages()
