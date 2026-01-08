@@ -82,6 +82,7 @@ def configure_hugepages(config):
         except Exception as e:
             error(f"configuring hugepages of size {size}kB: {e}s")
             print(f"Error configuring hugepages of size {size}kB: {e}")
+            sys.exit(1)
 
     # Save the updated configuration back to the database
     if successfully_configured_apps:
@@ -120,6 +121,7 @@ def get_available_memory_kb():
     except Exception as e:
         error(f"Unable to retrieve available memory information: {e}")
         print(f"Error: Unable to retrieve available memory information: {e}")
+        sys.exit(1)
 
     return None
 
@@ -130,7 +132,7 @@ def add_app_config(args):
         error(f"The hugepage size {args.size}kB is not supported by your system.")
         print(f"Error: The hugepage size {args.size}kB is not supported by your system.")
         print(f"Supported sizes are: {', '.join(map(str, valid_sizes))}")
-        return
+        sys.exit(1)
 
     config = load_config()
 
@@ -172,7 +174,7 @@ def add_app_config(args):
     if available_memory_kb is None:
         error("Unable to determine available memory. Aborting.")
         print("Error: Unable to determine available memory. Aborting.")
-        return
+        sys.exit(1)
 
     # We only need to ensure the incremental increase (delta) fits in available memory.
     # Decreases or no-ops always pass.
@@ -184,7 +186,7 @@ def add_app_config(args):
         print(f"Requested: {delta_kb / 1024:.2f} MB, "
               f"Available: {available_memory_kb / 1024:.2f} MB, "
               f"Currently Allocated: {total_allocated_memory_kb / 1024:.2f} MB")
-        return
+        sys.exit(1)
 
     # Add, update, or append the configuration for the specific size
     config[args.app][str(args.size)] = {
@@ -260,7 +262,7 @@ def remove_app_config(args):
                             json.dump(config[app_name], f, indent=2)
                 except (ValueError, IndexError):
                     print("Invalid choice. No configurations removed.")
-                    return
+                    sys.exit(1)
 
         if remove_all or len(config[app_name]) == 1:
             del config[app_name]
