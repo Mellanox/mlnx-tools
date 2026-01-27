@@ -30,6 +30,7 @@
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-3}
+SUPPORTED_DEVICES="a2d[26cf]|1025"
 
 RC=0
 
@@ -295,6 +296,31 @@ is_smartnic_mode()
 	return 0
 }
 
+get_mlnx_netdevs_by_slot()
+{
+	dev_num=$1
+	shift 1
+
+	pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -${dev_num} | tail -1)
+	netdevs=$(grep PCI_SLOT_NAME=${pci_id} /sys/class/net/*/device/uevent | cut -d '/' -f 5)
+	if [ -n "$netdevs" ]; then
+		echo "$netdevs"
+	fi
+
+	return 0
+}
+
+pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
+host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
+
+decimal=$(( host_en ))
+is_power_of_two=$(( (decimal & (decimal - 1)) == 0 ))
+
+if [[ $decimal != 0 && $is_power_of_two == 1 ]]; then
+	info "Detected Controller device. Exiting..."
+	exit 0
+fi
+
 is_SecureBoot=0
 if (mokutil --sb-state 2>&1 | grep -q "SecureBoot enabled"); then
 	is_SecureBoot=1
@@ -489,7 +515,7 @@ do
 
 	# Set default ports if not already set
 	if [ -z "${!ports_var}" ]; then
-		eval "${ports_var}=\"p${idx} pf${idx}hpf en3f${idx}pf${idx}sf0\""
+		eval "${ports_var}=\"$(get_mlnx_netdevs_by_slot ${i})\""
 	fi
 done
 
