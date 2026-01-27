@@ -315,6 +315,20 @@ is_smartnic_mode()
 	return 0
 }
 
+get_mlnx_netdevs_by_slot()
+{
+	dev_num=$1
+	shift 1
+
+	pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -${dev_num} | tail -1)
+	netdevs=$(grep PCI_SLOT_NAME=${pci_id} /sys/class/net/*/device/uevent | cut -d '/' -f 5)
+	if [ -n "$netdevs" ]; then
+		echo "$netdevs"
+	fi
+
+	return 0
+}
+
 pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
@@ -550,7 +564,7 @@ do
 
 	# Set default ports if not already set
 	if [ -z "${!ports_var}" ]; then
-		eval "${ports_var}=\"p${idx} pf${idx}hpf en3f${idx}pf${idx}sf0\""
+		eval "${ports_var}=\"$(get_mlnx_netdevs_by_slot ${i})\""
 	fi
 done
 
