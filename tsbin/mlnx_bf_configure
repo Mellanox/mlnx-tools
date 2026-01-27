@@ -33,12 +33,23 @@ MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-30}
 SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
+SUPPORTED_DEVICES="a2d[26cf]|1023|1025"
 
 RC=0
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -ne 1 ]; then
-	exit 0
+	# Check if the device is a Mellanox BlueField 4 or newer
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l) -gt 0 ]; then
+			info "Device is a Mellanox BlueField 4 or newer"
+		else
+			exit 0
+		fi
+	else
+		info "Device is not a Mellanox BlueField. Exiting..."
+		exit 0
+	fi
 fi
 
 prog=`basename $0`
@@ -304,7 +315,7 @@ is_smartnic_mode()
 	return 0
 }
 
-pci_id=$(lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1 | head -1)
+pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
 decimal=$(( host_en ))
@@ -360,21 +371,29 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	fi
 fi
 
-ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1 | head -1)
+ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
 
 start_time=$(awk '{print $1}' /proc/uptime)
-while ! ($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
-	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-	if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
-		error "Failed to run $mftconfig query on $ctrl_dev"
-		break
-	fi
-	sleep 1
-done
+mft_output=$($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL 2>&1)
+if ! (echo "$mft_output" | grep -q 'E- The Device doesn.*t support INTERNAL_CPU_MODEL parameter'); then
+	while (echo "$mft_output" | grep -q "Failed to open"); do
+		echo "$mft_output" >> ${MLXCONFIG_DEBUG_LOG}
+		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+		if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
+			error "Failed to run $mftconfig query on $ctrl_dev after $elapsed seconds"
+			exit 1
+		fi
+		sleep 1
+		mft_output=$($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL 2>&1)
+	done
+else
+	info "Device $ctrl_dev does not support INTERNAL_CPU_MODEL parameter"
+fi
+info "MFT output: $mft_output"
 
 num_of_devs=0
 if (is_smartnic_mode "$ctrl_dev"); then
-	for dev in `lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1`
+	for dev in $(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1)
 	do
 		port=$(( ${dev: -1} + 1 ))
 		if (is_port_ib "$dev" "$port"); then
