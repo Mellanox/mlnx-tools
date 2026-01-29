@@ -2,10 +2,18 @@
 
 # need the PATH for BF ARM lspci to work
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
+SUPPORTED_DEVICES="a2d[26cf]|1023|1025"
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -ne 1 ]; then
-	exit 0
+	# Check if the device is a Mellanox BlueField 4 or newer
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l) -eq 0 ]; then
+			exit 0
+		fi
+	else
+		exit 0
+	fi
 fi
 
 case "$1" in
