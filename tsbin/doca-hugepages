@@ -9,6 +9,7 @@ import logging
 import sys
 import subprocess
 import syslog
+import re
 
 CONFIG_DIR = "/etc/mellanox/hugepages.d"
 
@@ -19,11 +20,28 @@ def error(message):
     syslog.syslog(syslog.LOG_ERR, f"ERROR: {message}")
 
 def is_bluefield():
+    # Check for older BlueField devices (BF1, BF2, BF3)
     try:
         output = subprocess.check_output(['lspci', '-s', '00:00.0']).decode()
-        return "PCI bridge: Mellanox Technologies" in output
+        if "PCI bridge: Mellanox Technologies" in output:
+            return True
     except subprocess.CalledProcessError:
+        pass
+
+    # Check for BlueField 4 or newer
+    if not os.path.exists('/etc/mlnx-release'):
         return False
+
+    try:
+        supported_devices = r'a2d[26cf]|1023|1025'
+        output = subprocess.check_output(['lspci', '-nD', '-d', '15b3:']).decode()
+
+        if re.search(supported_devices, output):
+            return True
+    except subprocess.CalledProcessError:
+        pass
+
+    return False
 
 def check_system_compatibility():
     if not is_bluefield():
