@@ -19,36 +19,6 @@ def info(message):
 def error(message):
     syslog.syslog(syslog.LOG_ERR, f"ERROR: {message}")
 
-def is_bluefield():
-    # Check for older BlueField devices (BF1, BF2, BF3)
-    try:
-        output = subprocess.check_output(['lspci', '-s', '00:00.0']).decode()
-        if "PCI bridge: Mellanox Technologies" in output:
-            return True
-    except subprocess.CalledProcessError:
-        pass
-
-    # Check for BlueField 4 or newer
-    if not os.path.exists('/etc/mlnx-release'):
-        return False
-
-    try:
-        supported_devices = r'a2d[26cf]|1023|1025'
-        output = subprocess.check_output(['lspci', '-nD', '-d', '15b3:']).decode()
-
-        if re.search(supported_devices, output):
-            return True
-    except subprocess.CalledProcessError:
-        pass
-
-    return False
-
-def check_system_compatibility():
-    if not is_bluefield():
-        error("This tool is only compatible with BlueField's ARM architecture.")
-        print("Warning: This tool is only compatible with BlueField's ARM architecture.")
-        sys.exit(1)
-
 def load_config():
     config = {}
     if not os.path.exists(CONFIG_DIR):
@@ -359,7 +329,6 @@ def create_parser():
     return parser
 
 def main():
-    check_system_compatibility()
     check_grub_hugepages_configured()
     parser = create_parser()
     args = parser.parse_args()
