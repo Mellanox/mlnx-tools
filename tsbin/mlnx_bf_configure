@@ -35,6 +35,9 @@ SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1023|1025"
 
+ipsec_services="strongswan.service ipsec.service"
+ipsec_was_active=""
+
 RC=0
 
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
@@ -158,22 +161,6 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
-	# Stop strongSwan temporarily if it's active to remove the offloaded IPsec bypass policies
-	# This is done so we can change the eswtich mode
-	systemctl is-active --quiet strongswan.service
-	strongswan_active=$?
-	if [ "$strongswan_active" -eq "0" ]; then
-		systemctl stop strongswan.service
-	fi
-
-	systemctl is-active --quiet strongswan.service
-	strongswan_active=$?
-	if [ "$strongswan_active" -eq "0" ]; then
-		error "Failed to stop strongswan.service"
-	else
-		info "Stopped strongswan.service successfully"
-	fi
-
 	rc=1
 	i=0
 	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/*/mode 2> /dev/null`
@@ -195,11 +182,6 @@ set_eswitch_mode()
 		error "Failed to configure ${mode} mode for ${pci_dev} after $i retries"
 	else
 		info "Configured ${mode} mode for ${pci_dev} on try: $i"
-	fi
-
-	# Start strongSwan again if it was active
-	if [ "$strongswan_active" -eq "0" ]; then
-		systemctl start strongswan.service
 	fi
 
 	return $rc
@@ -329,6 +311,40 @@ get_mlnx_netdevs_by_slot()
 	return 0
 }
 
+stop_ipsec_services()
+{
+	# Stop IPsec-related services temporarily if active to remove offloaded IPsec bypass policies
+	# This is done so we can change the eswitch mode
+	for svc in $ipsec_services; do
+		if systemctl is-active --quiet $svc; then
+			[ -z "$ipsec_was_active" ] && ipsec_was_active=$svc || ipsec_was_active="$ipsec_was_active $svc"
+		fi
+	done
+	for svc in $ipsec_was_active; do
+		systemctl stop $svc
+	done
+	for svc in $ipsec_was_active; do
+		if systemctl is-active --quiet $svc; then
+			error "Failed to stop $svc"
+		else
+			info "Stopped $svc successfully"
+		fi
+	done
+}
+
+start_ipsec_services()
+{
+	# Start IPsec-related services again if they were active
+	for svc in $ipsec_was_active; do
+		systemctl start $svc
+		if systemctl is-active --quiet $svc; then
+			info "Started $svc successfully"
+		else
+			error "Failed to start $svc"
+		fi
+	done
+}
+
 pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
@@ -407,6 +423,7 @@ info "MFT output: $mft_output"
 
 num_of_devs=0
 if (is_smartnic_mode "$ctrl_dev"); then
+	stop_ipsec_services
 	for dev in $(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1)
 	do
 		port=$(( ${dev: -1} + 1 ))
@@ -484,6 +501,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			num_of_devs=$((num_of_devs+1))
 		fi
 	done
+	start_ipsec_services
 fi
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
