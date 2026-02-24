@@ -33,6 +33,7 @@ import time
 import re
 import json
 import errno
+import warnings
 
 __author__ = "Vladimir Sokolovsky <vlad@nvidia.com>"
 __version__ = "1.1"
@@ -70,7 +71,6 @@ class SF:
         self.json = args.json
         self.pretty = args.pretty
         self.enable_trust = args.enable_trust
-        self.enable_eswitch = args.enable_eswitch
         self.disable_roce = args.disable_roce
         self.sfnum = args.sfnum or None
         self.hw_addr = args.hwaddr or None
@@ -130,8 +130,6 @@ class SF:
                 info[pci_dev_index]["function"]["trust"] = "NA"
             if "roce" not in info[pci_dev_index]["function"]:
                 info[pci_dev_index]["function"]["roce"] = "NA"
-            if "eswitch" not in info[pci_dev_index]["function"]:
-                info[pci_dev_index]["function"]["eswitch"] = "NA"
 
         for idx in not_sf + ignore_list:
             del info[idx]
@@ -182,7 +180,6 @@ class SF:
                 result['output'] += "  Function trust: " + info[pci_dev_index]["function"]["trust"] + "\n"
                 if "roce" in info[pci_dev_index]["function"]:
                         result['output'] += "  Function roce: " + info[pci_dev_index]["function"]["roce"] + "\n"
-                result['output'] += "  Function eswitch: " + info[pci_dev_index]["function"]["eswitch"] + "\n"
                 result['output'] += "  Auxiliary device: " + info[pci_dev_index]["aux_dev"] + "\n"
                 result['output'] += "    netdev: " + info[pci_dev_index]["sf_netdev"] + "\n"
                 result['output'] += "    RDMA dev: " + info[pci_dev_index]["rdma_dev"] + "\n"
@@ -237,12 +234,6 @@ class SF:
 
         if self.disable_roce:
             cmd = MLXDEVM + " port function set {} roce false".format(self.sfindex)
-            result['status'], result['output'] = get_status_output(cmd, self.verbose)
-            if result['status']:
-                return result
-
-        if self.enable_eswitch:
-            cmd = MLXDEVM + " port function set {idx} eswitch true".format(idx=self.sfindex)
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
@@ -528,7 +519,8 @@ def main():
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
     parser.add_argument('-t', '--enable-trust', action='store_true', help="Set SF as trusted", default=False)
-    parser.add_argument('-e', '--enable-eswitch', action='store_true', help="Enable Eswitch on SF", default=False)
+    parser.add_argument('-e', '--enable-eswitch', action='store_true',
+                        help="(deprecated, ignored)", default=False)
     parser.add_argument('-r', '--disable-roce', action='store_true', help="Disable RoCE for SF", default=False)
     parser.add_argument('-c', '--cpu-list', help="Interpret mask as numerical list of cores instead of a \
                                                   bitmask. Numbers are separated by commas and may include \
@@ -540,6 +532,9 @@ def main():
 
 
     args = parser.parse_args()
+    if args.enable_eswitch:
+        warnings.warn("-e/--enable-eswitch is deprecated and ignored", DeprecationWarning, stacklevel=2)
+        sys.stderr.write("Warning: -e/--enable-eswitch is deprecated and ignored.\n")
     if args.version:
         version()
         sys.exit(rc)
