@@ -76,6 +76,13 @@ error()
 	logger -t $prog -i "ERR: $*"
 }
 
+debug()
+{
+	if [ "X${LOG_LEVEL}" == "Xdebug" ]; then
+		logger -t $prog -i "DBG: $*"
+	fi
+}
+
 run_command_with_retry()
 {
 	cmd=$1
@@ -278,6 +285,31 @@ is_port_ib()
 	return 1
 }
 
+# Check if the device is in Socket Direct mode
+is_sd_mode()
+{
+	dev=$1
+	shift 1
+
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q PF_SD_GROUP")
+
+	if (echo "$mft_output" | grep -o PF_SD_GROUP.* | awk '{print$3}'  | grep -q "^1$"); then
+		return 0
+	fi
+	return 1
+}
+
+is_supported_device()
+{
+	dev=$1
+	shift 1
+
+	if (lspci -nD -s ${dev} | grep -E "$SUPPORTED_DEVICES"); then
+		return 0
+	fi
+	return 1
+}
+
 is_smartnic_mode()
 {
 	dev=$1
@@ -309,6 +341,29 @@ get_mlnx_netdevs_by_slot()
 	fi
 
 	return 0
+}
+
+get_mlnx_netdevs_by_pci_id()
+{
+	pci_id=$1
+	shift 1
+
+	netdevs=$(grep PCI_SLOT_NAME=${pci_id} /sys/class/net/*/device/uevent | cut -d '/' -f 5)
+	if [ -n "$netdevs" ]; then
+		echo "$netdevs"
+	fi
+
+	return 0
+}
+
+# Helper: check if a value is in an array
+in_array() {
+    local needle=$1; shift
+    local elem
+    for elem in "$@"; do
+        [[ "$elem" == "$needle" ]] && return 0
+    done
+    return 1
 }
 
 stop_ipsec_services()
@@ -380,6 +435,10 @@ IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
 MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
+LOG_LEVEL=${LOG_LEVEL:-"info"}
+SWITCHDEV_DEVICES_LIST=()
+SD_DEVICES_LIST=()
+DEVICE_LIST_FOR_OVS_BRIDGES=()
 
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
@@ -402,6 +461,7 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 fi
 
 ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
+num_of_supported_devs=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l)
 
 start_time=$(awk '{print $1}' /proc/uptime)
 mft_output=$($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL 2>&1)
@@ -421,10 +481,11 @@ else
 fi
 info "MFT output: $mft_output"
 
-num_of_devs=0
+num_of_devs_switchdev=0
+# Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
-	for dev in $(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1)
+	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print $2}')
 	do
 		port=$(( ${dev: -1} + 1 ))
 		if (is_port_ib "$dev" "$port"); then
@@ -498,11 +559,25 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
 			fi
-			num_of_devs=$((num_of_devs+1))
+			num_of_devs_switchdev=$((num_of_devs_switchdev+1))
+			SWITCHDEV_DEVICES_LIST+=( "$dev" )
+		fi
+		if is_sd_mode ${dev}; then
+			debug "Adding SD device $dev to SD_DEVICES_LIST"
+			SD_DEVICES_LIST+=( "$dev" )
+		fi
+		if is_supported_device ${dev}; then
+			debug "Adding supported device $dev to DEVICE_LIST_FOR_OVS_BRIDGES"
+			DEVICE_LIST_FOR_OVS_BRIDGES+=( "$dev" )
 		fi
 	done
 	start_ipsec_services
 fi
+
+debug "num_of_devs_switchdev: $num_of_devs_switchdev"
+debug "SWITCHDEV_DEVICES_LIST: ${SWITCHDEV_DEVICES_LIST[*]}"
+debug "SD_DEVICES_LIST: ${SD_DEVICES_LIST[*]}"
+debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
@@ -514,7 +589,7 @@ if [ $RC -ne 0 ]; then
 	exit $RC
 fi
 
-if [ $num_of_devs -eq 0 ]; then
+if [ $num_of_devs_switchdev -eq 0 ]; then
 	info "No devices configured to switchdev mod. Skipping SF/Bridges configuration."
 	exit 0
 fi
@@ -568,9 +643,35 @@ if [ ! -n "$vsctl" ]; then
 	exit 0
 fi
 
-# Set default OVS bridge configurations based on num_of_devs
-for i in `seq $num_of_devs`
-do
+max_num_of_ovs_bridges=$num_of_devs_switchdev
+max_num_of_sd_ovs_bridges=0
+num_of_sd_devs=${#SD_DEVICES_LIST[@]}
+if [ $num_of_sd_devs -gt 0 ]; then
+	if [ $num_of_sd_devs -eq 1 ]; then
+		max_num_of_sd_ovs_bridges=1
+	else
+		max_num_of_sd_ovs_bridges=2
+	fi
+fi
+
+debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
+debug "max_num_of_sd_ovs_bridges: $max_num_of_sd_ovs_bridges"
+
+num_of_sd_ovs_bridges=0
+num_of_ovs_bridges=0
+i=1
+for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+	sd_dev=""
+	if [ $num_of_sd_devs -gt 0 ]; then
+		if in_array $dev ${SD_DEVICES_LIST[@]}; then
+			if [ $num_of_sd_ovs_bridges -lt $max_num_of_sd_ovs_bridges ]; then
+				num_of_sd_ovs_bridges=$((num_of_sd_ovs_bridges+1))
+			else
+				continue
+			fi
+			sd_dev=$dev
+		fi
+	fi
 	bridge_var=OVS_BRIDGE${i}
 	ports_var=OVS_BRIDGE${i}_PORTS
 	idx=$((i-1))
@@ -582,8 +683,26 @@ do
 
 	# Set default ports if not already set
 	if [ -z "${!ports_var}" ]; then
-		eval "${ports_var}=\"$(get_mlnx_netdevs_by_slot ${i})\""
+		eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
+		# Workaround: Add extra netdev
+		if [ "$dev" == "$sd_dev" ]; then
+			num_of_ports=$(wc -w <<< "$ports_var")
+			if [ $num_of_ports -lt 4 ]; then
+				# Add extra netdev as a workaround for SD device
+				# increase the last digit of the dev name by 2
+				new_dev_name=${dev:0:-1}$(( ${dev: -1} + 2 ))
+				extra_netdevs=$(get_mlnx_netdevs_by_pci_id $new_dev_name)
+				# Choose netdedv that has "<string><num>pf<num><string>" in its name
+				extra_netdev=$(echo "$extra_netdevs" | grep -oE '[[:alnum:]]+[0-9]pf[0-9][[:alnum:]]+')
+				if [ -n "$extra_netdev" ]; then
+					debug "Adding extra netdev $extra_netdev to $ports_var"
+					eval "${ports_var}=\"${!ports_var} $extra_netdev\""
+				fi
+			fi
+		fi
 	fi
+	i=$((i+1))
+	num_of_ovs_bridges=$((num_of_ovs_bridges+1))
 done
 
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
@@ -636,7 +755,7 @@ ovs_restart()
 	fi
 
 	# Enable hw-tc-offload for all bridge ports dynamically
-	for i in `seq $num_of_devs`
+	for i in `seq $num_of_devs_switchdev`
 	do
 		br_ports=OVS_BRIDGE${i}_PORTS
 		br_ports=${!br_ports}
@@ -722,6 +841,7 @@ cleanup_hugepages
 
 ovsbr_number=`$vsctl list-br | wc -l`
 if [ $ovsbr_number -gt 0 ]; then
+	debug "OVS bridges already exist. Skipping OVS bridges creation."
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"') || [ "$need_restart" == true ]; then
 		ovs_restart
 	fi
@@ -730,6 +850,7 @@ fi
 
 CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
 if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
+    debug "CREATE_OVS_BRIDGES is not set to yes. Skipping OVS bridges creation."
     if [ "$need_restart" == true ]; then
 		ovs_restart
     fi
@@ -737,7 +858,7 @@ if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
 fi
 
 OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
-for i in `seq $num_of_devs`
+for i in `seq $num_of_ovs_bridges`
 do
 	br_name=OVS_BRIDGE${i}
 	br_name=${!br_name}
