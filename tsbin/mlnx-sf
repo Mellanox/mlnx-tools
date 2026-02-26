@@ -42,7 +42,7 @@ prog = os.path.basename(sys.argv[0])
 os.environ['PATH'] = '/opt/mellanox/iproute2/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 MLXREG = '/usr/bin/mlxreg'
-MLXDEVM = 'mlxdevm'
+MLXDEVM = 'devlink'
 DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
 RDMA_DEV_TIMEOUT = 120
