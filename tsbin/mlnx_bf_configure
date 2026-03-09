@@ -40,6 +40,23 @@ ipsec_was_active=""
 
 RC=0
 
+info()
+{
+	logger -t $prog -i "INFO: $*"
+}
+
+error()
+{
+	logger -t $prog -i "ERR: $*"
+}
+
+debug()
+{
+	if [ "X${LOG_LEVEL}" == "Xdebug" ]; then
+		logger -t $prog -i "DBG: $*"
+	fi
+}
+
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -ne 1 ]; then
 	# Check if the device is a Mellanox BlueField 4 or newer
@@ -65,23 +82,6 @@ if [[ -n $PID && $$ -ne $PID ]]; then
 	# $prog is running already with PID: $PID
 	exit 0
 fi
-
-info()
-{
-	logger -t $prog -i "INFO: $*"
-}
-
-error()
-{
-	logger -t $prog -i "ERR: $*"
-}
-
-debug()
-{
-	if [ "X${LOG_LEVEL}" == "Xdebug" ]; then
-		logger -t $prog -i "DBG: $*"
-	fi
-}
 
 run_command_with_retry()
 {
