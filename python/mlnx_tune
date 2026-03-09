@@ -370,13 +370,15 @@ class Devices:
 	ConnectX7			= DeviceType("4129", "ConnectX-7")
 	ConnectX8			= DeviceType("4131", "ConnectX-8")
 	ConnectX9			= DeviceType("4133", "ConnectX-9")
+	ConnectX10			= DeviceType("4135", "ConnectX-10")
 	BlueField			= DeviceType("41682", "BlueField")
 	BlueField2			= DeviceType("41686", "BlueField2")
 	BlueField3			= DeviceType("41692", "BlueField3")
+	BlueField4			= DeviceType("41695", "BlueField4")
 	UNDEFINED			= DeviceType(NA, NA)
 	MLX4_CONSUMERS			= [ConnectX2, ConnectX3, ConnectX3Pro, ConnectX3VF, ConnectX3ProVF]
 	MLX5_CONSUMERS			= [
-						BlueField3, BlueField2, BlueField, ConnectX9, ConnectX8, ConnectX7, ConnectX6, ConnectX5,
+						BlueField4, BlueField3, BlueField2, BlueField, ConnectX10, ConnectX9, ConnectX8, ConnectX7, ConnectX6, ConnectX5,
 						ConnectX5EX, ConnectX4, ConnectX4LX, ConnectIB, ConnectX6VF, ConnectX6DX, ConnectX6LX,
 						ConnectX5VF, ConnectX5EXVF, ConnectX4VF,
 						ConnectX4LXVF, ConnectIBVF
