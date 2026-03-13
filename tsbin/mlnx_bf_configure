@@ -33,7 +33,8 @@ MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-30}
 SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
-SUPPORTED_DEVICES="a2d[26cf]"
+SUPPORTED_DEVICES="a2d[26cf]|1025"
+BLUEFIELD_DEVICES="a2d[26cf]"
 
 ipsec_services="strongswan.service ipsec.service"
 ipsec_was_active=""
@@ -61,7 +62,7 @@ is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologi
 if [ $is_bf -ne 1 ]; then
 	# Check if the device is a Mellanox BlueField 4 or newer
 	if [ -e /etc/mlnx-release ]; then
-		if [ $(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l) -gt 0 ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | wc -l) -gt 0 ]; then
 			info "Device is a Mellanox BlueField 4 or newer"
 		else
 			exit 0
@@ -400,7 +401,7 @@ start_ipsec_services()
 	done
 }
 
-pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
+pci_id=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
 decimal=$(( host_en ))
@@ -460,7 +461,7 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	fi
 fi
 
-ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
+ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 | head -1)
 num_of_supported_devs=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l)
 
 start_time=$(awk '{print $1}' /proc/uptime)
