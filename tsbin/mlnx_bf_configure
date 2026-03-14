@@ -834,20 +834,33 @@ ovs_config_doca()
 	ovs_config_default_datapath netdev
 }
 
+is_ovs_config_valid()
+{
+	# Check that all OVS bridges ports exist
+	for br in `$vsctl list-br`; do
+		for port in `$vsctl list-ports $br`; do
+			if ! [ -d /sys/class/net/$port ]; then
+				info "Port $port for bridge $br does not exist. OVS configuration is invalid."
+				return 1
+			fi
+		done
+	done
+	return 0
+}
+
+ovs_remove_bridges()
+{
+	for br in `$vsctl list-br`; do
+		$vsctl del-br $br
+		debug "Removed bridge $br"
+	done
+}
+
 #Enable OVS-DOCA
 ovs_config_doca
 
 #Cleanup hugepage if neccessary
 cleanup_hugepages
-
-ovsbr_number=`$vsctl list-br | wc -l`
-if [ $ovsbr_number -gt 0 ]; then
-	debug "OVS bridges already exist. Skipping OVS bridges creation."
-	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"') || [ "$need_restart" == true ]; then
-		ovs_restart
-	fi
-	exit $RC
-fi
 
 CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
 if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
@@ -856,6 +869,21 @@ if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
 		ovs_restart
     fi
 	exit $RC
+fi
+
+ovsbr_number=`$vsctl list-br | wc -l`
+if [ $ovsbr_number -gt 0 ]; then
+	if is_ovs_config_valid; then
+		debug "OVS bridges already exist and configuration is valid. Skipping OVS bridges creation."
+		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"') || [ "$need_restart" == true ]; then
+			ovs_restart
+		fi
+		exit $RC
+	else
+		info "Removing OVS bridges and creating new ones."
+		ovs_remove_bridges
+		ovsbr_number=0
+	fi
 fi
 
 OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
