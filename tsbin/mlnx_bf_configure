@@ -693,8 +693,13 @@ for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
 				# increase the last digit of the dev name by 2
 				new_dev_name=${dev:0:-1}$(( ${dev: -1} + 2 ))
 				extra_netdevs=$(get_mlnx_netdevs_by_pci_id $new_dev_name)
-				# Choose netdedv that has "<string><num>pf<num><string>" in its name
-				extra_netdev=$(echo "$extra_netdevs" | grep -oE '[[:alnum:]]+[0-9]pf[0-9][[:alnum:]]+')
+				num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
+				if [ $num_of_extra_netdevs -eq 1 ]; then
+					extra_netdev=$extra_netdevs
+				else
+					# Choose netdedv that has "pf<num><string>" in its name
+					extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
+				fi
 				if [ -n "$extra_netdev" ]; then
 					debug "Adding extra netdev $extra_netdev to $ports_var"
 					eval "${ports_var}=\"${!ports_var} $extra_netdev\""
