@@ -92,7 +92,7 @@ keys = []
 prev = get_stats(options.intf, keys)
 
 for key in keys:
-	m = re.match("tx(\d+)_bytes", key)
+	m = re.match(r"tx(\d+)_bytes", key)
 	if m:
 		ring = int(m.groups()[0])
 
@@ -135,13 +135,13 @@ while count != 0:
 				print(("%30s: %s" % (key, thous(bw))))
 				something_printed = True
 
-			m = re.match("tx_prio_?(\d+)_bytes", key)
+			m = re.match(r"tx_prio_?(\d+)_bytes", key)
 			if m:
 				up = int(m.groups()[0])
 				up_bw[up] += bw
 				total_bw += bw
 
-			m = re.match("tx_prio_?(\d+)_packets", key)
+			m = re.match(r"tx_prio_?(\d+)_packets", key)
 			if m:
 				up = int(m.groups()[0])
 				up_packets[up] += bw
