@@ -35,6 +35,7 @@ SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1025"
 BLUEFIELD_DEVICES="a2d[26cf]"
+BF4_DEVICES="1023|1025"
 
 ipsec_services="strongswan.service ipsec.service"
 ipsec_was_active=""
@@ -602,6 +603,17 @@ fi
 HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
 OVS_DEFAULT_HUGEPAGE_SIZE=2048
 OVS_DEFAULT_HUGEPAGE_NUM=512
+OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
+
+is_bf4()
+{
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$BF4_DEVICES" | wc -l) -gt 0 ]; then
+			return 0
+		fi
+	fi
+	return 1
+}
 
 add_default_hugepages_configurations()
 {
@@ -609,7 +621,14 @@ add_default_hugepages_configurations()
 		return
 	fi
 	[ -z "$OVS_HUGEPAGE_SIZE" ] && OVS_HUGEPAGE_SIZE=$OVS_DEFAULT_HUGEPAGE_SIZE
-	[ -z "$OVS_HUGEPAGE_NUM" ] && OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM
+	if [ -z "$OVS_HUGEPAGE_NUM" ]; then
+		if is_bf4; then
+			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM_BF4
+			info "BlueField 4 detected, using 4GB hugepages allocation"
+		else
+			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM
+		fi
+	fi
 	info "Adding ovs-doca default hugepages configuration"
 	$HUGEPAGES_TOOL config --force --app "ovs-doca (default)" --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
 }
