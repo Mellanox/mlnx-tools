@@ -56,7 +56,9 @@ def configure_hugepages(config):
             num = size_config['num']
             size_totals[size] = size_totals.get(size, 0) + num
 
-    for size, total in size_totals.items():
+    valid_sizes = get_valid_hugepage_sizes()
+    for size in valid_sizes:
+        total = size_totals.get(size, 0)
         try:
             with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "w") as f:
                 info(f"Allocating {total} hugepages of size {size}")
@@ -93,9 +95,8 @@ def reload_config(args):
     config = load_config()
 
     if not config:
-        info("No configuration found.")
-        print("No configuration found.")
-        return
+        info("No configuration found. Deallocating all hugepages.")
+        print("No configuration found. Deallocating all hugepages.")
 
     print("Reloading hugepages configuration...")
     configure_hugepages(config)
