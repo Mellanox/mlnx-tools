@@ -576,10 +576,30 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	start_ipsec_services
 fi
 
+add_tc_rules()
+{
+    mst status -v | grep ConnectX9 | grep "net-" | while read -r line; do
+        NET_DATA=$(echo "$line" | grep -oP 'net-\K[^ ]+');
+        IF1=$(echo "$NET_DATA" | cut -d',' -s -f1 | sed 's/^net-//');
+        IF2=$(echo "$NET_DATA" | cut -d',' -s -f2 | sed 's/^net-//');
+        if [[ -n "$IF1" && -n "$IF2" && -d "/sys/class/net/$IF1" && -d "/sys/class/net/$IF2" ]]; then
+            for dev in "$IF1" "$IF2"; do
+                tc qdisc del dev "$dev" ingress 2>/dev/null;
+                tc qdisc add dev "$dev" ingress;
+            done;
+            tc filter add dev "$IF1" ingress protocol all flower action mirred egress redirect dev "$IF2";
+            tc filter add dev "$IF2" ingress protocol all flower action mirred egress redirect dev "$IF1";
+        fi;
+    done
+}
+
+add_tc_rules
+
 debug "num_of_devs_switchdev: $num_of_devs_switchdev"
 debug "SWITCHDEV_DEVICES_LIST: ${SWITCHDEV_DEVICES_LIST[*]}"
 debug "SD_DEVICES_LIST: ${SD_DEVICES_LIST[*]}"
 debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
+
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
