@@ -565,6 +565,10 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			SWITCHDEV_DEVICES_LIST+=( "$dev" )
 		fi
 		if is_sd_mode ${dev}; then
+			if [ "X${ENABLE_ESWITCH_MULTIPORT}" != "Xyes" ]; then
+				info "Enabling ESW Multiport for SD device $dev"
+				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
+			fi
 			debug "Adding SD device $dev to SD_DEVICES_LIST"
 			SD_DEVICES_LIST+=( "$dev" )
 		fi
