@@ -306,7 +306,7 @@ is_supported_device()
 	dev=$1
 	shift 1
 
-	if (lspci -nD -s ${dev} | grep -E "$BLUEFIELD_DEVICES"); then
+	if (lspci -nD -s ${dev} | grep -E "$SUPPORTED_DEVICES"); then
 		return 0
 	fi
 	return 1
