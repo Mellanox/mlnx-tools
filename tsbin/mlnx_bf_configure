@@ -834,6 +834,7 @@ ovs_cleanup_doca()
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
 		info "OVS cleanup doca-init"
 		$vsctl --no-wait remove Open_vSwitch . other_config doca-init
+		$vsctl --no-wait remove Open_vSwitch . other_config hw-offload-ct-size
 		need_restart=true
 	fi
 }
@@ -852,6 +853,7 @@ ovs_config_doca()
 	fi
 
 	$vsctl --no-wait set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
+	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload-ct-size=0 2> /dev/null
 	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init="true"'); then
 		info "OVS doca-init is set to true"
 		need_restart=true
