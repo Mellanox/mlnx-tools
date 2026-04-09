@@ -863,6 +863,10 @@ is_ovs_config_valid()
 	# Check that all OVS bridges ports exist
 	for br in `$vsctl list-br`; do
 		for port in `$vsctl list-ports $br`; do
+			# Ignore VF representors
+			if echo $port | grep -qE 'vf[0-9]'; then
+				continue
+			fi
 			if ! [ -d /sys/class/net/$port ]; then
 				info "Port $port for bridge $br does not exist. OVS configuration is invalid."
 				return 1
