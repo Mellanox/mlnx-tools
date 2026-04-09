@@ -79,6 +79,8 @@ class SF:
         self.aux_dev = None
         self.sf_netdev = None
         self.rdma_dev = None
+        self.controller = args.controller or None
+
         self.cpu_list = args.cpu_list or None
         self.info = {}
         self.info_error = 0
@@ -197,6 +199,8 @@ class SF:
         cmd = MLXDEVM + " port add pci/{device} flavour pcisf pfnum {pfnum} sfnum {sfnum}".format(
                 device=self.device, pfnum=self.pfnum, sfnum=self.sfnum
                 )
+        if self.controller:
+            cmd += " controller {controller}".format(controller=self.controller)
 
         result['status'], result['output'] = get_status_output(cmd, self.verbose)
         if result['status']:
@@ -244,109 +248,100 @@ class SF:
         result['status'], result['output'] = get_status_output(cmd, self.verbose)
         if result['status']:
             return result
-        # Find the rdma device for the sf
-        start = time.process_time()
-        while True:
-            if time.process_time() - start > RDMA_DEV_TIMEOUT:
-                break
-            self.aux_dev = lookup_aux_dev(self.device, self.sfnum)
-            if self.aux_dev:
-                break
-            time.sleep(0.001)
 
-        # Wait for sf_cfg link to be created
-        start = time.perf_counter()
-        while not os.path.exists("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev)):
-            if time.perf_counter() - start >= SF_CFG_DRIVER_TIMEOUT:
-                sf_log("ERROR: timed out waiting for the config driver /sys/bus/auxiliary/devices/{}/driver to appear".format(self.aux_dev), True)
-                sf_log("ERROR: Failed to create SF {} for device {}".format(self.sfnum, self.device), True)
-                self.delete()
-                sys.exit(1)
-            time.sleep(0.01)
+        if not self.controller:
+            # Find the rdma device for the sf
+            start = time.process_time()
+            while True:
+                if time.process_time() - start > RDMA_DEV_TIMEOUT:
+                    break
+                self.aux_dev = lookup_aux_dev(self.device, self.sfnum)
+                if self.aux_dev:
+                    break
+                time.sleep(0.001)
 
-        # Unbind the SF from the default config driver and bind the actual SF driver
-        if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
-            try:
-                fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf_cfg/unbind"
-                with open(fname, 'w') as f:
-                    f.write(self.aux_dev)
-                fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf/bind"
-                with open(fname, 'w') as f:
-                    f.write(self.aux_dev)
-            except IOError as e:
-                sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
-            except FileNotFoundError:
-                sf_log("ERROR: File {} does not exist".format(fname))
-            except:
-                sf_log("Unexpected error:", sys.exc_info()[0])
+            # Wait for sf_cfg link to be created
+            start = time.perf_counter()
+            while not os.path.exists("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev)):
+                if time.perf_counter() - start >= SF_CFG_DRIVER_TIMEOUT:
+                    sf_log("ERROR: timed out waiting for the config driver /sys/bus/auxiliary/devices/{}/driver to appear".format(self.aux_dev), True)
+                    sf_log("ERROR: Failed to create SF {} for device {}".format(self.sfnum, self.device), True)
+                    self.delete()
+                    sys.exit(1)
+                time.sleep(0.01)
 
-        # Wait for devlink to see SF before running devlink commands
-        start = time.process_time()
-        while True:
-            if time.process_time() - start > DEVLINK_DEV_TIMEOUT:
-                sf_log("WARNING: timed out waiting for SF device {} to appear: {}".format(self.aux_dev, result))
-                break
+            # Unbind the SF from the default config driver and bind the actual SF driver
+            if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
+                try:
+                    fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf_cfg/unbind"
+                    with open(fname, 'w') as f:
+                        f.write(self.aux_dev)
+                    fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf/bind"
+                    with open(fname, 'w') as f:
+                        f.write(self.aux_dev)
+                except IOError as e:
+                    sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
+                except FileNotFoundError:
+                    sf_log("ERROR: File {} does not exist".format(fname))
+                except:
+                    sf_log("Unexpected error:", sys.exc_info()[0])
 
-            cmd = DEVLINK + " dev show auxiliary/{}".format(self.aux_dev)
-            result['status'], result['output'] = get_status_output(cmd, self.verbose)
-            if result['status'] == 0:
-                break
+            # Wait for devlink to see SF before running devlink commands
+            start = time.process_time()
+            while True:
+                if time.process_time() - start > DEVLINK_DEV_TIMEOUT:
+                    sf_log("WARNING: timed out waiting for SF device {} to appear: {}".format(self.aux_dev, result))
+                    break
 
-            time.sleep(0.05)
+                cmd = DEVLINK + " dev show auxiliary/{}".format(self.aux_dev)
+                result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                if result['status'] == 0:
+                    break
 
-        # Enable netdev and rdma devices
-        cmd = MLXDEVM + " dev param set auxiliary/{} name enable_eth value true cmode driverinit".format(
-                self.aux_dev
-                )
-        result['status'], result['output'] = get_status_output(cmd, self.verbose)
-        if result['status']:
-            return result
-
-        cmd = MLXDEVM + " dev param set auxiliary/{} name enable_rdma value true cmode driverinit".format(
-                self.aux_dev
-                )
-        result['status'], result['output'] = get_status_output(cmd, self.verbose)
-        if result['status']:
-            return result
-
-        if not self.disable_roce:
-            cmd = MLXDEVM + " dev param set auxiliary/{} name enable_roce value true cmode driverinit".format(
+            # Enable netdev and rdma devices
+            cmd = MLXDEVM + " dev param set auxiliary/{} name enable_eth value true cmode driverinit".format(
                     self.aux_dev
                     )
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
 
-        cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
-        result['status'], result['output'] = get_status_output(cmd, self.verbose)
-        if result['status']:
-            return result
-
-        if self.cpu_list:
-            cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
-                    self.aux_dev, self.cpu_list
+            cmd = MLXDEVM + " dev param set auxiliary/{} name enable_rdma value true cmode driverinit".format(
+                    self.aux_dev
                     )
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
+
+            if not self.disable_roce:
+                cmd = MLXDEVM + " dev param set auxiliary/{} name enable_roce value true cmode driverinit".format(
+                        self.aux_dev
+                        )
+                result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                if result['status']:
+                    return result
+
             cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
             result['status'], result['output'] = get_status_output(cmd, self.verbose)
             if result['status']:
                 return result
 
-        if self.cpu_list:
-            cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
-                    self.aux_dev, self.cpu_list
-                    )
-            result['status'], result['output'] = get_status_output(cmd, self.verbose)
-            if result['status']:
-                return result
-            cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
-            result['status'], result['output'] = get_status_output(cmd, self.verbose)
-            if result['status']:
-                return result
+            if self.cpu_list:
+                cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
+                        self.aux_dev, self.cpu_list
+                        )
+                result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                if result['status']:
+                    return result
+                cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
+                result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                if result['status']:
+                    return result
 
         result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
+        if self.controller:
+            result["output"] += " controller={}".format(self.controller)
+
         sf_log(result["output"])
         return result
 
@@ -533,6 +528,7 @@ def main():
     parser.add_argument('-e', '--enable-eswitch', action='store_true',
                         help="(deprecated, ignored)", default=False)
     parser.add_argument('-r', '--disable-roce', action='store_true', help="Disable RoCE for SF", default=False)
+    parser.add_argument('-C', '--controller', help="Create SF on a controller number <CONTROLLER>", default=False)
     parser.add_argument('-c', '--cpu-list', help="Interpret mask as numerical list of cores instead of a \
                                                   bitmask. Numbers are separated by commas and may include \
                                                   ranges. For example: 0,5,8-11.", default=None)
