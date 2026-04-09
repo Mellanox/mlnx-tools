@@ -51,6 +51,36 @@ SF_CFG_DRIVER_TIMEOUT = 20
 
 verbose = False
 
+
+def get_status_output(cmd, verbose=verbose):
+    rc, output = (0, '')
+
+    if verbose:
+        print("Running command:", cmd)
+
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                                         shell=True, universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        rc, output = (e.returncode, e.output.strip())
+
+    if rc and verbose:
+        print("Running {} failed (error[{}])".format(cmd, rc))
+
+    if verbose:
+        print("Output:\n", output)
+
+    return rc, output
+
+
+def sf_log(msg, level=verbose):
+    if level:
+        print(msg)
+    cmd = "logger -t {} -i '{}'".format(prog, msg)
+    get_status_output(cmd, False)
+    return 0
+
+
 if os.path.exists("/usr/bin/mlxconfig"):
     MLXCONFIG = "/usr/bin/mlxconfig"
 elif os.path.exists("/usr/bin/mstconfig"):
@@ -420,35 +450,6 @@ def version():
     Display program version information.
     """
     print(prog + ' ' + __version__)
-
-
-def get_status_output(cmd, verbose=verbose):
-    rc, output = (0, '')
-
-    if verbose:
-        print("Running command:", cmd)
-
-    try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
-                                         shell=True, universal_newlines=True)
-    except subprocess.CalledProcessError as e:
-        rc, output = (e.returncode, e.output.strip())
-
-    if rc and verbose:
-        print("Running {} failed (error[{}])".format(cmd, rc))
-
-    if verbose:
-        print("Output:\n", output)
-
-    return rc, output
-
-
-def sf_log(msg, level=verbose):
-    if level:
-        print(msg)
-    cmd = "logger -t {} -i '{}'".format(prog, msg)
-    get_status_output(cmd, False)
-    return 0
 
 
 def verify_args(args):
