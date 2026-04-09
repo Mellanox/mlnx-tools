@@ -905,7 +905,7 @@ ovsbr_number=`$vsctl list-br | wc -l`
 if [ $ovsbr_number -gt 0 ]; then
 	if is_ovs_config_valid; then
 		debug "OVS bridges already exist and configuration is valid. Skipping OVS bridges creation."
-		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep 'hw-offload="true"') || [ "$need_restart" == true ]; then
+		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
 			ovs_restart
 		fi
 		exit $RC
