@@ -30,13 +30,47 @@
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-3}
+SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
+RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1025"
+BLUEFIELD_DEVICES="a2d[26cf]"
+BF4_DEVICES="1023|1025"
+
+ipsec_services="strongswan.service ipsec.service"
+ipsec_was_active=""
 
 RC=0
 
+info()
+{
+	logger -t $prog -i "INFO: $*"
+}
+
+error()
+{
+	logger -t $prog -i "ERR: $*"
+}
+
+debug()
+{
+	if [ "X${LOG_LEVEL}" == "Xdebug" ]; then
+		logger -t $prog -i "DBG: $*"
+	fi
+}
+
 is_bf=`lspci -s 00:00.0 2> /dev/null | grep -wq "PCI bridge: Mellanox Technologies" && echo 1 || echo 0`
 if [ $is_bf -ne 1 ]; then
-	exit 0
+	# Check if the device is a Mellanox BlueField 4 or newer
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | wc -l) -gt 0 ]; then
+			info "Device is a Mellanox BlueField 4 or newer"
+		else
+			exit 0
+		fi
+	else
+		info "Device is not a Mellanox BlueField. Exiting..."
+		exit 0
+	fi
 fi
 
 prog=`basename $0`
@@ -50,28 +84,33 @@ if [[ -n $PID && $$ -ne $PID ]]; then
 	exit 0
 fi
 
-info()
+run_command_with_retry()
 {
-	logger -t $prog -i "INFO: $*"
-}
+	cmd=$1
+	shift
 
-error()
-{
-	logger -t $prog -i "ERR: $*"
-}
+	i=0
+	while ! (eval "$cmd"); do
+		if [ $i -gt $RUN_CMD_RETRY_NUM ]; then
+			error "Failed to run $cmd after $i retries"
+			return 1
+		fi
+		let i++
+		sleep 1
+	done
+	if [ $i -gt 0 ]; then
+		info "$cmd passed after $i retries"
+	fi
 
+	return 0
+}
 
 get_steering_mode()
 {
 	pci_dev=$1
 	shift
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		cat ${compat} 2> /dev/null
-	else
-		devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
-	fi
+	run_devlink dev param show pci/${pci_dev} name flow_steering_mode | tail -1 | awk '{print $NF}'
 }
 
 set_steering_mode()
@@ -80,17 +119,22 @@ set_steering_mode()
 	mode=$2
 	shift 2
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${mode} > /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/steering_mode
-	else
-		devlink dev param set pci/${pci_dev} name flow_steering_mode value "${mode}" cmode runtime
-	fi
-	rc=$?
+	rc=1
+	i=0
+	while [ $rc -ne 0 ]
+	do
+		run_command_with_retry "run_devlink dev param set pci/${pci_dev} name flow_steering_mode value ${mode} cmode runtime"
+		rc=$?
+		let i++
+		if [ $i -gt $SET_MODE_RETRY_NUM ]; then
+			break
+		fi
+		sleep 1
+	done
 	if [ $rc -ne 0 ]; then
-		error "Failed to configure steering mode ${mode} for ${pci_dev}"
+		error "Failed to configure steering mode ${mode} for ${pci_dev} after $i retries"
 	else
-		info "Configured mode steering ${mode} for ${pci_dev}"
+		info "Configured mode steering ${mode} for ${pci_dev} on try: $i"
 	fi
 
 	return $rc
@@ -101,7 +145,7 @@ get_eswitch_mode()
 	pci_dev=$1
 	shift
 
-	devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
+	run_devlink dev eswitch show pci/${pci_dev} 2> /dev/null | cut -d ' ' -f 3
 }
 
 set_eswitch_mode()
@@ -110,17 +154,22 @@ set_eswitch_mode()
 	mode=$2
 	shift 2
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/mode 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${mode} > ${compat}
-	else
-		devlink dev eswitch set pci/${pci_dev} mode ${mode}
-	fi
-	rc=$?
+	rc=1
+	i=0
+	while [ $rc -ne 0 ]
+	do
+		run_devlink dev eswitch set pci/${pci_dev} mode ${mode}
+		rc=$?
+		let i++
+		if [ $i -gt $SET_MODE_RETRY_NUM ]; then
+			break
+		fi
+		sleep 1
+	done
 	if [ $rc -ne 0 ]; then
-		error "Failed to configure ${mode} mode for ${pci_dev}"
+		error "Failed to configure ${mode} mode for ${pci_dev} after $i retries"
 	else
-		info "Configured ${mode} mode for ${pci_dev}"
+		info "Configured ${mode} mode for ${pci_dev} on try: $i"
 	fi
 
 	return $rc
@@ -131,12 +180,7 @@ get_dev_param()
 	pci_dev=$1
 	name=$2
 	shift 2
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
-	if [ -n "$compat" ]; then
-		cat ${compat} 2> /dev/null
-	else
-		devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
-	fi
+	run_devlink dev param show pci/${pci_dev} name ${name} 2> /dev/null | tail -1 | awk '{print $NF}'
 }
 
 set_dev_param()
@@ -147,12 +191,7 @@ set_dev_param()
 	msg=$4
 	shift 4
 
-	compat=`/bin/ls -1 /sys/bus/pci/devices/${pci_dev}/net/*/compat/devlink/${name} 2> /dev/null`
-	if [ -n "$compat" ]; then
-		echo ${value} > ${compat}
-	else
-		devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime
-	fi
+	run_command_with_retry "run_devlink dev param set pci/${pci_dev} name ${name} value ${value} cmode runtime"
 	rc=$?
 	if [ $rc -ne 0 ]; then
 		error "${msg} Failed to set parameter ${name} to ${value} value for ${pci_dev}"
@@ -202,14 +241,15 @@ wait_for_netdev()
 ovs_save_conf()
 {
 	ovs_brs=$(ovs-vsctl list-br)
-	
+
 	for ovs_br in $ovs_brs
 	do
-		eval ${ovs_br}_ports=\"$(ovs-vsctl list-ports $ovs_br | tr -s '[=\n=]' ' ')\"
+		ovs_br_ports="$(ovs-vsctl list-ports $ovs_br | tr -s '[=\n=]' ' ')"
+		eval ${ovs_br}_ports=\"${ovs_br_ports}\"
 		for port in $(eval echo \$$(echo ${ovs_br}_ports))
 		do
-			eval ${port}_options="\"$(ovs-vsctl get Interface $port options | sed 's/[{},]//g')\""
-			eval ${port}_type="\"$(ovs-vsctl get Interface $port type | sed 's/[{},]//g')\""
+				eval ${port}_options="\"$(ovs-vsctl get Interface $port options | sed 's/[{},]//g')\""
+				eval ${port}_type="\"$(ovs-vsctl get Interface $port type | sed 's/[{},]//g')\""
 		done
 		info "Saved $ovs_br: $(eval echo \$$(echo ${ovs_br}_ports))"
 	done
@@ -232,10 +272,10 @@ ovs_delete_conf()
 }
 
 ovs_restore_conf()
-{	
+{
 	for ovs_br in $ovs_brs
 	do
-	    ovs_br_ports="$(eval echo \$$(echo ${ovs_br}_ports))"
+		ovs_br_ports="$(eval echo \$$(echo ${ovs_br}_ports))"
 		$vsctl add-br $ovs_br
 		info "Created bridge: $ovs_br"
 		for port in $ovs_br_ports
@@ -261,7 +301,16 @@ ovs_restore_conf()
 	done
 }
 
-vsctl=`which ovs-vsctl 2> /dev/null`
+run_devlink()
+{
+	cmd="$*"
+	output=$(devlink $cmd 2>&1)
+	if [ $? -ne 0 ]; then
+		error "Failed to run devlink $cmd: $output"
+		return 1
+	fi
+	echo $output
+}
 
 is_port_ib()
 {
@@ -272,6 +321,31 @@ is_port_ib()
 	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q LINK_TYPE_P$port")
 
 	if (echo "$mft_output" | grep -o LINK_TYPE_P.* | awk '{print $3}' | grep -q "IB(1)"); then
+		return 0
+	fi
+	return 1
+}
+
+# Check if the device is in Socket Direct mode
+is_sd_mode()
+{
+	dev=$1
+	shift 1
+
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q PF_SD_GROUP")
+
+	if (echo "$mft_output" | grep -o PF_SD_GROUP.* | awk '{print$3}'  | grep -q "^1$"); then
+		return 0
+	fi
+	return 1
+}
+
+is_supported_device()
+{
+	dev=$1
+	shift 1
+
+	if (lspci -nD -s ${dev} | grep -E "$SUPPORTED_DEVICES"); then
 		return 0
 	fi
 	return 1
@@ -296,12 +370,11 @@ is_smartnic_mode()
 	return 0
 }
 
-get_mlnx_netdevs_by_slot()
+get_mlnx_netdevs_by_pci_id()
 {
-	dev_num=$1
+	pci_id=$1
 	shift 1
 
-	pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -${dev_num} | tail -1)
 	netdevs=$(grep PCI_SLOT_NAME=${pci_id} /sys/class/net/*/device/uevent | cut -d '/' -f 5)
 	if [ -n "$netdevs" ]; then
 		echo "$netdevs"
@@ -310,7 +383,51 @@ get_mlnx_netdevs_by_slot()
 	return 0
 }
 
-pci_id=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | cut -d ' ' -f 1 | head -1)
+# Helper: check if a value is in an array
+in_array() {
+    local needle=$1; shift
+    local elem
+    for elem in "$@"; do
+        [[ "$elem" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+stop_ipsec_services()
+{
+	# Stop IPsec-related services temporarily if active to remove offloaded IPsec bypass policies
+	# This is done so we can change the eswitch mode
+	for svc in $ipsec_services; do
+		if systemctl is-active --quiet $svc; then
+			[ -z "$ipsec_was_active" ] && ipsec_was_active=$svc || ipsec_was_active="$ipsec_was_active $svc"
+		fi
+	done
+	for svc in $ipsec_was_active; do
+		systemctl stop $svc
+	done
+	for svc in $ipsec_was_active; do
+		if systemctl is-active --quiet $svc; then
+			error "Failed to stop $svc"
+		else
+			info "Stopped $svc successfully"
+		fi
+	done
+}
+
+start_ipsec_services()
+{
+	# Start IPsec-related services again if they were active
+	for svc in $ipsec_was_active; do
+		systemctl start $svc
+		if systemctl is-active --quiet $svc; then
+			info "Started $svc successfully"
+		else
+			error "Failed to start $svc"
+		fi
+	done
+}
+
+pci_id=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
 decimal=$(( host_en ))
@@ -345,26 +462,10 @@ IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 ENABLE_ESWITCH_MULTIPORT=${ENABLE_ESWITCH_MULTIPORT:-"no"}
 MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
-
-if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
-	. /etc/mellanox/mlnx-ovs.conf
-fi
-
-OVS_CONF_SAVED=0
-OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
-
-if [ -n "$vsctl" ]; then
-	ovsbr_number=`$vsctl list-br | wc -l`
-	if [ $ovsbr_number -gt 0 ]; then
-		ovs_save_conf
-		if [ -n "$ovs_brs" ]; then
-			OVS_CONF_SAVED=1
-		fi
-	fi
-
-	ovs_delete_conf
-	for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
-fi
+LOG_LEVEL=${LOG_LEVEL:-"info"}
+SWITCHDEV_DEVICES_LIST=()
+SD_DEVICES_LIST=()
+DEVICE_LIST_FOR_OVS_BRIDGES=()
 
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
@@ -390,21 +491,32 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	fi
 fi
 
-ctrl_dev=$(lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1 | head -1)
+ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 | head -1)
+num_of_supported_devs=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l)
 
 start_time=$(awk '{print $1}' /proc/uptime)
-while ! ($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL > /dev/null 2>&1); do
-	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-	if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
-		error "Failed to run $mftconfig query on $ctrl_dev"
-		break
-	fi
-	sleep 1
-done
+mft_output=$($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL 2>&1)
+if ! (echo "$mft_output" | grep -q 'E- The Device doesn.*t support INTERNAL_CPU_MODEL parameter'); then
+	while (echo "$mft_output" | grep -q "Failed to open"); do
+		echo "$mft_output" >> ${MLXCONFIG_DEBUG_LOG}
+		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+		if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
+			error "Failed to run $mftconfig query on $ctrl_dev after $elapsed seconds"
+			exit 1
+		fi
+		sleep 1
+		mft_output=$($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL 2>&1)
+	done
+else
+	info "Device $ctrl_dev does not support INTERNAL_CPU_MODEL parameter"
+fi
+info "MFT output: $mft_output"
 
-num_of_devs=0
+num_of_devs_switchdev=0
+# Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
-	for dev in `lspci -nD -d 15b3: | grep 'a2d[26cf]' | cut -d ' ' -f 1`
+	stop_ipsec_services
+	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print $2}')
 	do
 		port=$(( ${dev: -1} + 1 ))
 		if (is_port_ib "$dev" "$port"); then
@@ -476,10 +588,25 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
 			fi
-			num_of_devs=$((num_of_devs+1))
+			num_of_devs_switchdev=$((num_of_devs_switchdev+1))
+			SWITCHDEV_DEVICES_LIST+=( "$dev" )
+		fi
+		if is_sd_mode ${dev}; then
+			debug "Adding SD device $dev to SD_DEVICES_LIST"
+			SD_DEVICES_LIST+=( "$dev" )
+		fi
+		if is_supported_device ${dev}; then
+			debug "Adding supported device $dev to DEVICE_LIST_FOR_OVS_BRIDGES"
+			DEVICE_LIST_FOR_OVS_BRIDGES+=( "$dev" )
 		fi
 	done
+	start_ipsec_services
 fi
+
+debug "num_of_devs_switchdev: $num_of_devs_switchdev"
+debug "SWITCHDEV_DEVICES_LIST: ${SWITCHDEV_DEVICES_LIST[*]}"
+debug "SD_DEVICES_LIST: ${SD_DEVICES_LIST[*]}"
+debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
@@ -491,19 +618,134 @@ if [ $RC -ne 0 ]; then
 	exit $RC
 fi
 
-if [ $num_of_devs -eq 0 ]; then
+if [ $num_of_devs_switchdev -eq 0 ]; then
 	info "No devices configured to switchdev mod. Skipping SF/Bridges configuration."
 	exit 0
 fi
 
+if [ -f /etc/mellanox/mlnx-sf.conf ]; then
+    # Wait until NetworkManager is active to avoid race condition
+    NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
+	start_time=$(awk '{print $1}' /proc/uptime)
+    while ! (systemctl is-active NetworkManager)
+    do
+        elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+        if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
+            info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
+            break;
+        fi
+        sleep 0.1
+    done
+	. /etc/mellanox/mlnx-sf.conf
+fi
+
+HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
+OVS_DEFAULT_HUGEPAGE_SIZE=2048
+OVS_DEFAULT_HUGEPAGE_NUM=512
+OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
+
+is_bf4()
+{
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$BF4_DEVICES" | wc -l) -gt 0 ]; then
+			return 0
+		fi
+	fi
+	return 1
+}
+
+add_default_hugepages_configurations()
+{
+	if [ "X${OVS_DOCA}" != "Xyes" ]; then
+		return
+	fi
+	[ -z "$OVS_HUGEPAGE_SIZE" ] && OVS_HUGEPAGE_SIZE=$OVS_DEFAULT_HUGEPAGE_SIZE
+	if [ -z "$OVS_HUGEPAGE_NUM" ]; then
+		if is_bf4; then
+			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM_BF4
+			info "BlueField 4 detected, using 4GB hugepages allocation"
+		else
+			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM
+		fi
+	fi
+	info "Adding ovs-doca default hugepages configuration"
+	$HUGEPAGES_TOOL config --force --app "ovs-doca (default)" --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
+}
+
+config_hugepages()
+{
+	add_default_hugepages_configurations
+	info "Applying hugepages configuration"
+	$HUGEPAGES_TOOL reload
+}
+
+cleanup_hugepages()
+{
+	if [ "X${OVS_DOCA}" != "Xyes" ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
+		info "Removing ovs-doca default hugepages configuration"
+		$HUGEPAGES_TOOL remove ovs-doca
+		$HUGEPAGES_TOOL reload
+	fi
+}
+
+# Configure the default OVS bridge
+vsctl=`which ovs-vsctl 2> /dev/null`
 if [ ! -n "$vsctl" ]; then
 	info "OVS is not installed. Skipping OVS bridges creation."
 	exit 0
 fi
 
-# Set default OVS bridge configurations based on num_of_devs
-for i in `seq $num_of_devs`
-do
+if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
+	. /etc/mellanox/mlnx-ovs.conf
+fi
+
+OVS_CONF_SAVED=0
+OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
+
+if [ -n "$vsctl" ] && [ "X${OVS_CONF_RESTORE}" == "Xyes" ]; then
+	ovsbr_number=`$vsctl list-br | wc -l`
+	if [ $ovsbr_number -gt 0 ]; then
+		ovs_save_conf
+		if [ -n "$ovs_brs" ]; then
+			OVS_CONF_SAVED=1
+		fi
+		ovs_delete_conf
+		for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
+	fi
+fi
+
+# Configure hugepages
+config_hugepages
+
+max_num_of_ovs_bridges=$num_of_devs_switchdev
+max_num_of_sd_ovs_bridges=0
+num_of_sd_devs=${#SD_DEVICES_LIST[@]}
+if [ $num_of_sd_devs -gt 0 ]; then
+	if [ $num_of_sd_devs -eq 1 ]; then
+		max_num_of_sd_ovs_bridges=1
+	else
+		max_num_of_sd_ovs_bridges=2
+	fi
+fi
+
+debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
+debug "max_num_of_sd_ovs_bridges: $max_num_of_sd_ovs_bridges"
+
+num_of_sd_ovs_bridges=0
+num_of_ovs_bridges=0
+i=1
+for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+	sd_dev=""
+	if [ $num_of_sd_devs -gt 0 ]; then
+		if in_array $dev ${SD_DEVICES_LIST[@]}; then
+			if [ $num_of_sd_ovs_bridges -lt $max_num_of_sd_ovs_bridges ]; then
+				num_of_sd_ovs_bridges=$((num_of_sd_ovs_bridges+1))
+			else
+				continue
+			fi
+			sd_dev=$dev
+		fi
+	fi
 	bridge_var=OVS_BRIDGE${i}
 	ports_var=OVS_BRIDGE${i}_PORTS
 	idx=$((i-1))
@@ -515,8 +757,31 @@ do
 
 	# Set default ports if not already set
 	if [ -z "${!ports_var}" ]; then
-		eval "${ports_var}=\"$(get_mlnx_netdevs_by_slot ${i})\""
+		eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
+		# Workaround: Add extra netdev
+		if [ "$dev" == "$sd_dev" ]; then
+			num_of_ports=$(wc -w <<< "$ports_var")
+			if [ $num_of_ports -lt 4 ]; then
+				# Add extra netdev as a workaround for SD device
+				# increase the last digit of the dev name by 2
+				new_dev_name=${dev:0:-1}$(( ${dev: -1} + 2 ))
+				extra_netdevs=$(get_mlnx_netdevs_by_pci_id $new_dev_name)
+				num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
+				if [ $num_of_extra_netdevs -eq 1 ]; then
+					extra_netdev=$extra_netdevs
+				else
+					# Choose netdedv that has "pf<num><string>" in its name
+					extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
+				fi
+				if [ -n "$extra_netdev" ]; then
+					debug "Adding extra netdev $extra_netdev to $ports_var"
+					eval "${ports_var}=\"${!ports_var} $extra_netdev\""
+				fi
+			fi
+		fi
 	fi
+	i=$((i+1))
+	num_of_ovs_bridges=$((num_of_ovs_bridges+1))
 done
 
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
@@ -539,23 +804,37 @@ fi
 
 ovs_restart="systemctl restart $ovs_service"
 
+need_restart=false
+
 ovs_restart()
 {
+	if [ "$need_restart" == "false" ]; then
+		info "Restarting of $ovs_service is not required"
+		return 0
+	fi
+
 	if [ -n "$ovs_service" ]; then
 		info "Restarting $ovs_service"
 		$ovs_restart
+		need_restart=false
 	fi
 
 	# Re-apply udev settings removed by OVS
 	if [ -x /lib/udev/mlnx_bf_udev ]; then
-		for p in $(cd /sys/class/net; /bin/ls -d p* e*)
+		for p in $(cd /sys/class/net; /bin/ls -d *)
 		do
-			/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+			case "$p" in
+				p*|e*)
+				/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+				;;
+				*)
+				;;
+			esac
 		done
 	fi
 
 	# Enable hw-tc-offload for all bridge ports dynamically
-	for i in `seq $num_of_devs`
+	for i in `seq $num_of_devs_switchdev`
 	do
 		br_ports=OVS_BRIDGE${i}_PORTS
 		br_ports=${!br_ports}
@@ -567,22 +846,6 @@ ovs_restart()
 }
 
 {
-if [ -f /etc/mellanox/mlnx-sf.conf ]; then
-    # Wait until NetworkManager is active to avoid race condition
-    NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
-    start_time=$(awk '{print $1}' /proc/uptime)
-    while ! (systemctl is-active NetworkManager)
-    do
-        elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-        if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
-            info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
-            break;
-        fi
-        sleep 0.1
-    done
-    . /etc/mellanox/mlnx-sf.conf
-fi
-
 start_time=$(awk '{print $1}' /proc/uptime)
 while ! ($vsctl show > /dev/null 2>&1)
 do
@@ -603,73 +866,199 @@ else
 		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"'); then
 			ovs_restart
 		fi
-		exit $RC
 	fi
-
-	CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
-	if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
-		exit $RC
-	fi
-
-	OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
-	for i in `seq $num_of_devs`
-	do
-		br_name=OVS_BRIDGE${i}
-		br_name=${!br_name}
-		br_ports=OVS_BRIDGE${i}_PORTS
-		br_ports=${!br_ports}
-
-		if ($vsctl br-exists $br_name); then
-			info "bridge $br_name exist already."
-			ip link set $br_name up
-			continue
-		fi
-
-		missing_port=0
-		ovs_br_ports=""
-		for port in $br_ports
-		do
-			wait_for_netdev $port
-
-			if [ -d /sys/class/net/$port ]; then
-				ovs_br_ports="$ovs_br_ports $port"
-			else
-				info "port device $port for bridge $br_name is missing."
-				case $port in
-					pf*sf*)
-						info "RDMA functionality is not expected to work without $port in $br_name"
-					;;
-					*)
-						missing_port=$((missing_port+1))
-					;;
-				esac
-			fi
-		done
-
-		if [ $missing_port -gt 0 ]; then
-			info "Skipping $br_name configuration."
-			continue
-		fi
-
-		$vsctl add-br $br_name
-		info "Created bridge: $br_name"
-		for port in $ovs_br_ports
-		do
-			$vsctl add-port $br_name $port
-			info "bridge $br_name: added port $port"
-		done
-		ip link set $br_name up
-
-	done
 fi
 
+ovs_config_default_datapath()
+{
+	ovs_default_datapath=${1:-"system"}
+
+	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
+		$vsctl --no-wait set Open_vSwitch . Other_config:default-datapath-type=$ovs_default_datapath 2> /dev/null
+		if [ $? -eq 0 ]; then
+			info "OVS default-datapath-type is set"
+		fi
+	fi
+
+	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
+		error "Failed setting OVS default-datapath-type"
+		return 1
+	fi
+}
+
+ovs_cleanup_doca()
+{
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'default-datapath-type'); then
+		info "OVS cleanup default-datapath-type"
+		$vsctl --no-wait remove Open_vSwitch . other_config default-datapath-type
+	fi
+
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
+		info "OVS cleanup doca-init"
+		$vsctl --no-wait remove Open_vSwitch . other_config doca-init
+		need_restart=true
+	fi
+}
+
+ovs_config_doca()
+{
+	local doca_initialized=`$vsctl get Open_vSwitch . doca_initialized`
+
+	if [ "X${OVS_DOCA}" != "Xyes" ]; then
+		ovs_cleanup_doca
+		return 0
+	fi
+
+	if [ "$doca_intialized" == "true" ]; then
+		return 0
+	fi
+
+	$vsctl --no-wait set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init="true"'); then
+		info "OVS doca-init is set to true"
+		need_restart=true
+	else
+		info "OVS failed setting doca-init to true"
+	fi
+
+	ovs_config_default_datapath netdev
+}
+
+is_ovs_config_valid()
+{
+	# Check that all OVS bridges ports exist
+	for br in `$vsctl list-br`; do
+		for port in `$vsctl list-ports $br`; do
+			# Ignore VF representors
+			if echo $port | grep -qE 'vf[0-9]'; then
+				continue
+			fi
+			if ! [ -d /sys/class/net/$port ]; then
+				info "Port $port for bridge $br does not exist. OVS configuration is invalid."
+				return 1
+			fi
+		done
+	done
+	return 0
+}
+
+ovs_remove_bridges()
+{
+	for br in `$vsctl list-br`; do
+		$vsctl del-br $br
+		debug "Removed bridge $br"
+	done
+}
+
+#Enable OVS-DOCA
+ovs_config_doca
+
+#Cleanup hugepage if neccessary
+cleanup_hugepages
+
+CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
+if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
+    debug "CREATE_OVS_BRIDGES is not set to yes. Skipping OVS bridges creation."
+    if [ "$need_restart" == true ]; then
+		ovs_restart
+    fi
+	exit $RC
+fi
+
+ovsbr_number=`$vsctl list-br | wc -l`
+if [ $ovsbr_number -gt 0 ]; then
+	if is_ovs_config_valid; then
+		debug "OVS bridges already exist and configuration is valid. Skipping OVS bridges creation."
+		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
+			ovs_restart
+		fi
+		exit $RC
+	else
+		info "Removing OVS bridges and creating new ones."
+		ovs_remove_bridges
+		ovsbr_number=0
+	fi
+fi
+
+OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
+for i in `seq $num_of_ovs_bridges`
+do
+	br_name=OVS_BRIDGE${i}
+	br_name=${!br_name}
+	br_ports=OVS_BRIDGE${i}_PORTS
+	br_ports=${!br_ports}
+
+	if ($vsctl br-exists $br_name); then
+		info "bridge $br_name exist already."
+		if ! [[ $(uname -r) =~ "4.19" ]]; then
+			ip link set $br_name up
+		fi
+		continue
+	fi
+
+	missing_port=0
+	ovs_br_ports=""
+	for port in $br_ports
+	do
+		start_time=$(awk '{print $1}' /proc/uptime)
+		while ! [ -d /sys/class/net/$port ]
+		do
+			elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+			if [ $elapsed -gt $OVS_BR_PORTS_TIMEOUT ]; then
+				break
+			fi
+			sleep 1
+		done
+
+		if [ -d /sys/class/net/$port ]; then
+			ovs_br_ports="$ovs_br_ports $port"
+		else
+			info "port device $port for bridge $br_name is missing."
+			case $port in
+				pf*sf*)
+					info "RDMA functionality is not expected to work without $port in $br_name"
+				;;
+				*)
+					missing_port=$((missing_port+1))
+				;;
+			esac
+		fi
+	done
+
+	if [ $missing_port -gt 0 ]; then
+		info "Skipping $br_name configuration."
+		continue
+	fi
+
+	$vsctl add-br $br_name
+	info "Created bridge: $br_name"
+	for port in $ovs_br_ports
+	do
+		$vsctl add-port $br_name $port
+		info "bridge $br_name: added port $port"
+	done
+	if ! [[ $(uname -r) =~ "4.19" ]]; then
+		ip link set $br_name up
+	fi
+
+done
+
 if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
-	$vsctl set Open_vSwitch . Other_config:hw-offload=true
+	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload=true
 	if [ $? -eq 0 ]; then
 		info "OVS HW offload is set"
 		info "Going to restart $ovs_service to activate hw-offload"
-		ovs_restart
+		need_restart=true
 	fi
+fi
+
+if [ $need_restart == true ];then
+	ovs_restart
+fi
+
+#Indication that the script has finished and other underlying services can start
+if systemctl is-active --quiet mlnx_bf_configure_sync.service; then
+	systemctl stop --no-block mlnx_bf_configure_sync
 fi
 } &
 

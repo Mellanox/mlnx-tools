@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import json
+import textwrap
+import glob
+import logging
+import sys
+import subprocess
+import syslog
+import re
+
+CONFIG_DIR = "/etc/mellanox/hugepages.d"
+
+def info(message):
+    syslog.syslog(syslog.LOG_INFO, f"INFO: {message}")
+
+def error(message):
+    syslog.syslog(syslog.LOG_ERR, f"ERROR: {message}")
+
+def load_config():
+    config = {}
+    if not os.path.exists(CONFIG_DIR):
+        return config
+
+    for config_file in glob.glob(os.path.join(CONFIG_DIR, "*.json")):
+        with open(config_file, 'r') as f:
+            app_name = os.path.splitext(os.path.basename(config_file))[0]
+            config[app_name] = json.load(f)
+    return config
+
+def save_config(config):
+    if not os.path.isdir(CONFIG_DIR):
+        raise FileNotFoundError(f"Directory {CONFIG_DIR} does not exist")
+
+    for app_name, app_config in config.items():
+        file_path = os.path.join(CONFIG_DIR, f"{app_name}.json")
+        with open(file_path, 'w') as f:
+            json.dump(app_config, f, indent=2)
+
+"""Get a list of valid hugepage sizes supported by the system."""
+def get_valid_hugepage_sizes():
+    hugepage_dir = "/sys/kernel/mm/hugepages"
+    return sorted([int(d.split('-')[1][:-2]) for d in os.listdir(hugepage_dir) if d.startswith("hugepages-")])
+
+def configure_hugepages(config):
+    size_totals = {}
+    successfully_configured_apps = []
+
+    # Calculate the total hugepages needed for each size.
+    for app, app_configs in config.items():
+        info(f"Reading config file of app {app}")
+        for size, size_config in app_configs.items():
+            size = int(size)
+            num = size_config['num']
+            size_totals[size] = size_totals.get(size, 0) + num
+
+    valid_sizes = get_valid_hugepage_sizes()
+    for size in valid_sizes:
+        total = size_totals.get(size, 0)
+        try:
+            with open(f"/sys/kernel/mm/hugepages/hugepages-{size}kB/nr_hugepages", "w") as f:
+                info(f"Allocating {total} hugepages of size {size}")
+                f.write(str(total))
+
+            for app, app_configs in config.items():
+                if str(size) in app_configs:
+                    app_configs[str(size)]['is_active'] = "active"
+                    successfully_configured_apps.append(app)
+
+        except Exception as e:
+            error(f"configuring hugepages of size {size}kB: {e}s")
+            print(f"Error configuring hugepages of size {size}kB: {e}")
+            sys.exit(1)
+
+    # Save the updated configuration back to the database
+    if successfully_configured_apps:
+        save_config(config)
+
+    show_config()
+
+def check_grub_hugepages_configured():
+    cmdline = ""
+    if os.path.exists("/proc/cmdline"):
+        with open("/proc/cmdline") as f:
+            cmdline = f.read()
+
+    if "hugepage" in cmdline:
+        info("Not supported when hugepages are configured through grub.")
+        print("Not supported when hugepages are configured through grub.")
+        sys.exit(1)
+
+def reload_config(args):
+    config = load_config()
+
+    if not config:
+        info("No configuration found. Deallocating all hugepages.")
+        print("No configuration found. Deallocating all hugepages.")
+
+    print("Reloading hugepages configuration...")
+    configure_hugepages(config)
+
+def get_available_memory_kb():
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1])
+    except Exception as e:
+        error(f"Unable to retrieve available memory information: {e}")
+        print(f"Error: Unable to retrieve available memory information: {e}")
+        sys.exit(1)
+
+    return None
+
+def add_app_config(args):
+    # Validate the hugepage size
+    valid_sizes = get_valid_hugepage_sizes()
+    if args.size not in valid_sizes:
+        error(f"The hugepage size {args.size}kB is not supported by your system.")
+        print(f"Error: The hugepage size {args.size}kB is not supported by your system.")
+        print(f"Supported sizes are: {', '.join(map(str, valid_sizes))}")
+        sys.exit(1)
+
+    config = load_config()
+
+    # Check if the app already exists in the configuration
+    if args.app in config:
+        # Check if the specific size is already configured
+        if str(args.size) in config[args.app]:
+            if not args.force:
+                print(f"Configuration for {args.app} with size {args.size}kB already exists.")
+                update = input("Do you want to update it? (y/n): ").lower().strip()
+                if update != 'y':
+                    print("Configuration not updated.")
+                    return
+            action = 'updated'
+        else:
+            action = 'appended'
+    else:
+        # Add new app configuration
+        config[args.app] = {}
+        action = 'added'
+
+    # Check if there is enough available memory
+    # When updating an existing app/size, only the delta should be considered.
+    new_config_memory_kb = args.size * args.num
+
+    existing_num_for_entry = 0
+    if args.app in config and str(args.size) in config[args.app]:
+        existing_num_for_entry = int(config[args.app][str(args.size)]['num'])
+    existing_config_memory_kb = args.size * existing_num_for_entry
+
+    total_allocated_memory_kb = sum(
+        int(size) * size_config['num']
+        for app_config in config.values()
+        for size, size_config in app_config.items()
+    )
+
+    available_memory_kb = get_available_memory_kb()
+
+    if available_memory_kb is None:
+        error("Unable to determine available memory. Aborting.")
+        print("Error: Unable to determine available memory. Aborting.")
+        sys.exit(1)
+
+    # We only need to ensure the incremental increase (delta) fits in available memory.
+    # Decreases or no-ops always pass.
+    delta_kb = max(0, new_config_memory_kb - existing_config_memory_kb)
+
+    if delta_kb > available_memory_kb:
+        error(f"Not enough available memory for this configuration.")
+        print(f"Error: Not enough available memory for this configuration.")
+        print(f"Requested: {delta_kb / 1024:.2f} MB, "
+              f"Available: {available_memory_kb / 1024:.2f} MB, "
+              f"Currently Allocated: {total_allocated_memory_kb / 1024:.2f} MB")
+        sys.exit(1)
+
+    # Add, update, or append the configuration for the specific size
+    config[args.app][str(args.size)] = {
+        "num": args.num,
+        "is_active": "inactive"
+    }
+
+    save_config(config)
+    print(f"Configuration for {args.app} with size {args.size}kB {action}.")
+
+def show_config(args=None):
+    config = load_config()
+    has_inactive_config = False
+    total_size_kb = 0
+
+    if config:
+        print("\nCurrent Hugepages Configuration:")
+        print(f"{'Application':<20}{'Page Size (kB)':<20}{'Number of Pages':<20}{'Allocated (GB)':<20}{'Is Active':<20}")
+        print("=" * 100)
+
+        for app, app_configs in config.items():
+            for size, size_config in app_configs.items():
+                page_size_kb = int(size)
+                number_of_pages = size_config['num']
+                app_allocated_kb = page_size_kb * number_of_pages
+                app_allocated_gb = app_allocated_kb / (1024 * 1024)
+                total_size_kb += app_allocated_kb
+                is_active = size_config.get('is_active', 'unknown')
+
+                if is_active.lower() == 'inactive':
+                    has_inactive_config = True
+
+                print(f"{app:<20}{page_size_kb:<20}{number_of_pages:<20}{app_allocated_gb:<20.2f}{is_active:<20}")
+
+        total_size_gb = total_size_kb / (1024 * 1024)
+        print("=" * 100)
+        print(f"{'Total':<20}{'':<20}{'':<20}{total_size_gb:<20.2f}")
+
+        if has_inactive_config:
+            print("\nNote: The configurations marked as 'inactive' are saved but not currently in use.")
+            print("To enable these configurations and allocate the required hugepages, execute the 'reload' command.")
+    else:
+        print("No hugepages configuration found. Try adding one.")
+
+def remove_app_config(args):
+    app_name = args.app
+    remove_all = args.all
+
+    config = load_config()
+    if app_name in config:
+        file_path = os.path.join(CONFIG_DIR, f"{app_name}.json")
+
+        if len(config[app_name]) > 1 and not remove_all:
+            print(f"Multiple configurations found for {app_name}:")
+            for i, (size, size_config) in enumerate(config[app_name].items(), 1):
+                print(f"{i}. Size: {size}kB, Number of Pages: {size_config['num']}")
+
+            choice = input("Enter the number of the configuration to remove (or 'all' to remove all): ")
+
+            if choice.lower() == 'all':
+                remove_all = True
+            else:
+                try:
+                    index = int(choice) - 1
+                    size_to_remove = list(config[app_name].keys())[index]
+                    del config[app_name][size_to_remove]
+                    print(f"Configuration for {app_name} with size {size_to_remove}kB removed.")
+
+                    if not config[app_name]:
+                        remove_all = True
+                    else:
+                        with open(file_path, 'w') as f:
+                            json.dump(config[app_name], f, indent=2)
+                except (ValueError, IndexError):
+                    print("Invalid choice. No configurations removed.")
+                    sys.exit(1)
+
+        if remove_all or len(config[app_name]) == 1:
+            del config[app_name]
+            os.remove(file_path)
+            print(f"All configurations for {app_name} removed.")
+
+        save_config(config)
+
+        # Add warning message
+        print("\nWarning: Configuration changes have been made.")
+        print("To apply these changes and deallocate the associated hugepages, execute the 'reload' command.")
+    else:
+        print(f"App {app_name} not found in configuration")
+
+def create_parser():
+    parser = argparse.ArgumentParser(
+        description="Manage hugepages configuration for applications.",
+        add_help=True
+    )
+
+    subparsers = parser.add_subparsers(title="Available commands")
+
+    # Config subparser
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Add/update app configuration",
+        description=textwrap.fill(
+                "Adds a configuration for a specific application to the database. "
+                "This command only adds/updates the stored configuration and does not apply changes. "
+                "Use the 'reload' command to actually allocate hugepages based on the database configurations.",
+                width=90
+            ),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    config_parser.set_defaults(func=add_app_config)
+    config_parser.add_argument("--app", required=True, help="Name of the application. (Could be anything)")
+    config_parser.add_argument("--size", required=True, type=int, help=f"Hugepage size in kB. Available sizes: { get_valid_hugepage_sizes()}")
+    config_parser.add_argument("--num", required=True, type=int, help="Number of hugepages to allocate.")
+    config_parser.add_argument("--force", action="store_true", help="Force updating the configuration without prompting.")
+
+    # Reload subparser
+    reload_parser = subparsers.add_parser(
+        "reload",
+        help="Reload the hugepages configuration",
+        description=textwrap.fill(
+                "Reload the hugepages configuration for all applications based on the current settings in the database. "
+                "This will bring your system in line with the stored configurations. ",
+                width=90
+            ),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    reload_parser.set_defaults(func=reload_config)
+
+    # Remove subparser
+    remove_parser = subparsers.add_parser(
+        "remove",
+        help="Remove app configuration",
+        description=(
+            "Remove a configuration from the database."
+        ),
+    )
+    remove_parser.set_defaults(func=remove_app_config)
+    remove_parser.add_argument("app", help="An application to remove from the configuration")
+    remove_parser.add_argument('--all', action='store_true', help='Remove all configurations for the app without prompting')
+
+    # Show subparser
+    show_parser = subparsers.add_parser(
+        "show",
+        help="Display current configuration",
+        description=(
+            "Dump the current hugepages configuration for all applications in the database."
+        ),
+    )
+    show_parser.set_defaults(func=show_config)
+
+    return parser
+
+def main():
+    check_grub_hugepages_configured()
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if 'func' not in args:
+        parser.print_help()
+        return
+
+    args.func(args)
+
+if __name__ == "__main__":
+    main()

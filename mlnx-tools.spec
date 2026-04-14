@@ -28,7 +28,7 @@
 
 Summary: Mellanox userland tools and scripts
 Name: mlnx-tools
-Version: 25.01.1
+Version: 26.04.1
 Release: 0%{?_dist}
 License: GPLv2 or BSD
 Url: https://github.com/Mellanox/mlnx-tools
@@ -92,6 +92,7 @@ sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/* \
 	add_env %{buildroot}$conf_env PATH %{_sbindir}
 	echo $conf_env >> mlnx-tools-files
 %endif
+install -d %{buildroot}/etc/mellanox/hugepages.d
 
 %clean
 rm -rf %{buildroot}
@@ -108,6 +109,7 @@ rm -rf %{buildroot}
 /sbin/mlnx_bf_configure
 /sbin/mlnx_bf_configure_ct
 /sbin/mlnx-sf
+/sbin/doca-hugepages
 %{_sbindir}/*
 %{_bindir}/*
 %{_sysconfdir}/modprobe.d/*
@@ -116,6 +118,7 @@ rm -rf %{buildroot}
 %{python_dir}/dcbnetlink.py*
 %{python_dir}/netlink.py*
 %exclude %{python_dir}/__pycache__/*.pyc
+/etc/mellanox/hugepages.d
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1
