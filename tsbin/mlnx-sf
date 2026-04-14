@@ -431,7 +431,7 @@ def lookup_aux_dev(device, sfnum):
         except IOError as e:
             sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
         except FileNotFoundError:
-            sf_log("File {} does not exist".format(fname))
+            sf_log("File {} does not exist".format("/sys/bus/auxiliary/devices/" + aux_dev + "/sfnum"))
         except:
             sf_log("Unexpected error:", sys.exc_info()[0])
 
