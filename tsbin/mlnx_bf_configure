@@ -745,6 +745,7 @@ done
 
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 OVS_TIMEOUT=${OVS_TIMEOUT:-30}
+SKIP_OVS_CONFIG_VALIDATION=${SKIP_OVS_CONFIG_VALIDATION:-"yes"}
 
 ovs_service=""
 if [ -e /etc/init.d/openvswitch-switch ]; then
@@ -875,11 +876,19 @@ ovs_config_doca()
 
 is_ovs_config_valid()
 {
+	if [ "X${SKIP_OVS_CONFIG_VALIDATION}" == "Xyes" ]; then
+		debug "SKIP_OVS_CONFIG_VALIDATION is set to yes. Skipping OVS configuration validation."
+		return 0
+	fi
+
 	# Check that all OVS bridges ports exist
 	for br in `$vsctl list-br`; do
 		for port in `$vsctl list-ports $br`; do
-			# Ignore VF representors
 			if echo $port | grep -qE 'vf[0-9]'; then
+				# Ignore VF representors
+				continue
+			elif echo $port | grep -qE 'geneve|vxlan|gre|l2tp|stt'; then
+				# Ignore tunnel ports
 				continue
 			fi
 			if ! [ -d /sys/class/net/$port ]; then
@@ -917,7 +926,7 @@ fi
 ovsbr_number=`$vsctl list-br | wc -l`
 if [ $ovsbr_number -gt 0 ]; then
 	if is_ovs_config_valid; then
-		debug "OVS bridges already exist and configuration is valid. Skipping OVS bridges creation."
+		debug "OVS bridges already exist. Skipping OVS bridges creation."
 		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
 			ovs_restart
 		fi
