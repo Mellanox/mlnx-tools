@@ -857,7 +857,7 @@ ovs_config_doca()
 		return 0
 	fi
 
-	if [ "$doca_intialized" == "true" ]; then
+	if [ "$doca_initialized" == "true" ]; then
 		return 0
 	fi
 
