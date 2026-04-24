@@ -260,17 +260,26 @@ run_devlink()
 	cmd="$*"
 	output=$(devlink $cmd 2>&1)
 	if [ $? -ne 0 ]; then
-		error "Failed to run devlink $cmd: $output"
 		if command -v mlxdevm > /dev/null 2>&1; then
+			info "Running devlink $cmd failed: $output. Trying mlxdevm..."
 			output=$(mlxdevm $cmd 2>&1)
 			if [ $? -ne 0 ]; then
 				error "Failed to run mlxdevm $cmd: $output"
 				return 1
+			else
+				debug "Ran mlxdevm successfully: $cmd: $output"
+				echo "$output"
+				return 0
 			fi
+		else
+			error "Failed to run devlink $cmd: $output"
+			return 1
 		fi
-		return 1
+	else
+		debug "Ran devlink successfully: $cmd: $output"
+		echo "$output"
+		return 0
 	fi
-	echo $output
 }
 
 is_port_ib()
