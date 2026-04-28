@@ -617,6 +617,10 @@ HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
 OVS_DEFAULT_HUGEPAGE_SIZE=2048
 OVS_DEFAULT_HUGEPAGE_NUM=512
 OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
+# Marker file to track if OVS_DOCA was previously set to "yes".
+# Used to distinguish between OVS_DOCA=no as a default vs. a user
+# explicitly switching from yes to no, so we only run cleanup in the latter case.
+OVS_DOCA_MARKER=/etc/mellanox/.ovs_doca_configured
 
 is_bf4()
 {
@@ -633,6 +637,7 @@ add_default_hugepages_configurations()
 	if [ "X${OVS_DOCA}" != "Xyes" ]; then
 		return
 	fi
+	touch $OVS_DOCA_MARKER
 	[ -z "$OVS_HUGEPAGE_SIZE" ] && OVS_HUGEPAGE_SIZE=$OVS_DEFAULT_HUGEPAGE_SIZE
 	if [ -z "$OVS_HUGEPAGE_NUM" ]; then
 		if is_bf4; then
@@ -655,10 +660,11 @@ config_hugepages()
 
 cleanup_hugepages()
 {
-	if [ "X${OVS_DOCA}" != "Xyes" ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
+	if [ "X${OVS_DOCA}" != "Xyes" ] && [ -f $OVS_DOCA_MARKER ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
 		info "Removing ovs-doca default hugepages configuration"
 		$HUGEPAGES_TOOL remove ovs-doca
 		$HUGEPAGES_TOOL reload
+		rm -f $OVS_DOCA_MARKER
 	fi
 }
 
@@ -854,7 +860,10 @@ ovs_config_doca()
 	local doca_initialized=`$vsctl get Open_vSwitch . doca_initialized`
 
 	if [ "X${OVS_DOCA}" != "Xyes" ]; then
-		ovs_cleanup_doca
+		if [ -f $OVS_DOCA_MARKER ]; then
+			ovs_cleanup_doca
+			rm -f $OVS_DOCA_MARKER
+		fi
 		return 0
 	fi
 
