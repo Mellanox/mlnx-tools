@@ -282,6 +282,22 @@ run_devlink()
 	fi
 }
 
+# Numeric value (0-15) of the PCIe function nibble (last character of BDF dddd:bb:dd.f).
+pci_function_digit_value()
+{
+	local c=${1: -1}
+	case "$c" in
+		[0-9]) printf '%d' "$((10#$c))";;
+		[aA]) printf '%d' 10;;
+		[bB]) printf '%d' 11;;
+		[cC]) printf '%d' 12;;
+		[dD]) printf '%d' 13;;
+		[eE]) printf '%d' 14;;
+		[fF]) printf '%d' 15;;
+		*) return 1;;
+	esac
+}
+
 is_port_ib()
 {
 	dev=$1
@@ -498,9 +514,18 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
 	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print $2}')
 	do
-		port=$(( ${dev: -1} + 1 ))
+		fn=$(pci_function_digit_value "$dev") || {
+			error "Invalid PCIe function digit in device ${dev}"
+			RC=$((RC + 1))
+			continue
+		}
+		if (( fn % 2 == 0 )); then
+			port=1
+		else
+			port=2
+		fi
 		if (is_port_ib "$dev" "$port"); then
-			info "Link type is IB for ${dev}. Skipping mode confiugration."
+			info "Link type is IB for ${dev}. Skipping mode configuration."
 			continue
 		fi
 
@@ -728,9 +753,14 @@ for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
 			num_of_ports=$(wc -w <<< "$ports_var")
 			if [ $num_of_ports -lt 4 ]; then
 				# Add extra netdev as a workaround for SD device
-				# increase the last digit of the dev name by 2
-				new_dev_name=${dev:0:-1}$(( ${dev: -1} + 2 ))
-				extra_netdevs=$(get_mlnx_netdevs_by_pci_id $new_dev_name)
+				# increase the PCIe function nibble by 2
+				fn=$(pci_function_digit_value "$dev")
+				if [ -n "$fn" ]; then
+					new_dev_name=${dev:0:-1}$(printf '%x' "$((fn + 2))")
+					extra_netdevs=$(get_mlnx_netdevs_by_pci_id "$new_dev_name")
+				else
+					extra_netdevs=
+				fi
 				num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
 				if [ $num_of_extra_netdevs -eq 1 ]; then
 					extra_netdev=$extra_netdevs
