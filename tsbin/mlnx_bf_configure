@@ -721,58 +721,6 @@ fi
 debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
 debug "max_num_of_sd_ovs_bridges: $max_num_of_sd_ovs_bridges"
 
-num_of_sd_ovs_bridges=0
-num_of_ovs_bridges=0
-i=1
-for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
-	sd_dev=""
-	if [ $num_of_sd_devs -gt 0 ]; then
-		if in_array $dev ${SD_DEVICES_LIST[@]}; then
-			if [ $num_of_sd_ovs_bridges -lt $max_num_of_sd_ovs_bridges ]; then
-				num_of_sd_ovs_bridges=$((num_of_sd_ovs_bridges+1))
-			else
-				continue
-			fi
-			sd_dev=$dev
-		fi
-	fi
-	bridge_var=OVS_BRIDGE${i}
-	ports_var=OVS_BRIDGE${i}_PORTS
-	idx=$((i-1))
-
-	# Set default bridge name if not already set
-	if [ -z "${!bridge_var}" ]; then
-		eval "${bridge_var}=ovsbr${i}"
-	fi
-
-	# Set default ports if not already set
-	if [ -z "${!ports_var}" ]; then
-		eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
-		# Workaround: Add extra netdev
-		if [ "$dev" == "$sd_dev" ]; then
-			num_of_ports=$(wc -w <<< "$ports_var")
-			if [ $num_of_ports -lt 4 ]; then
-				# Add extra netdev as a workaround for SD device
-				# increase the last digit of the dev name by 2
-				new_dev_name=${dev:0:-1}$(( ${dev: -1} + 2 ))
-				extra_netdevs=$(get_mlnx_netdevs_by_pci_id $new_dev_name)
-				num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
-				if [ $num_of_extra_netdevs -eq 1 ]; then
-					extra_netdev=$extra_netdevs
-				else
-					# Choose netdedv that has "pf<num><string>" in its name
-					extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
-				fi
-				if [ -n "$extra_netdev" ]; then
-					debug "Adding extra netdev $extra_netdev to $ports_var"
-					eval "${ports_var}=\"${!ports_var} $extra_netdev\""
-				fi
-			fi
-		fi
-	fi
-	i=$((i+1))
-	num_of_ovs_bridges=$((num_of_ovs_bridges+1))
-done
 
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 OVS_TIMEOUT=${OVS_TIMEOUT:-30}
@@ -851,6 +799,59 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
     done
 	. /etc/mellanox/mlnx-sf.conf
 fi
+
+num_of_sd_ovs_bridges=0
+num_of_ovs_bridges=0
+i=1
+for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+	sd_dev=""
+	if [ $num_of_sd_devs -gt 0 ]; then
+		if in_array $dev ${SD_DEVICES_LIST[@]}; then
+			if [ $num_of_sd_ovs_bridges -lt $max_num_of_sd_ovs_bridges ]; then
+				num_of_sd_ovs_bridges=$((num_of_sd_ovs_bridges+1))
+			else
+				continue
+			fi
+			sd_dev=$dev
+		fi
+	fi
+	bridge_var=OVS_BRIDGE${i}
+	ports_var=OVS_BRIDGE${i}_PORTS
+	idx=$((i-1))
+
+	# Set default bridge name if not already set
+	if [ -z "${!bridge_var}" ]; then
+		eval "${bridge_var}=ovsbr${i}"
+	fi
+
+	# Set default ports if not already set
+	if [ -z "${!ports_var}" ]; then
+		eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
+		# Workaround: Add extra netdev
+		if [ "$dev" == "$sd_dev" ]; then
+			num_of_ports=$(wc -w <<< "$ports_var")
+			if [ $num_of_ports -lt 4 ]; then
+				# Add extra netdev as a workaround for SD device
+				# increase the last digit of the dev name by 2
+				new_dev_name=${dev:0:-1}$(( ${dev: -1} + 2 ))
+				extra_netdevs=$(get_mlnx_netdevs_by_pci_id $new_dev_name)
+				num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
+				if [ $num_of_extra_netdevs -eq 1 ]; then
+					extra_netdev=$extra_netdevs
+				else
+					# Choose netdedv that has "pf<num><string>" in its name
+					extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
+				fi
+				if [ -n "$extra_netdev" ]; then
+					debug "Adding extra netdev $extra_netdev to $ports_var"
+					eval "${ports_var}=\"${!ports_var} $extra_netdev\""
+				fi
+			fi
+		fi
+	fi
+	i=$((i+1))
+	num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+done
 
 start_time=$(awk '{print $1}' /proc/uptime)
 while ! ($vsctl show > /dev/null 2>&1)
