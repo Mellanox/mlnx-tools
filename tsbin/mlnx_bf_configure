@@ -623,22 +623,6 @@ if [ $num_of_devs_switchdev -eq 0 ]; then
 	exit 0
 fi
 
-if [ -f /etc/mellanox/mlnx-sf.conf ]; then
-    # Wait until NetworkManager is active to avoid race condition
-    NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
-	start_time=$(awk '{print $1}' /proc/uptime)
-    while ! (systemctl is-active NetworkManager)
-    do
-        elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-        if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
-            info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
-            break;
-        fi
-        sleep 0.1
-    done
-	. /etc/mellanox/mlnx-sf.conf
-fi
-
 HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
 OVS_DEFAULT_HUGEPAGE_SIZE=2048
 OVS_DEFAULT_HUGEPAGE_NUM=512
@@ -852,6 +836,22 @@ ovs_restart()
 }
 
 {
+if [ -f /etc/mellanox/mlnx-sf.conf ]; then
+    # Wait until NetworkManager is active to avoid race condition
+    NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
+	start_time=$(awk '{print $1}' /proc/uptime)
+    while ! (systemctl is-active NetworkManager)
+    do
+        elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+        if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
+            info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
+            break;
+        fi
+        sleep 0.1
+    done
+	. /etc/mellanox/mlnx-sf.conf
+fi
+
 start_time=$(awk '{print $1}' /proc/uptime)
 while ! ($vsctl show > /dev/null 2>&1)
 do
