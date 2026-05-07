@@ -515,7 +515,7 @@ num_of_devs_switchdev=0
 # Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
-	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print $2}')
+	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print tolower($2)}' | sort -k1.1,1.4r -k1.6,1.7 -k1.9,1.10 -k1.12,1.12)
 	do
 		if ! (is_dev_eth "$dev"); then
 			info "Link type is IB for ${dev}. Skipping mode configuration."
