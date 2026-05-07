@@ -312,17 +312,20 @@ run_devlink()
 	echo $output
 }
 
-is_port_ib()
+is_dev_eth()
 {
 	dev=$1
-	port=$2
-	shift 2
+	shift
 
-	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q LINK_TYPE_P$port")
-
-	if (echo "$mft_output" | grep -o LINK_TYPE_P.* | awk '{print $3}' | grep -q "IB(1)"); then
-		return 0
-	fi
+	for link_layer in /sys/bus/pci/devices/${dev}/infiniband/*/ports/1/link_layer
+	do
+		if [ ! -e "$link_layer" ]; then
+			continue
+		fi
+		if grep -Fxq "Ethernet" "$link_layer" 2> /dev/null; then
+			return 0
+		fi
+	done
 	return 1
 }
 
@@ -518,9 +521,8 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
 	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print $2}')
 	do
-		port=$(( ${dev: -1} + 1 ))
-		if (is_port_ib "$dev" "$port"); then
-			info "Link type is IB for ${dev}. Skipping mode confiugration."
+		if ! (is_dev_eth "$dev"); then
+			info "Link type is IB for ${dev}. Skipping mode configuration."
 			continue
 		fi
 
