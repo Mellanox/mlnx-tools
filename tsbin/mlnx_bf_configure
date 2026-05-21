@@ -36,6 +36,7 @@ RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1025"
 BLUEFIELD_DEVICES="a2d[26cf]"
 BF4_DEVICES="1023|1025"
+HW_MULTIPLANE=0
 
 ipsec_services="strongswan.service ipsec.service"
 ipsec_was_active=""
@@ -329,6 +330,48 @@ is_sd_mode()
 	return 1
 }
 
+# Check if the device is in HW multiplane mode (ASTRA)
+# HW multiplane is enabled when HIDE_PORT2_PF=1 and LOAD_BALANCE_MODE_P1=TRANSPORT(2)
+is_hw_multiplane()
+{
+	dev=$1
+	shift 1
+
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q HIDE_PORT2_PF LOAD_BALANCE_MODE_P1")
+
+	local hide_pf=$(echo "$mft_output" | grep -o 'HIDE_PORT2_PF.*' | awk '{print $3}' | head -1)
+	local lb_mode=$(echo "$mft_output" | grep -o 'LOAD_BALANCE_MODE_P1.*' | awk '{print $3}' | head -1)
+
+	debug "HW multiplane check: HIDE_PORT2_PF=$hide_pf LOAD_BALANCE_MODE_P1=$lb_mode"
+
+	if [[ "$hide_pf" == "1" || "$hide_pf" == "True(1)" ]] && \
+	   [[ "$lb_mode" == "TRANSPORT(2)" || "$lb_mode" == "2" ]]; then
+		return 0
+	fi
+	return 1
+}
+
+# Get netdevs for HW multiplane bridge (ECPF0 + PF0 representor only, no SFs)
+get_multiplane_bridge_ports()
+{
+	pci_id=$1
+	shift 1
+
+	local all_netdevs=$(get_mlnx_netdevs_by_pci_id $pci_id)
+	local bridge_ports=""
+
+	for nd in $all_netdevs; do
+		# Skip SF representors - they are not part of the default multiplane bridge
+		if echo "$nd" | grep -qE 'sf[0-9]'; then
+			debug "HW multiplane: skipping SF port $nd"
+			continue
+		fi
+		bridge_ports="$bridge_ports $nd"
+	done
+
+	echo "$bridge_ports"
+}
+
 is_supported_device()
 {
 	dev=$1
@@ -607,10 +650,31 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	start_ipsec_services
 fi
 
+is_bf4()
+{
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "$BF4_DEVICES" | wc -l) -gt 0 ]; then
+			return 0
+		fi
+	fi
+	return 1
+}
+
+# Detect HW multiplane mode (ASTRA BF4 with HIDE_PORT2_PF + TRANSPORT load balancing)
+# In this mode, only ECPF0 and PF0 representor participate in the default OVS bridge
+if is_bf4 && [ ${#DEVICE_LIST_FOR_OVS_BRIDGES[@]} -gt 0 ]; then
+	if is_hw_multiplane "${DEVICE_LIST_FOR_OVS_BRIDGES[0]}"; then
+		HW_MULTIPLANE=1
+		info "HW multiplane mode detected (ASTRA). Only ECPF0/PF0 representor will be used for the default OVS bridge."
+		DEVICE_LIST_FOR_OVS_BRIDGES=( "${DEVICE_LIST_FOR_OVS_BRIDGES[0]}" )
+	fi
+fi
+
 debug "num_of_devs_switchdev: $num_of_devs_switchdev"
 debug "SWITCHDEV_DEVICES_LIST: ${SWITCHDEV_DEVICES_LIST[*]}"
 debug "SD_DEVICES_LIST: ${SD_DEVICES_LIST[*]}"
 debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
+debug "HW_MULTIPLANE: $HW_MULTIPLANE"
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
@@ -639,16 +703,6 @@ OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
 # Used to distinguish between OVS_DOCA=no as a default vs. a user
 # explicitly switching from yes to no, so we only run cleanup in the latter case.
 OVS_DOCA_MARKER=/etc/mellanox/.ovs_doca_configured
-
-is_bf4()
-{
-	if [ -e /etc/mlnx-release ]; then
-		if [ $(lspci -nD -d 15b3: | grep -E "$BF4_DEVICES" | wc -l) -gt 0 ]; then
-			return 0
-		fi
-	fi
-	return 1
-}
 
 add_default_hugepages_configurations()
 {
@@ -703,12 +757,18 @@ fi
 max_num_of_ovs_bridges=$num_of_devs_switchdev
 max_num_of_sd_ovs_bridges=0
 num_of_sd_devs=${#SD_DEVICES_LIST[@]}
-if [ $num_of_sd_devs -gt 0 ]; then
+if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
 	if [ $num_of_sd_devs -eq 1 ]; then
 		max_num_of_sd_ovs_bridges=1
 	else
 		max_num_of_sd_ovs_bridges=2
 	fi
+fi
+
+# In HW multiplane mode, override to create only 1 bridge
+if [ $HW_MULTIPLANE -eq 1 ]; then
+	max_num_of_ovs_bridges=1
+	max_num_of_sd_ovs_bridges=0
 fi
 
 debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
@@ -719,7 +779,7 @@ num_of_ovs_bridges=0
 i=1
 for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
 	sd_dev=""
-	if [ $num_of_sd_devs -gt 0 ]; then
+	if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
 		if in_array $dev ${SD_DEVICES_LIST[@]}; then
 			if [ $num_of_sd_ovs_bridges -lt $max_num_of_sd_ovs_bridges ]; then
 				num_of_sd_ovs_bridges=$((num_of_sd_ovs_bridges+1))
@@ -740,30 +800,36 @@ for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
 
 	# Set default ports if not already set
 	if [ -z "${!ports_var}" ]; then
-		eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
-		# Workaround: Add extra netdev
-		if [ "$dev" == "$sd_dev" ]; then
-			num_of_ports=$(wc -w <<< "$ports_var")
-			if [ $num_of_ports -lt 4 ]; then
-				# Add extra netdev as a workaround for SD device
-				# increase the PCIe function nibble by 2
-				fn=$(pci_function_digit_value "$dev")
-				if [ -n "$fn" ]; then
-					new_dev_name=${dev:0:-1}$(printf '%x' "$((fn + 2))")
-					extra_netdevs=$(get_mlnx_netdevs_by_pci_id "$new_dev_name")
-				else
-					extra_netdevs=
-				fi
-				num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
-				if [ $num_of_extra_netdevs -eq 1 ]; then
-					extra_netdev=$extra_netdevs
-				else
-					# Choose netdedv that has "pf<num><string>" in its name
-					extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
-				fi
-				if [ -n "$extra_netdev" ]; then
-					debug "Adding extra netdev $extra_netdev to $ports_var"
-					eval "${ports_var}=\"${!ports_var} $extra_netdev\""
+		if [ $HW_MULTIPLANE -eq 1 ]; then
+			# HW multiplane: only PF0 representor and ECPF0 port (no SFs)
+			eval "${ports_var}=\"$(get_multiplane_bridge_ports $dev)\""
+			info "HW multiplane bridge ports for $dev: ${!ports_var}"
+		else
+			eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
+			# Workaround: Add extra netdev
+			if [ "$dev" == "$sd_dev" ]; then
+				num_of_ports=$(wc -w <<< "$ports_var")
+				if [ $num_of_ports -lt 4 ]; then
+					# Add extra netdev as a workaround for SD device
+					# increase the PCIe function nibble by 2
+					fn=$(pci_function_digit_value "$dev")
+					if [ -n "$fn" ]; then
+						new_dev_name=${dev:0:-1}$(printf '%x' "$((fn + 2))")
+						extra_netdevs=$(get_mlnx_netdevs_by_pci_id "$new_dev_name")
+					else
+						extra_netdevs=
+					fi
+					num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
+					if [ $num_of_extra_netdevs -eq 1 ]; then
+						extra_netdev=$extra_netdevs
+					else
+						# Choose netdedv that has "pf<num><string>" in its name
+						extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
+					fi
+					if [ -n "$extra_netdev" ]; then
+						debug "Adding extra netdev $extra_netdev to $ports_var"
+						eval "${ports_var}=\"${!ports_var} $extra_netdev\""
+					fi
 				fi
 			fi
 		fi
