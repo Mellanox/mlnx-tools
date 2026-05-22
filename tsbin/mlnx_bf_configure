@@ -36,6 +36,7 @@ RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1025"
 BLUEFIELD_DEVICES="a2d[26cf]"
 BF4_DEVICES="1023|1025"
+SD_MERGED_ESWITCH=0
 
 ipsec_services="strongswan.service ipsec.service"
 ipsec_was_active=""
@@ -401,6 +402,11 @@ get_mlnx_netdevs_by_pci_id()
 				debug "Skipping interface $nd (driver: mlx5_nodnic)"
 				continue
 			fi
+			# SNAP DMA SF representor (sfnum 8000) must not be added to OVS bridges
+			if [[ "$nd" == *sf8000* ]]; then
+				debug "Skipping interface $nd (SNAP DMA SF representor)"
+				continue
+			fi
 			filtered="$filtered $nd"
 		done
 		echo "$filtered"
@@ -496,6 +502,11 @@ if [ -z "${ENABLE_ESWITCH_MULTIPORT}" ]; then
 		ENABLE_ESWITCH_MULTIPORT="no"
 	fi
 fi
+ENABLE_SD_MERGED_ESWITCH=${ENABLE_SD_MERGED_ESWITCH:-"auto"}
+SNAP_DMA_SF=${SNAP_DMA_SF:-"auto"}
+SNAP_DMA_SF_NUM=${SNAP_DMA_SF_NUM:-8000}
+SNAP_DMA_SF_MAC=${SNAP_DMA_SF_MAC:-""}
+SNAP_EMU_MNG_MANAGERS_FILE=${SNAP_EMU_MNG_MANAGERS_FILE:-"/run/mellanox/snap_emulation_managers"}
 MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
 LOG_LEVEL=${LOG_LEVEL:-"info"}
 SWITCHDEV_DEVICES_LIST=()
@@ -692,17 +703,250 @@ fi
 is_bf4()
 {
 	if [ -e /etc/mlnx-release ]; then
-		if [ $(lspci -nD -d 15b3: | grep -E "$BF4_DEVICES" | wc -l) -gt 0 ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "a2df" | wc -l) -gt 0 ]; then
 			return 0
 		fi
 	fi
 	return 1
 }
 
+# For BF4 SD with merged eswitch, use a single bridge on LAG master only
+if is_bf4 && [ ${#SD_DEVICES_LIST[@]} -gt 0 ]; then
+	if [ "X${ENABLE_SD_MERGED_ESWITCH}" != "Xno" ]; then
+		SD_MERGED_ESWITCH=1
+		info "BF4 SD merged eswitch mode: single OVS bridge on LAG master only."
+		# Configure silent mode on secondary ECPFs
+		local_is_first=1
+		for sd_dev in ${SD_DEVICES_LIST[@]}; do
+			if [ $local_is_first -eq 1 ]; then
+				local_is_first=0
+				info "SD merged eswitch: $sd_dev is LAG master (no silent mode)"
+				continue
+			fi
+			info "SD merged eswitch: Setting silent mode on secondary ECPF $sd_dev"
+			set_dev_param ${sd_dev} silent_mode 1 "SD Silent Mode:"
+		done
+		# Keep only the first (LAG master) device for bridge creation
+		DEVICE_LIST_FOR_OVS_BRIDGES=( "${DEVICE_LIST_FOR_OVS_BRIDGES[0]}" )
+	fi
+fi
+
+# Create well-known DMA SF for SNAP doca service on the 2nd PCI link ECPF
+# The DMA SF provides an additional ibdev needed for 800Gbps DMA across dual
+# Grace PCI links in BF-4. It is created only when all preconditions are met:
+#   - BF4 platform
+#   - Multi-port eswitch enabled
+#   - At least 2 switchdev ECPFs across two PCI links
+#   - Emulation enabled (PCI_SWITCH_EMU_MNG_ENABLE + at least one emulation type)
+#   - PER_PF_NUM_SF=1 and PF_TOTAL_SF >= SNAP_DMA_SF_NUM
+# The SF is created on the ECPF of the 2nd PCI link that has no RDMA device.
+SNAP_DMA_SF_TARGET_ECPF=""
+
+create_snap_dma_sf()
+{
+	# Must be BF4
+	if ! is_bf4; then
+		debug "SNAP DMA SF: not BF4, skipping"
+		return 1
+	fi
+
+	# Must have multiport eswitch enabled
+	if [ "X${ENABLE_ESWITCH_MULTIPORT}" != "Xyes" ]; then
+		debug "SNAP DMA SF: multiport eswitch not enabled, skipping"
+		return 1
+	fi
+
+	# Must have at least 2 switchdev ECPFs
+	if [ ${#SWITCHDEV_DEVICES_LIST[@]} -lt 2 ]; then
+		debug "SNAP DMA SF: fewer than 2 switchdev ECPFs, skipping"
+		return 1
+	fi
+
+	local emu_found=0
+	local ctrl=""
+	for ctrl in ${SWITCHDEV_DEVICES_LIST[@]}; do
+		# Check emulation is enabled on the ECPF
+		local emu_output
+		emu_output=$(run_mlxconfig "$mftconfig -d ${ctrl} -e q \
+			PCI_SWITCH_EMU_MNG_ENABLE \
+			VIRTIO_NET_EMU_MNG_ENABLE NVME_EMU_MNG_ENABLE \
+			VIRTIO_BLK_EMU_MNG_ENABLE VIRTIO_FS_EMU_MNG_ENABLE")
+
+		if ! (echo "$emu_output" | grep -q 'PCI_SWITCH_EMU_MNG_ENABLE.*True(1)') && \
+		! (echo "$emu_output" | grep 'PCI_SWITCH_EMU_MNG_ENABLE' | awk '{print $3}' | grep -q "^1$"); then
+			debug "SNAP DMA SF: PCI_SWITCH_EMU_MNG_ENABLE not set on $ctrl, skipping"
+			continue
+		fi
+
+		local emu_found=0
+		local emu_type
+		for emu_type in VIRTIO_NET_EMU_MNG_ENABLE NVME_EMU_MNG_ENABLE \
+				VIRTIO_BLK_EMU_MNG_ENABLE VIRTIO_FS_EMU_MNG_ENABLE; do
+			if (echo "$emu_output" | grep -q "${emu_type}.*True(1)") || \
+			(echo "$emu_output" | grep "${emu_type}" | awk '{print $3}' | grep -q "^1$"); then
+				emu_found=1
+				break
+			fi
+		done
+		if [ $emu_found -eq 0 ]; then
+			debug "SNAP DMA SF: no emulation type enabled on $ctrl, skipping"
+			continue
+		fi
+
+		# Check PER_PF_NUM_SF and PF_TOTAL_SF
+		local sf_output
+		sf_output=$(run_mlxconfig "$mftconfig -d ${ctrl} -e q PER_PF_NUM_SF PF_TOTAL_SF")
+		if ! (echo "$sf_output" | grep -q 'PER_PF_NUM_SF.*True(1)') && \
+		! (echo "$sf_output" | grep 'PER_PF_NUM_SF' | awk '{print $3}' | grep -q "^1$"); then
+			debug "SNAP DMA SF: PER_PF_NUM_SF not enabled on $ctrl, skipping"
+			continue
+		fi
+		local total_sf
+		total_sf=$(echo "$sf_output" | grep -o 'PF_TOTAL_SF.*' | awk '{print $3}' | head -1)
+		if [ -n "$total_sf" ] && [ "$total_sf" -lt 1 ] 2>/dev/null; then
+			debug "SNAP DMA SF: PF_TOTAL_SF ($total_sf) is 0, no capacity to create SF, skipping"
+			continue
+		fi
+	done
+
+	# --- Identify the target ECPF on the 2nd PCI link ---
+	# a. List all switchdev ECPFs (ASTRA/HW multiplane excluded upstream)
+	# b. Find PCI link (domain:bus) of each ECPF
+	# c. Find RDMA device for each ECPF
+	# d. Eliminate ECPFs that have an RDMA device
+	# e. Eliminate ECPFs sharing the same PCI link as RDMA-bearing ECPFs
+	# f. Pick the first remaining ECPF
+	local links_with_rdma=""
+	local dev pci_link rdma_dev
+
+	for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
+		pci_link=$(echo $dev | cut -d: -f1-2)
+		rdma_dev=$(/bin/ls /sys/bus/pci/devices/${dev}/infiniband/ 2>/dev/null | head -1)
+		if [ -n "$rdma_dev" ]; then
+			links_with_rdma="$links_with_rdma $pci_link"
+			debug "SNAP DMA SF: ECPF $dev has RDMA device $rdma_dev on link $pci_link"
+		fi
+	done
+
+	local target_ecpf=""
+	local on_rdma_link rdma_link
+	for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
+		# Skip if this ECPF has an RDMA device
+		rdma_dev=$(/bin/ls /sys/bus/pci/devices/${dev}/infiniband/ 2>/dev/null | head -1)
+		if [ -n "$rdma_dev" ]; then
+			continue
+		fi
+		# Skip if this ECPF is on the same PCI link as one with RDMA
+		pci_link=$(echo $dev | cut -d: -f1-2)
+		on_rdma_link=0
+		for rdma_link in $links_with_rdma; do
+			if [ "$pci_link" == "$rdma_link" ]; then
+				on_rdma_link=1
+				break
+			fi
+		done
+		if [ $on_rdma_link -eq 0 ]; then
+			target_ecpf=$dev
+			break
+		fi
+	done
+
+	if [ -z "$target_ecpf" ]; then
+		debug "SNAP DMA SF: no eligible 2nd-link ECPF found, skipping"
+		return 1
+	fi
+
+	SNAP_DMA_SF_TARGET_ECPF=$target_ecpf
+	info "SNAP DMA SF: target ECPF is $target_ecpf (2nd PCI link)"
+
+	# Determine MAC address:
+	# 1. User-specified SNAP_DMA_SF_MAC takes priority
+	# 2. Otherwise derive a deterministic MAC from PCI device + sfnum
+	#    so the address is stable across reboots
+	local snap_dma_sf_mac
+	if [ -n "$SNAP_DMA_SF_MAC" ]; then
+		snap_dma_sf_mac=$SNAP_DMA_SF_MAC
+	else
+		snap_dma_sf_mac=$(echo -n "${target_ecpf}:${SNAP_DMA_SF_NUM}" | md5sum | \
+			sed 's/^\(..\)\(..\)\(..\)\(..\)\(..\).*$/02:\1:\2:\3:\4:\5/')
+	fi
+
+	info "Creating SNAP DMA SF (sfnum=$SNAP_DMA_SF_NUM, mac=$snap_dma_sf_mac) on $target_ecpf"
+
+	if ! (which mlnx-sf > /dev/null 2>&1); then
+		info "mlnx-sf not found, skipping SNAP DMA SF creation"
+		return 1
+	fi
+
+	# Create SF with RoCE disabled, no netdev
+	mlnx-sf --action create --device $target_ecpf \
+		--sfnum $SNAP_DMA_SF_NUM \
+		--hwaddr $snap_dma_sf_mac \
+		--disable-roce 2>/dev/null
+	local rc=$?
+	if [ $rc -ne 0 ]; then
+		debug "SNAP DMA SF on $target_ecpf sfnum=$SNAP_DMA_SF_NUM may already exist or failed (rc=$rc)"
+		return 1
+	fi
+
+	# Disable netdev on the SF (devlink param netdev_disable=true + reload)
+	# Find the auxiliary device for this SF
+	local aux_dev=""
+	local retries=0
+	while [ -z "$aux_dev" ] && [ $retries -lt 20 ]; do
+		aux_dev=$(/bin/ls -d /sys/bus/pci/devices/${target_ecpf}/mlx5_core.sf.* 2>/dev/null | \
+			xargs -I{} sh -c 'cat {}/sfnum 2>/dev/null | grep -q "^${SNAP_DMA_SF_NUM}$" && basename {}' 2>/dev/null | head -1)
+		if [ -z "$aux_dev" ]; then
+			sleep 0.1
+			retries=$((retries+1))
+		fi
+	done
+	if [ -n "$aux_dev" ]; then
+		devlink dev param set auxiliary/${aux_dev} name enable_eth value false cmode driverinit 2>/dev/null
+		devlink dev reload auxiliary/${aux_dev} 2>/dev/null
+		debug "SNAP DMA SF: disabled netdev on auxiliary/${aux_dev}"
+	else
+		debug "SNAP DMA SF: could not find auxiliary device to disable netdev"
+	fi
+
+	# Bring the SF representor UP (but it must NOT be added to any OVS bridge)
+	local sf_rep
+	sf_rep=$(mlnx-sf --action show --device $target_ecpf --json 2>/dev/null | \
+		python3 -c "import sys,json; data=json.load(sys.stdin); \
+		[print(sf.get('netdev','')) for sf in data if str(sf.get('sfnum',''))=='$SNAP_DMA_SF_NUM']" 2>/dev/null | head -1)
+	if [ -n "$sf_rep" ]; then
+		ip link set $sf_rep up 2>/dev/null
+		info "SNAP DMA SF: representor $sf_rep set UP (not added to OVS bridge)"
+	fi
+
+	info "Created SNAP DMA SF on $target_ecpf sfnum=$SNAP_DMA_SF_NUM mac=$snap_dma_sf_mac"
+	return 0
+}
+
+# Run SNAP DMA SF creation if enabled (auto or yes)
+if [ "X${SNAP_DMA_SF}" == "Xauto" ] || [ "X${SNAP_DMA_SF}" == "Xyes" ]; then
+	create_snap_dma_sf
+fi
+
+# Export discovered ECPF ibdevs for SNAP emulation manager auto-configuration
+if [ ${#SWITCHDEV_DEVICES_LIST[@]} -gt 0 ]; then
+	mkdir -p $(dirname $SNAP_EMU_MNG_MANAGERS_FILE)
+	> $SNAP_EMU_MNG_MANAGERS_FILE
+	for em_dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
+		ibdev=$(/bin/ls /sys/bus/pci/devices/${em_dev}/infiniband/ 2>/dev/null | head -1)
+		if [ -n "$ibdev" ]; then
+			echo "$ibdev $em_dev" >> $SNAP_EMU_MNG_MANAGERS_FILE
+			debug "Exported emulation manager: $ibdev ($em_dev)"
+		fi
+	done
+	info "Exported ${#SWITCHDEV_DEVICES_LIST[@]} emulation managers to $SNAP_EMU_MNG_MANAGERS_FILE"
+fi
+
 debug "num_of_devs_switchdev: $num_of_devs_switchdev"
 debug "SWITCHDEV_DEVICES_LIST: ${SWITCHDEV_DEVICES_LIST[*]}"
 debug "SD_DEVICES_LIST: ${SD_DEVICES_LIST[*]}"
 debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
+debug "SD_MERGED_ESWITCH: $SD_MERGED_ESWITCH"
 
 if [ "$(stat -c %d:%i /)" != "$(stat -c %d:%i /proc/1/root/.)" ]; then
 	info "Running in chroot environment. Exiting..."
@@ -784,6 +1028,19 @@ fi
 
 max_num_of_ovs_bridges=$num_of_devs_switchdev
 num_of_sd_devs=${#SD_DEVICES_LIST[@]}
+if [ $num_of_sd_devs -gt 0 ] && [ $SD_MERGED_ESWITCH -eq 0 ]; then
+	if [ $num_of_sd_devs -eq 1 ]; then
+		max_num_of_sd_ovs_bridges=1
+	else
+		max_num_of_sd_ovs_bridges=2
+	fi
+fi
+
+# In SD merged eswitch mode, override to create only 1 bridge
+if [ $SD_MERGED_ESWITCH -eq 1 ]; then
+	max_num_of_ovs_bridges=1
+	max_num_of_sd_ovs_bridges=0
+fi
 
 debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
 
