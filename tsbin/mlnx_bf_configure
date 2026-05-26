@@ -554,6 +554,7 @@ else
 fi
 info "MFT output: $mft_output"
 
+esw_multiport_device=""
 num_of_devs_switchdev=0
 # Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
@@ -628,17 +629,11 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		fi
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
-			if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
-				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
-			fi
 			num_of_devs_switchdev=$((num_of_devs_switchdev+1))
 			SWITCHDEV_DEVICES_LIST+=( "$dev" )
+			esw_multiport_device="$dev"
 		fi
 		if is_sd_mode ${dev}; then
-			if [ "X${ENABLE_ESWITCH_MULTIPORT}" != "Xyes" ]; then
-				info "Enabling ESW Multiport for SD device $dev"
-				set_dev_param ${dev} esw_multiport  1 "ESW Multiport:"
-			fi
 			debug "Adding SD device $dev to SD_DEVICES_LIST"
 			SD_DEVICES_LIST+=( "$dev" )
 		fi
@@ -647,6 +642,21 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			DEVICE_LIST_FOR_OVS_BRIDGES+=( "$dev" )
 		fi
 	done
+
+	# Set esw_multiport after all ECPFs have been switched to switchdev mode.
+	# This ordering ensures all eswitch instances are properly initialized
+	# before the multi-port eswitch LAG is configured (required for ASTRA).
+	if [ -n "$esw_multiport_device" ]; then
+		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
+			set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
+		else
+			if is_sd_mode ${esw_multiport_device}; then
+				info "Enabling ESW Multiport for SD device $esw_multiport_device"
+				set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
+			fi
+		fi
+	fi
+
 	start_ipsec_services
 fi
 
