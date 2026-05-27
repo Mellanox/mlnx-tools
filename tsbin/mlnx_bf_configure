@@ -578,6 +578,11 @@ declare -A CX9_DEV_LAST_ECPF  # key=PCI domain:bus (physical CX-9), value=last E
 # Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
+
+	# Phase 1 (sequential): pre-transition per-device setup; collect candidates
+	# for the parallel switchdev transition in Phase 2.
+	ELIGIBLE_DEVS=()
+	TO_SWITCHDEV_DEVS=()
 	# Rank each BDF by PCI device ID before sorting (0=NIC, 1=BlueField)
 	# so all NIC (e.g. ASTRA CX-9) links are configured before the
 	# BlueField devices. Within each group the order is unchanged:
@@ -596,6 +601,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			info "Link type is IB for ${dev}. Skipping mode configuration."
 			continue
 		fi
+		ELIGIBLE_DEVS+=( "$dev" )
 
 		if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
 			set_dev_param ${dev} lag_port_select_mode queue_affinity
@@ -652,12 +658,34 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			if [ "X${LEGACY_METADATA_MATCH_MODE}" == "Xyes" ]; then
 				set_dev_param ${dev} vport_match_mode legacy
 			fi
-
-			set_eswitch_mode ${dev} switchdev
-			RC=$((RC+$?))
-
-			set_dev_param ${dev} ct_max_offloaded_conns ${CT_MAX_OFFLOADED_CONNS}
+			TO_SWITCHDEV_DEVS+=( "$dev" )
 		fi
+	done
+
+	# Phase 2 (parallel): switchdev transition + ct_max_offloaded_conns per candidate.
+	# This is the dominant cost of the original sequential loop; running it in
+	# parallel removes the per-device serialization.
+	if [ "${#TO_SWITCHDEV_DEVS[@]}" -gt 0 ]; then
+		info "Switching ${#TO_SWITCHDEV_DEVS[@]} device(s) to switchdev mode in parallel: ${TO_SWITCHDEV_DEVS[*]}"
+		SWITCHDEV_PIDS=()
+		for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
+			(
+				set_eswitch_mode ${dev} switchdev
+				rc=$?
+				set_dev_param ${dev} ct_max_offloaded_conns ${CT_MAX_OFFLOADED_CONNS}
+				exit $rc
+			) &
+			SWITCHDEV_PIDS+=( $! )
+		done
+		for pid in "${SWITCHDEV_PIDS[@]}"; do
+			wait "$pid"
+			RC=$((RC+$?))
+		done
+	fi
+
+	# Phase 3 (sequential): post-transition per-device state (counters, lists,
+	# esw_multiport_device). Kept sequential because it mutates shared shell arrays.
+	for dev in "${ELIGIBLE_DEVS[@]}"; do
 		eswitch_mode=`get_eswitch_mode ${dev}`
 		if [ "${eswitch_mode}" == "switchdev" ]; then
 			num_of_devs_switchdev=$((num_of_devs_switchdev+1))
