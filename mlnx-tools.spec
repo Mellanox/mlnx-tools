@@ -36,6 +36,7 @@ Group: Applications/System
 Source: https://github.com/Mellanox/mlnx-tools/releases/download/v%{version}/%{name}-%{version}.tar.gz
 BuildRoot: %{?build_root:%{build_root}}%{!?build_root:/var/tmp/%{name}}
 Vendor: Mellanox Technologies
+Buildarch: noarch
 Obsoletes: mlnx-ofa_kernel < 5.4, mlnx_en-utils < 5.4
 %description
 Mellanox userland tools and scripts
@@ -106,7 +107,6 @@ rm -rf %{buildroot}
 %{_mandir}/man8/*.8*
 %{python_dir}/dcbnetlink.py*
 %{python_dir}/netlink.py*
-%exclude %{python_dir}/__pycache__/*.pyc
 /lib/udev/mlnx_bf_udev
 /etc/mellanox/hugepages.d
 
