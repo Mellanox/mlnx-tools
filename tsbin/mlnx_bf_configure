@@ -423,7 +423,16 @@ get_mlnx_netdevs_by_pci_id()
 
 	netdevs=$(grep PCI_SLOT_NAME=${pci_id} /sys/class/net/*/device/uevent | cut -d '/' -f 5)
 	if [ -n "$netdevs" ]; then
-		echo "$netdevs"
+		filtered=""
+		for nd in $netdevs; do
+			driver=$(basename $(readlink -f /sys/class/net/$nd/device/driver) 2>/dev/null)
+			if [ "$driver" == "mlx5_nodnic" ]; then
+				debug "Skipping interface $nd (driver: mlx5_nodnic)"
+				continue
+			fi
+			filtered="$filtered $nd"
+		done
+		echo "$filtered"
 	fi
 
 	return 0
@@ -765,88 +774,83 @@ if [ ! -n "$vsctl" ]; then
 fi
 
 max_num_of_ovs_bridges=$num_of_devs_switchdev
-max_num_of_sd_ovs_bridges=0
 num_of_sd_devs=${#SD_DEVICES_LIST[@]}
-if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
-	if [ $num_of_sd_devs -eq 1 ]; then
-		max_num_of_sd_ovs_bridges=1
-	else
-		max_num_of_sd_ovs_bridges=2
-	fi
-fi
 
 # In HW multiplane mode, override to create only 1 bridge
 if [ $HW_MULTIPLANE -eq 1 ]; then
 	max_num_of_ovs_bridges=1
-	max_num_of_sd_ovs_bridges=0
 fi
 
 debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
-debug "max_num_of_sd_ovs_bridges: $max_num_of_sd_ovs_bridges"
 
-num_of_sd_ovs_bridges=0
+# For Socket Direct, group devices by PCI domain so that all functions
+# on the same domain (e.g. 0006:01:00.0 and 0006:01:00.1) are combined
+# into a single OVS bridge.
+declare -A SD_DOMAIN_GROUPS  # key=domain, value=space-separated PCI IDs
+if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
+	for sd_dev in "${SD_DEVICES_LIST[@]}"; do
+		domain="${sd_dev%%:*}"
+		SD_DOMAIN_GROUPS[$domain]="${SD_DOMAIN_GROUPS[$domain]} $sd_dev"
+	done
+	debug "SD_DOMAIN_GROUPS: ${!SD_DOMAIN_GROUPS[*]} -> ${SD_DOMAIN_GROUPS[*]}"
+fi
+
 num_of_ovs_bridges=0
 i=1
-for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
-	sd_dev=""
-	if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
-		if in_array $dev ${SD_DEVICES_LIST[@]}; then
-			if [ $num_of_sd_ovs_bridges -lt $max_num_of_sd_ovs_bridges ]; then
-				num_of_sd_ovs_bridges=$((num_of_sd_ovs_bridges+1))
-			else
-				continue
-			fi
-			sd_dev=$dev
+
+if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
+	# Socket Direct mode: create one bridge per PCI domain,
+	# combining netdevs from all PCI devices in the same domain.
+	for domain in $(echo "${!SD_DOMAIN_GROUPS[@]}" | tr ' ' '\n' | sort); do
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		# Set default bridge name if not already set
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
 		fi
-	fi
-	bridge_var=OVS_BRIDGE${i}
-	ports_var=OVS_BRIDGE${i}_PORTS
-	idx=$((i-1))
 
-	# Set default bridge name if not already set
-	if [ -z "${!bridge_var}" ]; then
-		eval "${bridge_var}=ovsbr${i}"
-	fi
-
-	# Set default ports if not already set
-	if [ -z "${!ports_var}" ]; then
-		if [ $HW_MULTIPLANE -eq 1 ]; then
-			# HW multiplane: only PF0 representor and ECPF0 port (no SFs)
-			eval "${ports_var}=\"$(get_multiplane_bridge_ports $dev)\""
-			info "HW multiplane bridge ports for $dev: ${!ports_var}"
-		else
-			eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
-			# Workaround: Add extra netdev
-			if [ "$dev" == "$sd_dev" ]; then
-				num_of_ports=$(wc -w <<< "$ports_var")
-				if [ $num_of_ports -lt 4 ]; then
-					# Add extra netdev as a workaround for SD device
-					# increase the PCIe function nibble by 2
-					fn=$(pci_function_digit_value "$dev")
-					if [ -n "$fn" ]; then
-						new_dev_name=${dev:0:-1}$(printf '%x' "$((fn + 2))")
-						extra_netdevs=$(get_mlnx_netdevs_by_pci_id "$new_dev_name")
-					else
-						extra_netdevs=
-					fi
-					num_of_extra_netdevs=$(wc -w <<< "$extra_netdevs")
-					if [ $num_of_extra_netdevs -eq 1 ]; then
-						extra_netdev=$extra_netdevs
-					else
-						# Choose netdedv that has "pf<num><string>" in its name
-						extra_netdev=$(echo "$extra_netdevs" | grep -oE 'pf[0-9][[:alnum:]]+')
-					fi
-					if [ -n "$extra_netdev" ]; then
-						debug "Adding extra netdev $extra_netdev to $ports_var"
-						eval "${ports_var}=\"${!ports_var} $extra_netdev\""
-					fi
+		# Set default ports if not already set
+		if [ -z "${!ports_var}" ]; then
+			all_ports=""
+			for dev in ${SD_DOMAIN_GROUPS[$domain]}; do
+				dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+				if [ -n "$dev_ports" ]; then
+					all_ports="$all_ports $dev_ports"
 				fi
+			done
+			eval "${ports_var}=\"$all_ports\""
+		fi
+
+		debug "SD bridge ovsbr${i} (domain $domain): devices=${SD_DOMAIN_GROUPS[$domain]}, ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+else
+	# Non-SD mode (or HW multiplane): one bridge per device
+	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		# Set default bridge name if not already set
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		# Set default ports if not already set
+		if [ -z "${!ports_var}" ]; then
+			if [ $HW_MULTIPLANE -eq 1 ]; then
+				# HW multiplane: only PF0 representor and ECPF0 port (no SFs)
+				eval "${ports_var}=\"$(get_multiplane_bridge_ports $dev)\""
+				info "HW multiplane bridge ports for $dev: ${!ports_var}"
+			else
+				eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
 			fi
 		fi
-	fi
-	i=$((i+1))
-	num_of_ovs_bridges=$((num_of_ovs_bridges+1))
-done
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+fi
 
 OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
 OVS_TIMEOUT=${OVS_TIMEOUT:-30}
