@@ -1,5 +1,8 @@
 #!/bin/bash
 
+i=$1
+ifindex=$2
+
 # need the PATH for BF ARM lspci to work
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 SUPPORTED_DEVICES="a2d[26cf]|1023|1025"
@@ -16,21 +19,41 @@ if [ $is_bf -ne 1 ]; then
 	fi
 fi
 
-# Match p<n> (p0, p1, p2, ... p9, p10, p11, ...)
-case "$1" in
-	p[0-9]|p[0-9][0-9])
-	ethtool -L $1 combined 4
+get_interface_by_index()
+{
+	ifindex=$1
+	for ipath in $(/bin/ls -1d /sys/class/net/*)
+	do
+		if [ "$(cat ${ipath}/ifindex 2> /dev/null)" == "$ifindex" ]; then
+			echo $(basename $ipath)
+			return
+		fi
+	done
+}
+
+if [ -n "$ifindex" ]; then
+	i=$(get_interface_by_index $ifindex)
+fi
+
+if [ ! -n "$i" ] || [ ! -d /sys/class/net/$i ]; then
+	exit 0
+fi
+
+# Set combined channels: 4 for uplink PFs and ASTRA ports, 2 for others
+case "$i" in
+	p[0-9]|p[0-9][0-9]|A*|B*)
+	ethtool -L $i combined 4
 	;;
 	*)
-	ethtool -L $1 combined 2
+	ethtool -L $i combined 2
 	;;
 esac
 
 # Bring up only renamed devices
-case "$1" in
+case "$i" in
 	eth*)
 	;;
 	*)
-	ip link set dev $1 up
+	ip link set dev $i up
 	;;
 esac

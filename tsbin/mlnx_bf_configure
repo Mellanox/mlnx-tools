@@ -887,14 +887,17 @@ ovs_restart()
 		$ovs_restart
 		need_restart=false
 	fi
+}
 
+reapply_udev_settings()
+{
 	# Re-apply udev settings removed by OVS
 	if [ -x /lib/udev/mlnx_bf_udev ]; then
 		for p in $(cd /sys/class/net; /bin/ls -d *)
 		do
 			case "$p" in
-				p*|e*)
-				/lib/udev/mlnx_bf_udev $p > /dev/null 2>&1
+				p*|e*|A*|B*)
+					/lib/udev/mlnx_bf_udev $p $(cat /sys/class/net/$p/ifindex 2> /dev/null) > /dev/null 2>&1
 				;;
 				*)
 				;;
@@ -1032,7 +1035,7 @@ if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
     if [ "$need_restart" == true ]; then
 		ovs_restart
     fi
-	exit $RC
+    exit $RC
 fi
 
 ovsbr_number=`$vsctl list-br | wc -l`
@@ -1042,6 +1045,7 @@ if [ $ovsbr_number -gt 0 ]; then
 		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
 			ovs_restart
 		fi
+		reapply_udev_settings
 		exit $RC
 	else
 		info "Removing OVS bridges and creating new ones."
