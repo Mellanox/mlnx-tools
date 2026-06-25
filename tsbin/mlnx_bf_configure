@@ -826,6 +826,32 @@ if [ $num_of_sd_devs -gt 0 ] && [ $HW_MULTIPLANE -eq 0 ]; then
 		i=$((i+1))
 		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
 	done
+
+	# Now create bridges for non-SD devices (e.g. ConnectX-9) that are in
+	# DEVICE_LIST_FOR_OVS_BRIDGES but were NOT covered by the SD domain grouping.
+	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+		# Skip devices that are in the SD list (already have a bridge)
+		if in_array "$dev" "${SD_DEVICES_LIST[@]}"; then
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		# Set default bridge name if not already set
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		# Set default ports if not already set
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$(get_mlnx_netdevs_by_pci_id $dev)\""
+		fi
+
+		debug "Non-SD bridge ovsbr${i} for device $dev: ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
 else
 	# Non-SD mode (or HW multiplane): one bridge per device
 	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
