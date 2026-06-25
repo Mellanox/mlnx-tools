@@ -640,7 +640,10 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		if [ "${eswitch_mode}" == "switchdev" ]; then
 			num_of_devs_switchdev=$((num_of_devs_switchdev+1))
 			SWITCHDEV_DEVICES_LIST+=( "$dev" )
-			esw_multiport_device="$dev"
+			dev_id=$(cat /sys/bus/pci/devices/${dev}/device 2>/dev/null)
+			if echo "$dev_id" | grep -qE "0xa2df"; then
+				esw_multiport_device="$dev"
+			fi
 		fi
 		if is_sd_mode ${dev}; then
 			debug "Adding SD device $dev to SD_DEVICES_LIST"
