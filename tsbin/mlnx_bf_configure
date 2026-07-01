@@ -565,6 +565,8 @@ info "MFT output: $mft_output"
 
 esw_multiport_device=""
 num_of_devs_switchdev=0
+CX9_DEVICE_ID="0x1025"
+declare -A CX9_DOMAIN_LAST_ECPF  # key=PCI domain, value=last ECPF PCI BDF in that domain
 # Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
@@ -641,7 +643,18 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			num_of_devs_switchdev=$((num_of_devs_switchdev+1))
 			SWITCHDEV_DEVICES_LIST+=( "$dev" )
 			dev_id=$(cat /sys/bus/pci/devices/${dev}/device 2>/dev/null)
+			if echo "$dev_id" | grep -qiE "$CX9_DEVICE_ID"; then
+				# Track last ECPF per CX-9 PCI domain.
+				# In ASTRA, each CX-9 SuperNIC has multiple ECPFs in the same
+				# PCI domain; esw_multiport must be set on the LAST one
+				# (highest PCI function = LAG master). The devlink loop is sorted,
+				# so each subsequent CX-9 device in the same domain overwrites
+				# the previous, leaving the last one.
+				cx9_domain="${dev%%:*}"
+				CX9_DOMAIN_LAST_ECPF[$cx9_domain]="$dev"
+			fi
 			if echo "$dev_id" | grep -qE "0xa2df"; then
+				# BF4 device — track for esw_multiport (SD or ASTRA N-S)
 				esw_multiport_device="$dev"
 			fi
 		fi
@@ -658,14 +671,33 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	# Set esw_multiport after all ECPFs have been switched to switchdev mode.
 	# This ordering ensures all eswitch instances are properly initialized
 	# before the multi-port eswitch LAG is configured (required for ASTRA).
+	#
+	# In ASTRA mode, esw_multiport must be set on:
+	# 1. The BF4 device (0xa2df) — for N-S multi-port eswitch (SD or Lupine dual-link)
+	# 2. The last ECPF of EVERY CX-9 SuperNIC (0x1025) — for E-W multi-plane LAG
+	# Both coexist on Grace in ASTRA configurations.
+
+	# BF4 (N-S) esw_multiport
 	if [ -n "$esw_multiport_device" ]; then
-		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
+		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ] || [ $HW_MULTIPLANE -eq 1 ]; then
+			info "Enabling ESW Multiport on BF4 device $esw_multiport_device"
 			set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
 		else
 			if is_sd_mode ${esw_multiport_device}; then
 				info "Enabling ESW Multiport for SD device $esw_multiport_device"
 				set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
 			fi
+		fi
+	fi
+
+	# CX-9 (E-W) esw_multiport — one per SuperNIC (last ECPF in each PCI domain)
+	if [ ${#CX9_DOMAIN_LAST_ECPF[@]} -gt 0 ]; then
+		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ] || [ $HW_MULTIPLANE -eq 1 ]; then
+			for cx9_domain in $(echo "${!CX9_DOMAIN_LAST_ECPF[@]}" | tr ' ' '\n' | sort); do
+				lag_master="${CX9_DOMAIN_LAST_ECPF[$cx9_domain]}"
+				info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (domain $cx9_domain)"
+				set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
+			done
 		fi
 	fi
 
