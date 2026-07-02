@@ -329,6 +329,20 @@ is_sd_mode()
 	return 1
 }
 
+# Check if LAG_RESOURCE_ALLOCATION is set to PRE_ALLOCATION(1)
+is_lag_resource_pre_allocation()
+{
+	dev=$1
+	shift 1
+
+	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q LAG_RESOURCE_ALLOCATION")
+
+	if (echo "$mft_output" | grep -o LAG_RESOURCE_ALLOCATION.* | awk '{print$3}' | grep -q "PRE_ALLOCATION(1)"); then
+		return 0
+	fi
+	return 1
+}
+
 is_supported_device()
 {
 	dev=$1
@@ -640,7 +654,8 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	#
 	# In ASTRA mode, esw_multiport must be set on:
 	# 1. The BF4 device (0xa2df) — for N-S multi-port eswitch (SD or Lupine dual-link)
-	# 2. The last ECPF of EVERY CX-9 SuperNIC (0x1025) — for E-W multi-plane LAG
+	# 2. The last ECPF of EVERY CX-9 SuperNIC (0x1025) — for E-W multi-plane LAG,
+	#    only when LAG_RESOURCE_ALLOCATION is PRE_ALLOCATION(1)
 	# Both coexist on Grace in ASTRA configurations.
 
 	# BF4 (N-S) esw_multiport
@@ -661,8 +676,12 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 			for cx9_domain in $(echo "${!CX9_DOMAIN_LAST_ECPF[@]}" | tr ' ' '\n' | sort); do
 				lag_master="${CX9_DOMAIN_LAST_ECPF[$cx9_domain]}"
-				info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (domain $cx9_domain)"
-				set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
+				if is_lag_resource_pre_allocation ${lag_master}; then
+					info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (domain $cx9_domain)"
+					set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
+				else
+					info "Skipping ESW Multiport on CX-9 ECPF $lag_master (domain $cx9_domain): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1)"
+				fi
 			done
 		fi
 	fi
