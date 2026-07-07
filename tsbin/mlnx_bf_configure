@@ -599,7 +599,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 					RC=$((RC+$?))
 				fi
 				steering_mode=`get_steering_mode ${dev}`
-				if [ "${steering_mode}" == "smfs" ]; then
+				if [ "${steering_mode}" != "dmfs" ]; then
 					set_steering_mode ${dev} dmfs
 				fi
 			else
