@@ -1,0 +1,42 @@
+{
+  "0004:03:00.0": {
+    "Redfish_label": "CX_0",
+    "GA": 0,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Left-Bottom"
+  },
+  "0004:06:00.0": {
+    "Redfish_label": "CX_1",
+    "GA": 1,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Left-Bottom"
+  },
+  "0005:03:00.0": {
+    "Redfish_label": "CX_2",
+    "GA": 0,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Left-Top"
+  },
+  "0005:06:00.0": {
+    "Redfish_label": "CX_3",
+    "GA": 1,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Left-Top"
+  },
+  "0000:03:00.0": {
+    "Redfish_label": "CX_4",
+    "GA": 0,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Right-Bottom"
+  },
+  "0000:06:00.0": {
+    "Redfish_label": "CX_5",
+    "GA": 1,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Right-Bottom"
+  },
+  "0001:03:00.0": {
+    "Redfish_label": "CX_6",
+    "GA": 0,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Right-Top"
+  },
+  "0001:06:00.0": {
+    "Redfish_label": "CX_7",
+    "GA": 1,
+    "Redfish_PartLocationContext": "Chassis_0/Bay-B-Right-Top"
+  }
+}
