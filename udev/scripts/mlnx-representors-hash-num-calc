@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# file: /lib/udev/mlnx-representors-hash-num-calc
+
+PCI_BDF=$1
+# PCI address in extended (domain) BDF form: Domain:Bus:Device.Function
+# e.g.: 0001:06:00.2
+# e.g.: 000a:03:00.1
+
+DB_FILE=$2
+# path to the DB file, passed in from the udev rule so each device family
+# (BF4, CX9, ...) keeps its own independent hash_num namespace.
+# e.g.: /var/opt/mlnx-representors-hash-num-db-bf4.txt
+# e.g.: /var/opt/mlnx-representors-hash-num-db-cx9.txt
+# one line per seen adapter, format: "domain:bus:key hash_num"
+[ -n "$DB_FILE" ] || exit 1
+
+domain=$(printf '%d' 0x$(echo $PCI_BDF | cut -d: -f1))
+bus=$(printf '%d' 0x$(echo $PCI_BDF | cut -d: -f2))
+# e.g.: 0001:06:00.2 -> domain=1 bus=6
+# e.g.: 000a:03:00.1 -> domain=10 bus=3
+key=$((domain*10+bus))
+
+# serialize parallel runs for atomic access to DB_FILE
+# - open a file descriptor fd 9 on the DB_FILE, append mode (no truncate)
+# - take the exclusive lock on fd 9, waiting if another run holds it
+# - on exit fd 9 is closed and the lock is released automatically
+exec 9>>"$DB_FILE"
+flock 9
+
+# reuse the hash_num already recorded for this exact domain:bus, if any
+hash_num=$(awk -v k="$domain:$bus:$key" '$1 == k { print $2; exit }' "$DB_FILE")
+if [ -n "$hash_num" ]; then
+    echo "$hash_num"
+    exit 0
+fi
+
+# not seen yet: prefer key itself when domain and bus are less then 10 and key still free,
+# otherwise take the first free slot in 0..99.
+if [ "$domain" -lt 10 ] && [ "$bus" -lt 10 ] && ! awk '{print $2}' "$DB_FILE" | grep -qx "$key"; then
+    # key itself
+    hash_num=$key
+else
+    # smallest value in 0..99 not yet used as a hash_num (column 2) of the db;
+    # hash_num stays empty if the whole 0..99 pool is exhausted.
+    used=" $(awk '{print $2}' "$DB_FILE" 2>/dev/null | tr '\n' ' ') "
+    hash_num=
+    i=0
+    while [ "$i" -le 99 ]; do
+        case $used in
+            *" $i "*) ;;                # taken, try next
+            *) hash_num=$i; break ;;    # free
+        esac
+        i=$((i + 1))
+    done
+fi
+[ -n "$hash_num" ] || exit 1
+
+echo "$domain:$bus:$key $hash_num" >> "$DB_FILE"
+echo "$hash_num"

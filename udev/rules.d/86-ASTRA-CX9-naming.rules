@@ -1,0 +1,22 @@
+# /lib/udev/rules.d/86-ASTRA-CX9-naming.rules
+
+# Mellanox Technologies CX9 Family [ConnectX-9] [15b3:1025]
+
+
+# PF, VF, SF representors (anything switchdev on the PCI bus with "pf" in phys_port_name)
+# A${hash_num}${phys_port_name}
+# ${hash_num} - calculated by representors-hash-num-calc.sh
+#
+# e.g.:
+#   VF rep:       BDF=0006:01:00.1  phys_port_name=pf1vf12  →  A61pf1vf12
+#   SF rep:       BDF=0002:01:00.0  phys_port_name=pf0sf0   →  A21pf0sf0
+#   uplink:       BDF=0002:01:00.0  phys_port_name=p0       →  A21p0
+
+# CX9 ASTRA:
+SUBSYSTEM=="net", SUBSYSTEMS=="pci", ACTION=="add", TEST=="/etc/mlnx-release", \
+    ATTRS{vendor}=="0x15b3", ATTRS{device}=="0x1025", \
+    DRIVERS!="mlx5_core.sf", \
+    ATTR{phys_switch_id}!="", \
+    ATTR{phys_port_name}=="*pf*|p[0-7]", \
+    PROGRAM="/lib/udev/mlnx-representors-hash-num-calc $id /var/opt/mlnx-representors-hash-num-db-cx9.txt", \
+    NAME:="A%c$attr{phys_port_name}"
