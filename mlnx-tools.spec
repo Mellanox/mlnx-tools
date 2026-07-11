@@ -93,6 +93,7 @@ sed -i -e '1s/python\>/python3/' %{buildroot}/usr/{s,}bin/* \
 	echo $conf_env >> mlnx-tools-files
 %endif
 install -d %{buildroot}/etc/mellanox/hugepages.d
+install -m 0644 udev/astra_cards_location_map.json %{buildroot}/etc/mellanox/
 
 %clean
 rm -rf %{buildroot}
@@ -119,6 +120,7 @@ rm -rf %{buildroot}
 %{python_dir}/netlink.py*
 %exclude %{python_dir}/__pycache__/*.pyc
 /etc/mellanox/hugepages.d
+/etc/mellanox/astra_cards_location_map.json
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1

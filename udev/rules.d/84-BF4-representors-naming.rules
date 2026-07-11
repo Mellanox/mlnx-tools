@@ -1,0 +1,64 @@
+# /lib/udev/rules.d/84-BF4-representors-naming.rules
+# Mellanox Technologies BF4 Family integrated network controller [BlueField-4 integrated network controller] [15b3:a2df]
+
+# SF representors with controller number (PCI bus, switchdev)
+# B${domain}${bus}c4${phys_port_name}
+# e.g.:
+#   SF rep on PF0:  BDF=0006:01:00.0  phys_port_name=pf0sf88  →  B61c4pf0sf88
+#   SF rep on PF1:  BDF=0006:01:00.1  phys_port_name=pf1sf42  →  B61c4pf1sf42
+#
+# Once RM 5056945 is fixed, the workaround for specific PCI BDF of 0006:xx.xx.0 should be removed,
+# because controller number c4 is expected to be returned by the driver.
+SUBSYSTEM=="net", ACTION=="add", TEST=="/etc/mlnx-release", KERNELS=="0006:01:00.0", \
+    ATTRS{vendor}=="0x15b3", ATTRS{device}=="0xa2df", \
+    ATTR{phys_port_name}=="pf0sf*", \
+    NAME:="B61c4$attr{phys_port_name}"
+SUBSYSTEM=="net", ACTION=="add", TEST=="/etc/mlnx-release", KERNELS=="0006:01:00.1", \
+    ATTRS{vendor}=="0x15b3", ATTRS{device}=="0xa2df", \
+    ATTR{phys_port_name}=="pf1sf*", \
+    NAME:="B61c4$attr{phys_port_name}"
+
+# PF, VF, SF representors (anything switchdev on the PCI bus with "pf" in phys_port_name)
+# B${domain}${bus}${phys_port_name}
+# e.g.:
+#   PF host-rep:  BDF=0006:01:00.0  phys_port_name=c1pf0    →  B61c1pf0
+#   VF rep:       BDF=0006:01:00.0  phys_port_name=pf0vf3   →  B61pf0vf3
+#   VF rep:       BDF=0006:01:00.1  phys_port_name=pf1vf12  →  B61pf1vf12
+#   SF rep:       BDF=0002:01:00.0  phys_port_name=pf0sf0   →  B21pf0sf0
+#
+SUBSYSTEM=="net", SUBSYSTEMS=="pci", ACTION=="add", TEST=="/etc/mlnx-release",  \
+    ATTRS{vendor}=="0x15b3", ATTRS{device}=="0xa2df", \
+    DRIVERS!="mlx5_core.sf", \
+    ATTR{phys_switch_id}!="", ATTR{phys_port_name}!="", \
+    ATTR{phys_port_name}=="*pf*", \
+    PROGRAM="/bin/sh -c 'set -- $$(echo $id | tr :. \" \"); printf B%%d%%d 0x$$1 0x$$2'", \
+    NAME="%c$attr{phys_port_name}"
+
+
+# SF netdev (auxiliary bus)
+# enP${domain}p${bus}s${dev}f${func}S${sfnum}
+# e.g.:
+#   SF netdev:  parent PF BDF=0002:01:00.0  sfnum=0   →  enP2p1s0f0S0
+#   SF netdev:  parent PF BDF=0002:01:00.1  sfnum=42  →  enP2p1s0f1S42
+#
+SUBSYSTEM=="net", SUBSYSTEMS=="auxiliary", ACTION=="add", TEST=="/etc/mlnx-release", ATTRS{sfnum}!="", \
+    PROGRAM="/bin/sh -c 'a=$$(readlink -f /sys$devpath/device); set -- $$(basename $$(dirname $$a) | tr :. \" \"); printf enP%%dp%%ds%%df%%dS%%d 0x$$1 0x$$2 0x$$3 0x$$4 $$(cat $$a/sfnum)'", \
+    NAME="%c"
+
+
+# NOTES:
+#
+# PROGRAM="/bin/sh -c 'set -- $$(echo $id | tr :. \" \"); printf B%%d%%d 0x$$1 0x$$2'"
+#                      │              │    │             │              │
+#                      │              │    │             │              └── args "0x$1" "0x$2" → printf parses as hex via "0x" prefix → "0x0006"→6, "0x01"→1
+#                      │              │    │             └───────────────── printf format (%%d → %d after udev unescape) → "B61"
+#                      │              │    └─────────────────────────────── tr replaces both ':' and '.' with spaces in one pass: "0006:01:00.0" → "0006 01 00 0"
+#                      │              └──────────────────────────────────── $id = matched parent's kernel name. SUBSYSTEMS=="pci" anchors the walk on the
+#                      │                                                    PCI device, so $id is the BDF (e.g. "0006:01:00.0")
+#                      └─────────────────────────────────────────────────── set -- consumes BDF tokens into positional parameters: $1=0006 $2=01 $3=00 $4=0
+#
+# NAME:="%c$attr{phys_port_name}"
+#     │  │   │
+#     │  │   └── 'c1pf0' (attribute on the iface itself)
+#     │  └────── 'B61'   (PROGRAM stdout)
+#     └───────── ':='    locks NAME so no later rule can override it, '=' assigns without locking

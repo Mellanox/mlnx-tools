@@ -1,0 +1,18 @@
+# /lib/udev/rules.d/86-ASTRA-CX9-naming.rules
+# ASTRA mode: rename ConnectX-9 [15b3:1025] netdevs using card index from JSON.
+#
+# CX-9 uplink netdevs (row 10):
+#   BDF=0004:03:00.0  phys_port_name=p0  → A0p0
+#   BDF=0004:03:00.1  phys_port_name=p1  → A0p1
+#   BDF=0001:06:00.2  phys_port_name=p2  → A7p2
+#
+# The helper /lib/udev/mlnx-astra-rename maps the BDF to "A<card_idx>"
+# by looking up /etc/mellanox/astra_cards_location_map.json.
+
+SUBSYSTEM=="net", SUBSYSTEMS=="pci", ACTION=="add", TEST=="/etc/mlnx-release", \
+    TEST=="/etc/mellanox/astra_cards_location_map.json", \
+    ATTRS{vendor}=="0x15b3", ATTRS{device}=="0x1025", \
+    DRIVERS=="mlx5_core", \
+    ATTR{phys_port_name}!="", ATTR{phys_switch_id}!="", \
+    PROGRAM="/lib/udev/mlnx-astra-rename $id", \
+    NAME:="%c$attr{phys_port_name}"

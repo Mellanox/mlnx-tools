@@ -38,3 +38,4 @@ install:
 	$(INSTALL) -m 0755 $(PYTHON_SBIN) -t $(DESTDIR)$(SBIN_DIR)/
 	$(INSTALL) -m 0755 $(PYTHON_BIN) -t $(DESTDIR)$(BIN_DIR)/
 	mkdir -p $(DESTDIR)/etc/mellanox/hugepages.d/
+	$(INSTALL) -m 0644 udev/astra_cards_location_map.json -t $(DESTDIR)$(SYSCONFDIR)/mellanox/
