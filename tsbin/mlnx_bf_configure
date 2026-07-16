@@ -557,7 +557,7 @@ info "MFT output: $mft_output"
 esw_multiport_device=""
 num_of_devs_switchdev=0
 CX9_DEVICE_ID="0x1025"
-declare -A CX9_DOMAIN_LAST_ECPF  # key=PCI domain, value=last ECPF PCI BDF in that domain
+declare -A CX9_DEV_LAST_ECPF  # key=PCI domain:bus (physical CX-9), value=last ECPF PCI BDF on that device
 # Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
@@ -635,14 +635,17 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			SWITCHDEV_DEVICES_LIST+=( "$dev" )
 			dev_id=$(cat /sys/bus/pci/devices/${dev}/device 2>/dev/null)
 			if echo "$dev_id" | grep -qiE "$CX9_DEVICE_ID"; then
-				# Track last ECPF per CX-9 PCI domain.
-				# In ASTRA, each CX-9 SuperNIC has multiple ECPFs in the same
-				# PCI domain; esw_multiport must be set on the LAST one
-				# (highest PCI function = LAG master). The devlink loop is sorted,
-				# so each subsequent CX-9 device in the same domain overwrites
-				# the previous, leaving the last one.
-				cx9_domain="${dev%%:*}"
-				CX9_DOMAIN_LAST_ECPF[$cx9_domain]="$dev"
+				# Track last ECPF per physical CX-9 SuperNIC (PCI domain:bus).
+				# In ASTRA, an Orchid PCI domain holds TWO independent CX-9
+				# SuperNICs on different buses, and each forms its own E-W
+				# multi-plane LAG across its own ECPFs; esw_multiport must be
+				# set on the LAST ECPF of each device (highest PCI function =
+				# LAG master). The devlink loop is sorted, so each subsequent
+				# ECPF of the same device overwrites the previous, leaving
+				# the last one. Keying by domain alone would collapse the two
+				# SuperNICs of an Orchid into one entry.
+				cx9_dev="${dev%:*}"
+				CX9_DEV_LAST_ECPF[$cx9_dev]="$dev"
 			fi
 			if echo "$dev_id" | grep -qE "0xa2df"; then
 				# BF4 device — track for esw_multiport (SD or ASTRA N-S)
@@ -682,16 +685,16 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		fi
 	fi
 
-	# CX-9 (E-W) esw_multiport — one per SuperNIC (last ECPF in each PCI domain)
-	if [ ${#CX9_DOMAIN_LAST_ECPF[@]} -gt 0 ]; then
+	# CX-9 (E-W) esw_multiport — one per physical SuperNIC (last ECPF on each PCI domain:bus)
+	if [ ${#CX9_DEV_LAST_ECPF[@]} -gt 0 ]; then
 		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
-			for cx9_domain in $(echo "${!CX9_DOMAIN_LAST_ECPF[@]}" | tr ' ' '\n' | sort); do
-				lag_master="${CX9_DOMAIN_LAST_ECPF[$cx9_domain]}"
+			for cx9_dev in $(echo "${!CX9_DEV_LAST_ECPF[@]}" | tr ' ' '\n' | sort); do
+				lag_master="${CX9_DEV_LAST_ECPF[$cx9_dev]}"
 				if is_lag_resource_pre_allocation ${lag_master}; then
-					info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (domain $cx9_domain)"
+					info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (device $cx9_dev)"
 					set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
 				else
-					info "Skipping ESW Multiport on CX-9 ECPF $lag_master (domain $cx9_domain): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1)"
+					info "Skipping ESW Multiport on CX-9 ECPF $lag_master (device $cx9_dev): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1)"
 				fi
 			done
 		fi
