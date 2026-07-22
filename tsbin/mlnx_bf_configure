@@ -550,7 +550,19 @@ declare -A CX9_DEV_LAST_ECPF  # key=PCI domain:bus (physical CX-9), value=last E
 # Set eswitch mode to switchdev for all devices
 if (is_smartnic_mode "$ctrl_dev"); then
 	stop_ipsec_services
-	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print tolower($2)}' | sort -k1.1,1.4r -k1.6,1.7 -k1.9,1.10 -k1.12,1.12)
+	# Rank each BDF by PCI device ID before sorting (0=NIC, 1=BlueField)
+	# so all NIC (e.g. ASTRA CX-9) links are configured before the
+	# BlueField devices. Within each group the order is unchanged:
+	# domain descending, then bus/device/function ascending.
+	for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print tolower($2)}' \
+		| while read -r bdf; do
+			if grep -qiE "$BLUEFIELD_DEVICES" /sys/bus/pci/devices/${bdf}/device 2>/dev/null; then
+				echo "1/$bdf"
+			else
+				echo "0/$bdf"
+			fi
+		done \
+		| sort -t/ -k1,1 -k2.1,2.4r -k2.6,2.7 -k2.9,2.10 -k2.12,2.12 | cut -d/ -f2)
 	do
 		if ! (is_dev_eth "$dev"); then
 			info "Link type is IB for ${dev}. Skipping mode configuration."
