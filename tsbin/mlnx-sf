@@ -93,8 +93,8 @@ else:
 class SF:
     def __init__ (self, args):
         self.device = args.device
-        self.pfnum = None
-        if self.device:
+        self.pfnum = args.pfnum or None
+        if self.device and not self.pfnum:
             self.pfnum = self.device[-1]
         self.action = args.action
         self.verbose = args.verbose
@@ -523,6 +523,7 @@ def main():
     parser.add_argument('-d', '--device', help="Network device name")
     parser.add_argument('-a', '--action', required='--version' not in sys.argv, choices=SUPPORTED_ACTIONS, help="Action")
     parser.add_argument('-n', '--sfnum', help="SF number")
+    parser.add_argument('-P', '--pfnum', help="PF number")
     parser.add_argument('-i', '--sfindex', help="SF index")
     parser.add_argument('-m', '--hwaddr', help="SF hw_addr address")
     parser.add_argument('-t', '--enable-trust', action='store_true', help="Set SF as trusted", default=False)
