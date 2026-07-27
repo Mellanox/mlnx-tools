@@ -425,6 +425,27 @@ in_array() {
     return 1
 }
 
+# Count the uplink (physical port) netdevs among the given interfaces.
+# An uplink representor reports a phys_port_name of the form pN, while host PF
+# and SF representors report pfNhpf / pfNsfM style names.
+count_uplink_netdevs()
+{
+	local count=0
+	local nd port_name
+
+	for nd in "$@"; do
+		port_name=$(cat /sys/class/net/${nd}/phys_port_name 2> /dev/null)
+		if [ -z "$port_name" ]; then
+			port_name=$nd
+		fi
+		if [[ "$port_name" =~ ^p[0-9]+$ ]]; then
+			count=$((count+1))
+		fi
+	done
+
+	echo $count
+}
+
 stop_ipsec_services()
 {
 	# Stop IPsec-related services temporarily if active to remove offloaded IPsec bypass policies
@@ -1071,10 +1092,37 @@ if [ $num_of_sd_devs -gt 0 ]; then
 	debug "SD_DOMAIN_GROUPS: ${!SD_DOMAIN_GROUPS[*]} -> ${SD_DOMAIN_GROUPS[*]}"
 fi
 
+# Collect the netdevs of every device that is a bridge candidate, so the
+# number of uplinks exposed by the whole system is known before planning.
+ALL_BRIDGE_PORTS=""
+for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+	dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+	if [ -n "$dev_ports" ]; then
+		ALL_BRIDGE_PORTS="$ALL_BRIDGE_PORTS $dev_ports"
+	fi
+done
+num_of_uplinks=$(count_uplink_netdevs $ALL_BRIDGE_PORTS)
+debug "num_of_uplinks: $num_of_uplinks, all bridge ports:$ALL_BRIDGE_PORTS"
+
 num_of_ovs_bridges=0
 i=1
 
-if [ $num_of_sd_devs -gt 0 ]; then
+if [ $num_of_uplinks -eq 1 ] && [ $(echo $ALL_BRIDGE_PORTS | wc -w) -gt 1 ]; then
+	# A single uplink cannot be shared by several bridges: all representors
+	# belong to the one bridge that owns it, no matter how many PCI functions
+	# they are spread over. This is the case for a Socket Direct group, whose
+	# halves live on different PCI domains but share one eswitch and one cage.
+	if [ -z "$OVS_BRIDGE1" ]; then
+		OVS_BRIDGE1=ovsbr1
+	fi
+	if [ -z "$OVS_BRIDGE1_PORTS" ]; then
+		OVS_BRIDGE1_PORTS="$ALL_BRIDGE_PORTS"
+	fi
+
+	info "Single uplink detected: configuring one bridge $OVS_BRIDGE1 for devices: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
+	debug "Single-uplink bridge $OVS_BRIDGE1: ports=$OVS_BRIDGE1_PORTS"
+	num_of_ovs_bridges=1
+elif [ $num_of_sd_devs -gt 0 ]; then
 	# Socket Direct mode: create one bridge per PCI domain,
 	# combining netdevs from all PCI devices in the same domain.
 	for domain in $(echo "${!SD_DOMAIN_GROUPS[@]}" | tr ' ' '\n' | sort); do
@@ -1410,7 +1458,7 @@ do
 		else
 			info "port device $port for bridge $br_name is missing."
 			case $port in
-				pf*sf*)
+				*pf*sf*)
 					info "RDMA functionality is not expected to work without $port in $br_name"
 				;;
 				*)
