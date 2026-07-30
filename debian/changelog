@@ -1,3 +1,9 @@
+mlnx-tools (26.07.1) UNRELEASED; urgency=medium
+
+  * Sync with mlnx_ofed_26_01_PS branch
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Thu, 30 Jul 2026 14:53:12 -0500
+
 mlnx-tools (26.04.1) UNRELEASED; urgency=medium
 
   * Sync with mlnx_ofed branch
