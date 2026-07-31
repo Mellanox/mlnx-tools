@@ -110,6 +110,7 @@ class SF:
         self.sf_netdev = None
         self.rdma_dev = None
         self.controller = args.controller or None
+        self.external = False
 
         self.cpu_list = args.cpu_list or None
         self.info = {}
@@ -236,6 +237,10 @@ class SF:
         if result['status']:
             return result
 
+        if "external true" in result['output']:
+            self.external = True
+            sf_log("SF {} is external".format(self.sfindex), True)
+
         for line in result['output'].split('\n'):
             if 'pci/' + self.device not in line:
                 continue
@@ -279,7 +284,8 @@ class SF:
         if result['status']:
             return result
 
-        if not self.controller:
+        # External SFs (e.g. host/controller) have no local auxiliary device to bind
+        if not self.external:
             # Find the rdma device for the sf
             start = time.process_time()
             while True:
