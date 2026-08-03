@@ -784,17 +784,7 @@ if is_bf4 && [ ${#SD_DEVICES_LIST[@]} -gt 0 ]; then
 	if [ "X${ENABLE_SD_MERGED_ESWITCH}" != "Xno" ]; then
 		SD_MERGED_ESWITCH=1
 		info "BF4 SD merged eswitch mode: single OVS bridge on LAG master only."
-		# Configure silent mode on secondary ECPFs
-		local_is_first=1
-		for sd_dev in ${SD_DEVICES_LIST[@]}; do
-			if [ $local_is_first -eq 1 ]; then
-				local_is_first=0
-				info "SD merged eswitch: $sd_dev is LAG master (no silent mode)"
-				continue
-			fi
-			info "SD merged eswitch: Setting silent mode on secondary ECPF $sd_dev"
-			set_dev_param ${sd_dev} silent_mode 1 "SD Silent Mode:"
-		done
+
 		# Keep only the first (LAG master) device for bridge creation
 		DEVICE_LIST_FOR_OVS_BRIDGES=( "${DEVICE_LIST_FOR_OVS_BRIDGES[0]}" )
 	fi
