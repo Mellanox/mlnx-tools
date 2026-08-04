@@ -631,7 +631,7 @@ fi
 is_bf4()
 {
 	if [ -e /etc/mlnx-release ]; then
-		if [ $(lspci -nD -d 15b3: | grep -E "$BF4_DEVICES" | wc -l) -gt 0 ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "a2df" | wc -l) -gt 0 ]; then
 			return 0
 		fi
 	fi
