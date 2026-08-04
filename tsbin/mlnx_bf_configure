@@ -298,6 +298,30 @@ pci_function_digit_value()
 	esac
 }
 
+# Parallelizing legacy -> switchdev mode requires kernel version >= 6.17
+# due to global devlink locks being removed. Validate support of this
+# functionality by querying kernel version.
+supports_parallel_switchdev()
+{
+	local kver major minor
+
+	kver=$(uname -r)
+	major=${kver%%.*}
+	minor=${kver#*.}
+	minor=${minor%%[!0-9]*}
+
+	if [ -z "$major" ] || [ -z "$minor" ]; then
+		return 1
+	fi
+	if [ "$major" -gt 6 ]; then
+		return 0
+	fi
+	if [ "$major" -eq 6 ] && [ "$minor" -ge 17 ]; then
+		return 0
+	fi
+	return 1
+}
+
 is_dev_eth()
 {
 	dev=$1
@@ -655,25 +679,36 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		fi
 	done
 
-	# Phase 2 (parallel): switchdev transition + ct_max_offloaded_conns per candidate.
-	# This is the dominant cost of the original sequential loop; running it in
-	# parallel removes the per-device serialization.
+	# Phase 2: switchdev transition + ct_max_offloaded_conns per candidate.
+	# This is the dominant cost of the original sequential loop. On kernel 6.17
+	# and later it is run in parallel to remove the per-device serialization;
+	# on older kernels it stays sequential.
 	if [ "${#TO_SWITCHDEV_DEVS[@]}" -gt 0 ]; then
-		info "Switching ${#TO_SWITCHDEV_DEVS[@]} device(s) to switchdev mode in parallel: ${TO_SWITCHDEV_DEVS[*]}"
-		SWITCHDEV_PIDS=()
-		for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
-			(
+		if (supports_parallel_switchdev); then
+			info "Switching ${#TO_SWITCHDEV_DEVS[@]} device(s) to switchdev mode in parallel: ${TO_SWITCHDEV_DEVS[*]}"
+			SWITCHDEV_PIDS=()
+			for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
+				(
+					set_eswitch_mode ${dev} switchdev
+					rc=$?
+					set_dev_param ${dev} ct_max_offloaded_conns ${CT_MAX_OFFLOADED_CONNS}
+					exit $rc
+				) &
+				SWITCHDEV_PIDS+=( $! )
+			done
+			for pid in "${SWITCHDEV_PIDS[@]}"; do
+				wait "$pid"
+				RC=$((RC+$?))
+			done
+		else
+	# Fallback path for kernels without parallelized switchdev support
+			for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
 				set_eswitch_mode ${dev} switchdev
-				rc=$?
+				RC=$((RC+$?))
+
 				set_dev_param ${dev} ct_max_offloaded_conns ${CT_MAX_OFFLOADED_CONNS}
-				exit $rc
-			) &
-			SWITCHDEV_PIDS+=( $! )
-		done
-		for pid in "${SWITCHDEV_PIDS[@]}"; do
-			wait "$pid"
-			RC=$((RC+$?))
-		done
+			done
+		fi
 	fi
 
 	# Phase 3 (sequential): post-transition per-device state (counters, lists,
