@@ -463,7 +463,7 @@ count_uplink_netdevs()
 	local count=0
 	local nd port_name
 
-	for nd in "$@"; do
+	for nd in $(/bin/ls -1 /sys/class/net/); do
 		port_name=$(cat /sys/class/net/${nd}/phys_port_name 2> /dev/null)
 		if [ -z "$port_name" ]; then
 			port_name=$nd
@@ -1152,7 +1152,7 @@ for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
 		ALL_BRIDGE_PORTS="$ALL_BRIDGE_PORTS $dev_ports"
 	fi
 done
-num_of_uplinks=$(count_uplink_netdevs $ALL_BRIDGE_PORTS)
+num_of_uplinks=$(count_uplink_netdevs)
 debug "num_of_uplinks: $num_of_uplinks, all bridge ports:$ALL_BRIDGE_PORTS"
 
 num_of_ovs_bridges=0
