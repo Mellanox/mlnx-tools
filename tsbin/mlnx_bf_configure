@@ -480,6 +480,12 @@ start_ipsec_services()
 	done
 }
 
+# Source config file early to pick up FORCE_DPU_CONFIGURE before the host_en check.
+if [ -f /etc/mellanox/mlnx-bf.conf ]; then
+	. /etc/mellanox/mlnx-bf.conf
+fi
+FORCE_DPU_CONFIGURE=${FORCE_DPU_CONFIGURE:-"no"}
+
 pci_id=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 | head -1)
 host_en=$(mlxreg -d ${pci_id} --get --reg_name MMHI | grep host_en | awk '{print $NF}')
 
@@ -487,8 +493,12 @@ decimal=$(( host_en ))
 is_power_of_two=$(( (decimal & (decimal - 1)) == 0 ))
 
 if [[ $decimal != 0 && $is_power_of_two == 1 ]]; then
-	info "Detected Controller device. Exiting..."
-	exit 0
+	if [ "X${FORCE_DPU_CONFIGURE}" == "Xyes" ]; then
+		info "host_en=$host_en indicates Controller device, but FORCE_DPU_CONFIGURE=yes is set. Continuing..."
+	else
+		info "Detected Controller device. Exiting..."
+		exit 0
+	fi
 fi
 
 is_SecureBoot=0
@@ -508,9 +518,6 @@ if [ -x /usr/bin/mlxconfig ]; then
 	mftconfig=mlxconfig
 fi
 
-if [ -f /etc/mellanox/mlnx-bf.conf ]; then
-	. /etc/mellanox/mlnx-bf.conf
-fi
 IPSEC_FULL_OFFLOAD=${IPSEC_FULL_OFFLOAD:-"no"}
 LAG_HASH_MODE=${LAG_HASH_MODE:-"yes"}
 # On BF4, default to enabling eswitch multiport unless explicitly configured.
