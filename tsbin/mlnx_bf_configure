@@ -455,27 +455,6 @@ in_array() {
     return 1
 }
 
-# Count the uplink (physical port) netdevs among the given interfaces.
-# An uplink representor reports a phys_port_name of the form pN, while host PF
-# and SF representors report pfNhpf / pfNsfM style names.
-count_uplink_netdevs()
-{
-	local count=0
-	local nd port_name
-
-	for nd in $(/bin/ls -1 /sys/class/net/); do
-		port_name=$(cat /sys/class/net/${nd}/phys_port_name 2> /dev/null)
-		if [ -z "$port_name" ]; then
-			port_name=$nd
-		fi
-		if [[ "$port_name" =~ ^p[0-9]+$ ]]; then
-			count=$((count+1))
-		fi
-	done
-
-	echo $count
-}
-
 stop_ipsec_services()
 {
 	# Stop IPsec-related services temporarily if active to remove offloaded IPsec bypass policies
@@ -1120,23 +1099,7 @@ if [ ! -n "$vsctl" ]; then
 	exit 0
 fi
 
-max_num_of_ovs_bridges=$num_of_devs_switchdev
 num_of_sd_devs=${#SD_DEVICES_LIST[@]}
-if [ $num_of_sd_devs -gt 0 ] && [ $SD_MERGED_ESWITCH -eq 0 ]; then
-	if [ $num_of_sd_devs -eq 1 ]; then
-		max_num_of_sd_ovs_bridges=1
-	else
-		max_num_of_sd_ovs_bridges=2
-	fi
-fi
-
-# In SD merged eswitch mode, override to create only 1 bridge
-if [ $SD_MERGED_ESWITCH -eq 1 ]; then
-	max_num_of_ovs_bridges=1
-	max_num_of_sd_ovs_bridges=0
-fi
-
-debug "max_num_of_ovs_bridges: $max_num_of_ovs_bridges"
 
 # For Socket Direct, group devices by PCI domain so that all functions
 # on the same domain (e.g. 0006:01:00.0 and 0006:01:00.1) are combined
@@ -1333,7 +1296,7 @@ reapply_udev_settings()
 	fi
 
 	# Enable hw-tc-offload for all bridge ports dynamically
-	for i in `seq $num_of_devs_switchdev`
+	for i in `seq $num_of_ovs_bridges`
 	do
 		br_ports=OVS_BRIDGE${i}_PORTS
 		br_ports=${!br_ports}
