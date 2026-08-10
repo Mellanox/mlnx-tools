@@ -310,7 +310,9 @@ supports_parallel_switchdev()
 	minor=${kver#*.}
 	minor=${minor%%[!0-9]*}
 
-	if [ -z "$major" ] || [ -z "$minor" ]; then
+	# Anything we cannot parse as <major>.<minor> falls back to the
+	# sequential path.
+	if ! [[ "$major" =~ ^[0-9]+$ ]] || ! [[ "$minor" =~ ^[0-9]+$ ]]; then
 		return 1
 	fi
 	if [ "$major" -gt 6 ]; then
@@ -319,6 +321,40 @@ supports_parallel_switchdev()
 	if [ "$major" -eq 6 ] && [ "$minor" -ge 17 ]; then
 		return 0
 	fi
+	return 1
+}
+
+# Decide whether the legacy -> switchdev transitions run in parallel.
+# Controlled by PARALLEL_SWITCHDEV_ENABLE (default "yes"), case insensitive:
+#   yes|1   - parallelize only if the kernel supports it (default)
+#   no|0    - always serialize, even on a supported kernel
+#   force   - always parallelize, even if the kernel looks unsupported
+# Unrecognized values are treated as the default.
+parallel_switchdev_enabled()
+{
+	local mode=`echo "${PARALLEL_SWITCHDEV_ENABLE}" | tr '[:lower:]' '[:upper:]'`
+
+	case "${mode}" in
+		FORCE)
+			info "PARALLEL_SWITCHDEV_ENABLE=${mode}: parallelizing switchdev transitions regardless of kernel $(uname -r)"
+			return 0
+			;;
+		NO|0)
+			info "PARALLEL_SWITCHDEV_ENABLE=${mode}: switchdev transitions will run sequentially"
+			return 1
+			;;
+		YES|1)
+			;;
+		*)
+			error "Unrecognized PARALLEL_SWITCHDEV_ENABLE value '${mode}'. Falling back to kernel version detection."
+			;;
+	esac
+
+	if (supports_parallel_switchdev); then
+		return 0
+	fi
+
+	info "Kernel $(uname -r) predates 6.17: switchdev transitions will run sequentially"
 	return 1
 }
 
@@ -541,6 +577,7 @@ if [ -z "${ENABLE_ESWITCH_MULTIPORT}" ]; then
 		ENABLE_ESWITCH_MULTIPORT="no"
 	fi
 fi
+PARALLEL_SWITCHDEV_ENABLE=${PARALLEL_SWITCHDEV_ENABLE:-"yes"}
 MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
 LOG_LEVEL=${LOG_LEVEL:-"info"}
 SWITCHDEV_DEVICES_LIST=()
@@ -680,11 +717,12 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	done
 
 	# Phase 2: switchdev transition + ct_max_offloaded_conns per candidate.
-	# This is the dominant cost of the original sequential loop. On kernel 6.17
-	# and later it is run in parallel to remove the per-device serialization;
-	# on older kernels it stays sequential.
+	# This is the dominant cost of the original sequential loop. It is run in
+	# parallel to remove the per-device serialization when
+	# parallel_switchdev_enabled says so (PARALLEL_SWITCHDEV_ENABLE plus kernel
+	# version); otherwise it stays sequential.
 	if [ "${#TO_SWITCHDEV_DEVS[@]}" -gt 0 ]; then
-		if (supports_parallel_switchdev); then
+		if (parallel_switchdev_enabled); then
 			info "Switching ${#TO_SWITCHDEV_DEVS[@]} device(s) to switchdev mode in parallel: ${TO_SWITCHDEV_DEVS[*]}"
 			SWITCHDEV_PIDS=()
 			for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
@@ -701,7 +739,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 				RC=$((RC+$?))
 			done
 		else
-	# Fallback path for kernels without parallelized switchdev support
+			# Fallback path when parallel switchdev is unsupported or disabled
 			for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
 				set_eswitch_mode ${dev} switchdev
 				RC=$((RC+$?))
