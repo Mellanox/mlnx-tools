@@ -332,7 +332,7 @@ supports_parallel_switchdev()
 # Unrecognized values are treated as the default.
 parallel_switchdev_enabled()
 {
-	local mode=`echo "${PARALLEL_SWITCHDEV_ENABLE}" | tr '[:lower:]' '[:upper:]'`
+	local mode="${PARALLEL_SWITCHDEV_ENABLE^^}"
 
 	case "${mode}" in
 		FORCE)
@@ -721,6 +721,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	# parallel to remove the per-device serialization when
 	# parallel_switchdev_enabled says so (PARALLEL_SWITCHDEV_ENABLE plus kernel
 	# version); otherwise it stays sequential.
+
 	if [ "${#TO_SWITCHDEV_DEVS[@]}" -gt 0 ]; then
 		if (parallel_switchdev_enabled); then
 			info "Switching ${#TO_SWITCHDEV_DEVS[@]} device(s) to switchdev mode in parallel: ${TO_SWITCHDEV_DEVS[*]}"
