@@ -738,8 +738,16 @@ if is_bf4 && [ ${#SD_DEVICES_LIST[@]} -gt 0 ]; then
 		SD_MERGED_ESWITCH=1
 		info "BF4 SD merged eswitch mode: single OVS bridge on LAG master only."
 
-		# Keep only the first (LAG master) device for bridge creation
-		DEVICE_LIST_FOR_OVS_BRIDGES=( "${DEVICE_LIST_FOR_OVS_BRIDGES[0]}" )
+		# Preserve non-SD devices (e.g. CX-9) for their own bridges,
+		# but remove all SD devices — the merged bridge collects their
+		# ports at bridge-planning time from SD_DEVICES_LIST directly.
+		new_list=()
+		for dev in "${DEVICE_LIST_FOR_OVS_BRIDGES[@]}"; do
+			if ! in_array "$dev" "${SD_DEVICES_LIST[@]}"; then
+				new_list+=( "$dev" )
+			fi
+		done
+		DEVICE_LIST_FOR_OVS_BRIDGES=( "${new_list[@]}" )
 	fi
 fi
 
@@ -1052,36 +1060,59 @@ if [ $num_of_sd_devs -gt 0 ]; then
 	debug "SD_DOMAIN_GROUPS: ${!SD_DOMAIN_GROUPS[*]} -> ${SD_DOMAIN_GROUPS[*]}"
 fi
 
-# Collect the netdevs of every device that is a bridge candidate, so the
-# number of uplinks exposed by the whole system is known before planning.
-ALL_BRIDGE_PORTS=""
-for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
-	dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
-	if [ -n "$dev_ports" ]; then
-		ALL_BRIDGE_PORTS="$ALL_BRIDGE_PORTS $dev_ports"
-	fi
-done
-num_of_uplinks=$(count_uplink_netdevs)
-debug "num_of_uplinks: $num_of_uplinks, all bridge ports:$ALL_BRIDGE_PORTS"
-
 num_of_ovs_bridges=0
 i=1
 
-if [ $num_of_uplinks -eq 1 ] && [ $(echo $ALL_BRIDGE_PORTS | wc -w) -gt 1 ]; then
-	# A single uplink cannot be shared by several bridges: all representors
-	# belong to the one bridge that owns it, no matter how many PCI functions
-	# they are spread over. This is the case for a Socket Direct group, whose
-	# halves live on different PCI domains but share one eswitch and one cage.
-	if [ -z "$OVS_BRIDGE1" ]; then
-		OVS_BRIDGE1=ovsbr1
-	fi
-	if [ -z "$OVS_BRIDGE1_PORTS" ]; then
-		OVS_BRIDGE1_PORTS="$ALL_BRIDGE_PORTS"
+if [ $SD_MERGED_ESWITCH -eq 1 ]; then
+	# SD merged eswitch: all BF4 SD representors belong to a single bridge
+	# since the eswitch instances are merged and share one uplink cage.
+	# Collect ports from ALL SD devices (both ECPFs share one merged eswitch).
+	sd_all_ports=""
+	for sd_dev in "${SD_DEVICES_LIST[@]}"; do
+		dev_ports=$(get_mlnx_netdevs_by_pci_id $sd_dev)
+		if [ -n "$dev_ports" ]; then
+			sd_all_ports="$sd_all_ports $dev_ports"
+		fi
+	done
+	sd_port_count=$(echo $sd_all_ports | wc -w)
+	if [ $sd_port_count -gt 1 ]; then
+		if [ -z "$OVS_BRIDGE1" ]; then
+			OVS_BRIDGE1=ovsbr1
+		fi
+		if [ -z "$OVS_BRIDGE1_PORTS" ]; then
+			OVS_BRIDGE1_PORTS="$sd_all_ports"
+		fi
+
+		info "SD merged eswitch: configuring bridge $OVS_BRIDGE1 for SD devices: ${SD_DEVICES_LIST[*]}"
+		debug "SD merged bridge $OVS_BRIDGE1: ports=$OVS_BRIDGE1_PORTS"
+		num_of_ovs_bridges=1
+		i=2
 	fi
 
-	info "Single uplink detected: configuring one bridge $OVS_BRIDGE1 for devices: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
-	debug "Single-uplink bridge $OVS_BRIDGE1: ports=$OVS_BRIDGE1_PORTS"
-	num_of_ovs_bridges=1
+	# Now create bridges for non-SD devices (e.g. CX-9)
+	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+		dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+		port_count=$(echo $dev_ports | wc -w)
+		if [ $port_count -le 1 ]; then
+			debug "Skipping bridge for device $dev: only $port_count port(s), bridge not needed."
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$dev_ports\""
+		fi
+
+		debug "Non-SD bridge ovsbr${i} for device $dev: ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
 elif [ $num_of_sd_devs -gt 0 ]; then
 	# Socket Direct mode: create one bridge per PCI domain,
 	# combining netdevs from all PCI devices in the same domain.
