@@ -459,6 +459,14 @@ start_ipsec_services()
 	done
 }
 
+is_bf3()
+{
+	if [ $(lspci -nD -d 15b3: | grep -E "a2dc" | wc -l) -gt 0 ]; then
+		return 0
+	fi
+	return 1
+}
+
 # Source config file early to pick up FORCE_DPU_CONFIGURE before the host_en check.
 if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 	. /etc/mellanox/mlnx-bf.conf
@@ -475,8 +483,10 @@ if [[ $decimal != 0 && $is_power_of_two == 1 ]]; then
 	if [ "X${FORCE_DPU_CONFIGURE}" == "Xyes" ]; then
 		info "host_en=$host_en indicates Controller device, but FORCE_DPU_CONFIGURE=yes is set. Continuing..."
 	else
-		info "Detected Controller device. Exiting..."
-		exit 0
+		if is_bf3; then
+			info "Detected Controller device. Exiting..."
+			exit 0
+		fi
 	fi
 fi
 
