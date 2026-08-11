@@ -1135,30 +1135,39 @@ num_of_ovs_bridges=0
 i=1
 
 if [ $SD_MERGED_ESWITCH -eq 1 ]; then
-	# SD merged eswitch: all BF4 SD representors belong to a single bridge
-	# since the eswitch instances are merged and share one uplink cage.
-	# Collect ports from ALL SD devices (both ECPFs share one merged eswitch).
-	sd_all_ports=""
-	for sd_dev in "${SD_DEVICES_LIST[@]}"; do
-		dev_ports=$(get_mlnx_netdevs_by_pci_id $sd_dev)
-		if [ -n "$dev_ports" ]; then
-			sd_all_ports="$sd_all_ports $dev_ports"
-		fi
-	done
-	sd_port_count=$(echo $sd_all_ports | wc -w)
-	if [ $sd_port_count -gt 1 ]; then
-		if [ -z "$OVS_BRIDGE1" ]; then
-			OVS_BRIDGE1=ovsbr1
-		fi
-		if [ -z "$OVS_BRIDGE1_PORTS" ]; then
-			OVS_BRIDGE1_PORTS="$sd_all_ports"
+	# SD merged eswitch: each PCI link (domain) gets its own bridge.
+	# Devices on the same domain share a merged eswitch, but uplinks from
+	# different PCI links must NOT be placed under the same OVS bridge.
+	for domain in $(echo "${!SD_DOMAIN_GROUPS[*]}" | tr ' ' '\n' | sort); do
+		domain_devs="${SD_DOMAIN_GROUPS[$domain]}"
+		domain_ports=""
+		for sd_dev in $domain_devs; do
+			dev_ports=$(get_mlnx_netdevs_by_pci_id $sd_dev)
+			if [ -n "$dev_ports" ]; then
+				domain_ports="$domain_ports $dev_ports"
+			fi
+		done
+		domain_port_count=$(echo $domain_ports | wc -w)
+		if [ $domain_port_count -le 1 ]; then
+			debug "SD merged eswitch: skipping domain $domain, only $domain_port_count port(s)"
+			continue
 		fi
 
-		info "SD merged eswitch: configuring bridge $OVS_BRIDGE1 for SD devices: ${SD_DEVICES_LIST[*]}"
-		debug "SD merged bridge $OVS_BRIDGE1: ports=$OVS_BRIDGE1_PORTS"
-		num_of_ovs_bridges=1
-		i=2
-	fi
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$domain_ports\""
+		fi
+
+		info "SD merged eswitch: configuring bridge ${!bridge_var} for domain $domain: devices=$domain_devs"
+		debug "SD merged bridge ${!bridge_var} (domain $domain): ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
 
 	# Now create bridges for non-SD devices (e.g. CX-9)
 	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
