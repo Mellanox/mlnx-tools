@@ -90,6 +90,7 @@ print("Initializing mlnx_perf...")
 # keys must be ordered, so can't use 'for key in map'
 keys = []
 prev = get_stats(options.intf, keys)
+prev_time = time.monotonic()
 
 for key in keys:
 	m = re.match(r"tx(\d+)_bytes", key)
@@ -109,11 +110,12 @@ while count != 0:
 	count -= 1
 
 	curr = get_stats(options.intf)
+	curr_time = time.monotonic()
 
 	if ('timestamp' in curr and 'timestamp' in prev):
 		secs = float(curr['timestamp'] - prev['timestamp']) / 1000
 	else:
-		secs = float(options.interval)
+		secs = curr_time - prev_time
 
 	up_bw = defaultdict(int)
 	up_packets = defaultdict(int)
@@ -148,6 +150,7 @@ while count != 0:
 				total_packets += bw
 
 	prev = curr
+	prev_time = curr_time
 	if something_printed:
 		for up in up_bw:
 			# Calculate throughput rate in Mbps from the Bytes counter
