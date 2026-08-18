@@ -724,43 +724,11 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		fi
 	done
 
-	# Set esw_multiport after all ECPFs have been switched to switchdev mode.
-	# This ordering ensures all eswitch instances are properly initialized
-	# before the multi-port eswitch LAG is configured (required for ASTRA).
-	#
-	# In ASTRA mode, esw_multiport must be set on:
-	# 1. The BF4 device (0xa2df) — for N-S multi-port eswitch (SD or Lupine dual-link)
-	# 2. The last ECPF of EVERY CX-9 SuperNIC (0x1025) — for E-W multi-plane LAG,
-	#    only when LAG_RESOURCE_ALLOCATION is PRE_ALLOCATION(1)
-	# Both coexist on Grace in ASTRA configurations.
-
-	# BF4 (N-S) esw_multiport
-	if [ -n "$esw_multiport_device" ]; then
-		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
-			info "Enabling ESW Multiport on BF4 device $esw_multiport_device"
-			set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
-		else
-			if is_sd_mode ${esw_multiport_device}; then
-				info "Enabling ESW Multiport for SD device $esw_multiport_device"
-				set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
-			fi
-		fi
-	fi
-
-	# CX-9 (E-W) esw_multiport — one per physical SuperNIC (last ECPF on each PCI domain:bus)
-	if [ ${#CX9_DEV_LAST_ECPF[@]} -gt 0 ]; then
-		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
-			for cx9_dev in $(echo "${!CX9_DEV_LAST_ECPF[@]}" | tr ' ' '\n' | sort); do
-				lag_master="${CX9_DEV_LAST_ECPF[$cx9_dev]}"
-				if is_lag_resource_pre_allocation ${lag_master}; then
-					info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (device $cx9_dev)"
-					set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
-				else
-					info "Skipping ESW Multiport on CX-9 ECPF $lag_master (device $cx9_dev): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1)"
-				fi
-			done
-		fi
-	fi
+	# NOTE: esw_multiport is enabled later, after SF creation. Creating an SF
+	# on a device that is already a member of a multi-port eswitch LAG is
+	# rejected by some kernels (devlink: "Invalid controller supplied"), so
+	# all SFs must exist before the LAG is configured. See the deferred
+	# "Enable ESW Multiport" section below.
 
 	start_ipsec_services
 fi
@@ -942,13 +910,18 @@ create_snap_dma_sf()
 	fi
 
 	# Create SF with RoCE disabled, no netdev
-	mlnx-sf --action create --device $target_ecpf \
+	local create_output
+	create_output=$(mlnx-sf --action create --device $target_ecpf \
 		--sfnum $SNAP_DMA_SF_NUM \
 		--hwaddr $snap_dma_sf_mac \
-		--disable-roce 2>/dev/null
+		--disable-roce 2>&1)
 	local rc=$?
 	if [ $rc -ne 0 ]; then
-		debug "SNAP DMA SF on $target_ecpf sfnum=$SNAP_DMA_SF_NUM may already exist or failed (rc=$rc)"
+		if (devlink port show 2>/dev/null | grep -q "pci/${target_ecpf}/[0-9]*: .* sfnum ${SNAP_DMA_SF_NUM} "); then
+			info "SNAP DMA SF on $target_ecpf sfnum=$SNAP_DMA_SF_NUM already exists"
+		else
+			error "Failed to create SNAP DMA SF on $target_ecpf sfnum=$SNAP_DMA_SF_NUM (rc=$rc): $create_output"
+		fi
 		return 1
 	fi
 
@@ -1041,6 +1014,57 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
 		sleep 0.1
 	done
 	. /etc/mellanox/mlnx-sf.conf
+
+	# Verify that every SF requested in mlnx-sf.conf was actually created.
+	# The commands above are sourced, so their failures are otherwise
+	# invisible in the system log.
+	while read -r sf_dev sf_num; do
+		if ! (devlink port show 2>/dev/null | grep -q "pci/${sf_dev}/[0-9]*: .* sfnum ${sf_num} \?"); then
+			error "SF sfnum=${sf_num} on ${sf_dev} requested in /etc/mellanox/mlnx-sf.conf was not created"
+		fi
+	done < <(grep -oE -- '--device +[0-9a-fA-F:.]+ +--sfnum +[0-9]+' /etc/mellanox/mlnx-sf.conf 2>/dev/null | awk '{print $2, $4}')
+fi
+
+# Enable ESW Multiport after all ECPFs are in switchdev mode AND after all
+# SFs have been created:
+# - all eswitch instances must be initialized before the multi-port eswitch
+#   LAG is configured (required for ASTRA);
+# - SF creation on a device that is already an mpesw LAG member is rejected
+#   by some kernels (devlink: "Invalid controller supplied"), so the LAG must
+#   only be formed once the SFs exist.
+#
+# In ASTRA mode, esw_multiport must be set on:
+# 1. The BF4 device (0xa2df) — for N-S multi-port eswitch (SD or Lupine dual-link)
+# 2. The last ECPF of EVERY CX-9 SuperNIC (0x1025) — for E-W multi-plane LAG,
+#    only when LAG_RESOURCE_ALLOCATION is PRE_ALLOCATION(1)
+# Both coexist on Grace in ASTRA configurations.
+
+# BF4 (N-S) esw_multiport
+if [ -n "$esw_multiport_device" ]; then
+	if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
+		info "Enabling ESW Multiport on BF4 device $esw_multiport_device"
+		set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
+	else
+		if is_sd_mode ${esw_multiport_device}; then
+			info "Enabling ESW Multiport for SD device $esw_multiport_device"
+			set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
+		fi
+	fi
+fi
+
+# CX-9 (E-W) esw_multiport — one per physical SuperNIC (last ECPF on each PCI domain:bus)
+if [ ${#CX9_DEV_LAST_ECPF[@]} -gt 0 ]; then
+	if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
+		for cx9_dev in $(echo "${!CX9_DEV_LAST_ECPF[@]}" | tr ' ' '\n' | sort); do
+			lag_master="${CX9_DEV_LAST_ECPF[$cx9_dev]}"
+			if is_lag_resource_pre_allocation ${lag_master}; then
+				info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (device $cx9_dev)"
+				set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
+			else
+				info "Skipping ESW Multiport on CX-9 ECPF $lag_master (device $cx9_dev): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1)"
+			fi
+		done
+	fi
 fi
 
 HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
