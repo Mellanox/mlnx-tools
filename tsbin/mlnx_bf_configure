@@ -842,45 +842,65 @@ create_snap_dma_sf()
 
 	# --- Identify the target ECPF on the 2nd PCI link ---
 	# a. List all switchdev ECPFs (ASTRA/HW multiplane excluded upstream)
-	# b. Find PCI link (domain:bus) of each ECPF
-	# c. Find RDMA device for each ECPF
-	# d. Eliminate ECPFs that have an RDMA device
-	# e. Eliminate ECPFs sharing the same PCI link as RDMA-bearing ECPFs
-	# f. Pick the first remaining ECPF
-	local links_with_rdma=""
-	local dev pci_link rdma_dev
-
-	for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
-		pci_link=$(echo $dev | cut -d: -f1-2)
-		rdma_dev=$(/bin/ls /sys/bus/pci/devices/${dev}/infiniband/ 2>/dev/null | head -1)
-		if [ -n "$rdma_dev" ]; then
-			links_with_rdma="$links_with_rdma $pci_link"
-			debug "SNAP DMA SF: ECPF $dev has RDMA device $rdma_dev on link $pci_link"
-		fi
-	done
-
+	# b. Find the PCI link (domain:bus) of each ECPF
+	# c. Find the PCI link of the designated mpesw LAG master ECPF
+	# d. Pick the first ECPF whose PCI link differs from the master's link
+	# Selecting by PCI link does not depend on whether the mpesw LAG is
+	# already formed, so it works when SFs are created before esw_multiport
+	# is enabled.
+	#
+	# Fallback, only when no LAG master is designated:
+	# e. Find the RDMA device of each ECPF
+	# f. Eliminate ECPFs that have an RDMA device
+	# g. Eliminate ECPFs sharing the same PCI link as RDMA-bearing ECPFs
+	# h. Pick the first remaining ECPF
+	# Note: the fallback identifies the 2nd link only while the mpesw LAG
+	# is active (only then does the LAG slave lack its own RDMA device).
 	local target_ecpf=""
-	local on_rdma_link rdma_link
-	for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
-		# Skip if this ECPF has an RDMA device
-		rdma_dev=$(/bin/ls /sys/bus/pci/devices/${dev}/infiniband/ 2>/dev/null | head -1)
-		if [ -n "$rdma_dev" ]; then
-			continue
-		fi
-		# Skip if this ECPF is on the same PCI link as one with RDMA
-		pci_link=$(echo $dev | cut -d: -f1-2)
-		on_rdma_link=0
-		for rdma_link in $links_with_rdma; do
-			if [ "$pci_link" == "$rdma_link" ]; then
-				on_rdma_link=1
+	local dev pci_link master_link
+
+	if [ -n "$esw_multiport_device" ]; then
+		master_link=$(echo $esw_multiport_device | cut -d: -f1-2)
+		for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
+			pci_link=$(echo $dev | cut -d: -f1-2)
+			if [ "$pci_link" != "$master_link" ]; then
+				target_ecpf=$dev
 				break
 			fi
 		done
-		if [ $on_rdma_link -eq 0 ]; then
-			target_ecpf=$dev
-			break
-		fi
-	done
+	else
+		# Fallback when no LAG master is designated: pick an ECPF whose
+		# PCI link has no RDMA device.
+		local links_with_rdma="" rdma_dev rdma_link on_rdma_link
+		for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
+			pci_link=$(echo $dev | cut -d: -f1-2)
+			rdma_dev=$(/bin/ls /sys/bus/pci/devices/${dev}/infiniband/ 2>/dev/null | head -1)
+			if [ -n "$rdma_dev" ]; then
+				links_with_rdma="$links_with_rdma $pci_link"
+				debug "SNAP DMA SF: ECPF $dev has RDMA device $rdma_dev on link $pci_link"
+			fi
+		done
+		for dev in ${SWITCHDEV_DEVICES_LIST[@]}; do
+			# Skip if this ECPF has an RDMA device
+			rdma_dev=$(/bin/ls /sys/bus/pci/devices/${dev}/infiniband/ 2>/dev/null | head -1)
+			if [ -n "$rdma_dev" ]; then
+				continue
+			fi
+			# Skip if this ECPF is on the same PCI link as one with RDMA
+			pci_link=$(echo $dev | cut -d: -f1-2)
+			on_rdma_link=0
+			for rdma_link in $links_with_rdma; do
+				if [ "$pci_link" == "$rdma_link" ]; then
+					on_rdma_link=1
+					break
+				fi
+			done
+			if [ $on_rdma_link -eq 0 ]; then
+				target_ecpf=$dev
+				break
+			fi
+		done
+	fi
 
 	if [ -z "$target_ecpf" ]; then
 		debug "SNAP DMA SF: no eligible 2nd-link ECPF found, skipping"
