@@ -325,7 +325,7 @@ supports_parallel_switchdev()
 }
 
 # Decide whether the legacy -> switchdev transitions run in parallel.
-# Controlled by PARALLEL_SWITCHDEV_ENABLE (default "yes"), case insensitive:
+# Controlled by PARALLEL_SWITCHDEV_ENABLE (default "no"), case insensitive:
 #   yes|1   - parallelize only if the kernel supports it (default)
 #   no|0    - always serialize, even on a supported kernel
 #   force   - always parallelize, even if the kernel looks unsupported
@@ -577,7 +577,7 @@ if [ -z "${ENABLE_ESWITCH_MULTIPORT}" ]; then
 		ENABLE_ESWITCH_MULTIPORT="no"
 	fi
 fi
-PARALLEL_SWITCHDEV_ENABLE=${PARALLEL_SWITCHDEV_ENABLE:-"yes"}
+PARALLEL_SWITCHDEV_ENABLE=${PARALLEL_SWITCHDEV_ENABLE:-"no"}
 MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
 LOG_LEVEL=${LOG_LEVEL:-"info"}
 SWITCHDEV_DEVICES_LIST=()
