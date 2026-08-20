@@ -287,9 +287,9 @@ class SF:
         # External SFs (e.g. host/controller) have no local auxiliary device to bind
         if not self.external:
             # Find the rdma device for the sf
-            start = time.process_time()
+            start = time.monotonic()
             while True:
-                if time.process_time() - start > RDMA_DEV_TIMEOUT:
+                if time.monotonic() - start > RDMA_DEV_TIMEOUT:
                     break
                 self.aux_dev = lookup_aux_dev(self.device, self.sfnum)
                 if self.aux_dev:
