@@ -45,7 +45,7 @@ MLXREG = '/usr/bin/mlxreg'
 MLXDEVM = 'devlink'
 DEVLINK = 'devlink'
 SUPPORTED_ACTIONS=["create", "show", "delete"]
-RDMA_DEV_TIMEOUT = 120
+RDMA_DEV_TIMEOUT = 30
 DEVLINK_DEV_TIMEOUT = 20
 SF_CFG_DRIVER_TIMEOUT = 20
 
