@@ -322,9 +322,9 @@ class SF:
                     sf_log("Unexpected error:", sys.exc_info()[0])
 
             # Wait for devlink to see SF before running devlink commands
-            start = time.process_time()
+            start = time.monotonic()
             while True:
-                if time.process_time() - start > DEVLINK_DEV_TIMEOUT:
+                if time.monotonic() - start > DEVLINK_DEV_TIMEOUT:
                     sf_log("WARNING: timed out waiting for SF device {} to appear: {}".format(self.aux_dev, result))
                     break
 
