@@ -111,6 +111,7 @@ class SF:
         self.rdma_dev = None
         self.controller = args.controller or None
         self.external = False
+        self.assume_external = False
 
         self.cpu_list = args.cpu_list or None
         self.info = {}
@@ -289,63 +290,66 @@ class SF:
             start = time.monotonic()
             while True:
                 if time.monotonic() - start > RDMA_DEV_TIMEOUT:
+                    sf_log("WARNING: timed out waiting for the rdma device to appear for SF {} on device {}. Assuming external SF.".format(self.sfnum, self.device), True)
+                    self.assume_external = True
                     break
                 self.aux_dev = lookup_aux_dev(self.device, self.sfnum)
                 if self.aux_dev:
                     break
                 time.sleep(0.001)
 
-            # Wait for sf_cfg link to be created
-            start = time.perf_counter()
-            while not os.path.exists("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev)):
-                if time.perf_counter() - start >= SF_CFG_DRIVER_TIMEOUT:
-                    sf_log("ERROR: timed out waiting for the config driver /sys/bus/auxiliary/devices/{}/driver to appear".format(self.aux_dev), True)
-                    sf_log("ERROR: Failed to create SF {} for device {}".format(self.sfnum, self.device), True)
-                    self.delete()
-                    sys.exit(1)
-                time.sleep(0.01)
+            if not self.assume_external:
+                # Wait for sf_cfg link to be created
+                start = time.perf_counter()
+                while not os.path.exists("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev)):
+                    if time.perf_counter() - start >= SF_CFG_DRIVER_TIMEOUT:
+                        sf_log("ERROR: timed out waiting for the config driver /sys/bus/auxiliary/devices/{}/driver to appear".format(self.aux_dev), True)
+                        sf_log("ERROR: Failed to create SF {} for device {}".format(self.sfnum, self.device), True)
+                        self.delete()
+                        sys.exit(1)
+                    time.sleep(0.01)
 
-            # Unbind the SF from the default config driver and bind the actual SF driver
-            if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
-                try:
-                    fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf_cfg/unbind"
-                    with open(fname, 'w') as f:
-                        f.write(self.aux_dev)
-                    fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf/bind"
-                    with open(fname, 'w') as f:
-                        f.write(self.aux_dev)
-                except IOError as e:
-                    sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
-                except FileNotFoundError:
-                    sf_log("ERROR: File {} does not exist".format(fname))
-                except:
-                    sf_log("Unexpected error:", sys.exc_info()[0])
+                # Unbind the SF from the default config driver and bind the actual SF driver
+                if os.path.basename(os.readlink("/sys/bus/auxiliary/devices/{}/driver".format(self.aux_dev))) == "mlx5_core.sf_cfg":
+                    try:
+                        fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf_cfg/unbind"
+                        with open(fname, 'w') as f:
+                            f.write(self.aux_dev)
+                        fname = "/sys/bus/auxiliary/drivers/mlx5_core.sf/bind"
+                        with open(fname, 'w') as f:
+                            f.write(self.aux_dev)
+                    except IOError as e:
+                        sf_log("I/O error({0}): {1}".format(e.errno, e.strerror))
+                    except FileNotFoundError:
+                        sf_log("ERROR: File {} does not exist".format(fname))
+                    except:
+                        sf_log("Unexpected error:", sys.exc_info()[0])
 
-            # Wait for devlink to see SF before running devlink commands
-            start = time.monotonic()
-            while True:
-                if time.monotonic() - start > DEVLINK_DEV_TIMEOUT:
-                    sf_log("WARNING: timed out waiting for SF device {} to appear: {}".format(self.aux_dev, result))
-                    break
+                # Wait for devlink to see SF before running devlink commands
+                start = time.monotonic()
+                while True:
+                    if time.monotonic() - start > DEVLINK_DEV_TIMEOUT:
+                        sf_log("WARNING: timed out waiting for SF device {} to appear: {}".format(self.aux_dev, result))
+                        break
 
-                cmd = DEVLINK + " dev show auxiliary/{}".format(self.aux_dev)
-                result['status'], result['output'] = get_status_output(cmd, self.verbose)
-                if result['status'] == 0:
-                    break
+                    cmd = DEVLINK + " dev show auxiliary/{}".format(self.aux_dev)
+                    result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                    if result['status'] == 0:
+                        break
 
-                time.sleep(0.05)
+                    time.sleep(0.05)
 
-            if self.cpu_list:
-                cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
-                        self.aux_dev, self.cpu_list
-                        )
-                result['status'], result['output'] = get_status_output(cmd, self.verbose)
-                if result['status']:
-                    return result
-                cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
-                result['status'], result['output'] = get_status_output(cmd, self.verbose)
-                if result['status']:
-                    return result
+                if self.cpu_list:
+                    cmd = MLXDEVM + " dev param set auxiliary/{} name cpu_affinity value {} cmode driverinit".format(
+                            self.aux_dev, self.cpu_list
+                            )
+                    result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                    if result['status']:
+                        return result
+                    cmd = DEVLINK + " dev reload auxiliary/{}".format(self.aux_dev)
+                    result['status'], result['output'] = get_status_output(cmd, self.verbose)
+                    if result['status']:
+                        return result
 
 
         result["output"] = "Created SF: index={} hw_addr={} sfnum={} netif={}".format(self.sfindex, self.hw_addr or "00:00:00:00:00:00", self.sfnum, self.netif)
