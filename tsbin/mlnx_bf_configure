@@ -941,10 +941,21 @@ create_snap_dma_sf()
 		return 1
 	fi
 
+	# Workaround: the driver requires --controller when creating an SF on
+	# the 2nd PCI link ECPF. In SD mode the 2nd host uses controller 4;
+	# in non-SD it uses controller 3.
+	local ctrl_opt=""
+	if is_sd_mode ${target_ecpf}; then
+		ctrl_opt="--controller 4"
+	else
+		ctrl_opt="--controller 3"
+	fi
+
 	# Create SF with RoCE disabled, no netdev
 	mlnx-sf --action create --device $target_ecpf \
 		--sfnum $SNAP_DMA_SF_NUM \
 		--hwaddr $snap_dma_sf_mac \
+		$ctrl_opt \
 		--disable-roce 2>/dev/null
 	local rc=$?
 	if [ $rc -ne 0 ]; then
