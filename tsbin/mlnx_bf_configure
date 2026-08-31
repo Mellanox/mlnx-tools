@@ -390,7 +390,7 @@ is_sd_mode()
 	return 1
 }
 
-# Check if LAG_RESOURCE_ALLOCATION is set to PRE_ALLOCATION(1)
+# Check if LAG_RESOURCE_ALLOCATION is set to PRE_ALLOCATION(1) or PRE_ALLOCATION_QA(2)
 is_lag_resource_pre_allocation()
 {
 	dev=$1
@@ -398,7 +398,7 @@ is_lag_resource_pre_allocation()
 
 	mft_output=$(run_mlxconfig "$mftconfig -d ${dev} -e q LAG_RESOURCE_ALLOCATION")
 
-	if (echo "$mft_output" | grep -o LAG_RESOURCE_ALLOCATION.* | awk '{print$3}' | grep -q "PRE_ALLOCATION(1)"); then
+	if (echo "$mft_output" | grep -o LAG_RESOURCE_ALLOCATION.* | awk '{print$3}' | grep -qE "PRE_ALLOCATION\(1\)|PRE_ALLOCATION_QA\(2\)"); then
 		return 0
 	fi
 	return 1
@@ -825,7 +825,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 					info "Enabling ESW Multiport on last CX-9 ECPF $lag_master (device $cx9_dev)"
 					set_dev_param ${lag_master} esw_multiport 1 "ESW Multiport:"
 				else
-					info "Skipping ESW Multiport on CX-9 ECPF $lag_master (device $cx9_dev): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1)"
+					info "Skipping ESW Multiport on CX-9 ECPF $lag_master (device $cx9_dev): LAG_RESOURCE_ALLOCATION is not PRE_ALLOCATION(1) or PRE_ALLOCATION_QA(2)"
 				fi
 			done
 		fi
