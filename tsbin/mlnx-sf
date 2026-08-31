@@ -194,9 +194,12 @@ class SF:
                     result['output'] += "  Splittable: " + str(info[pci_dev_index]["splittable"]).lower() + "\n"
 
                 # Original console fields (keep these even if not in JSON)
-                result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
-                result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
-                result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
+                if "device" in info[pci_dev_index]:
+                    result['output'] += "  Parent PCI dev: " + info[pci_dev_index]["device"] + "\n"
+                if "netdev" in info[pci_dev_index]:
+                    result['output'] += "  Representor netdev: " + info[pci_dev_index]["netdev"] + "\n"
+                if "function" in info[pci_dev_index] and "hw_addr" in info[pci_dev_index]["function"]:
+                    result['output'] += "  Function HWADDR: " + info[pci_dev_index]["function"]["hw_addr"] + "\n"
 
                 # Additional JSON function fields
                 if "function" in info[pci_dev_index]:
