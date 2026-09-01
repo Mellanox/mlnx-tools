@@ -1536,6 +1536,13 @@ if [ $ovsbr_number -gt 0 ]; then
 fi
 
 OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
+
+# Phase 1: Wait for all port netdevs across all bridges in parallel.
+#   OVS_BR_READY[i]   = "1" if bridge i should be created
+#   OVS_BR_VPORTS[i]  = validated port list for bridge i
+declare -A OVS_BR_READY
+declare -A OVS_BR_VPORTS
+
 for i in `seq $num_of_ovs_bridges`
 do
 	br_name=OVS_BRIDGE${i}
@@ -1585,18 +1592,50 @@ do
 		continue
 	fi
 
-	$vsctl add-br $br_name
-	info "Created bridge: $br_name"
-	for port in $ovs_br_ports
-	do
-		$vsctl add-port $br_name $port
-		info "bridge $br_name: added port $port"
-	done
-	if ! [[ $(uname -r) =~ "4.19" ]]; then
-		ip link set $br_name up
-	fi
-
+	OVS_BR_READY[$i]=1
+	OVS_BR_VPORTS[$i]="$ovs_br_ports"
 done
+
+# Phase 2: Build a single batched ovs-vsctl transaction for all bridges.
+ovs_batch_cmd=""
+ovs_batch_bridges=""
+for i in `seq $num_of_ovs_bridges`
+do
+	[ "${OVS_BR_READY[$i]}" = "1" ] || continue
+
+	br_name=OVS_BRIDGE${i}
+	br_name=${!br_name}
+
+	if [ -n "$ovs_batch_cmd" ]; then
+		ovs_batch_cmd="$ovs_batch_cmd --"
+	fi
+	ovs_batch_cmd="$ovs_batch_cmd add-br $br_name"
+	ovs_batch_bridges="$ovs_batch_bridges $br_name"
+
+	for port in ${OVS_BR_VPORTS[$i]}
+	do
+		ovs_batch_cmd="$ovs_batch_cmd -- add-port $br_name $port"
+	done
+done
+
+if [ -n "$ovs_batch_cmd" ]; then
+	$vsctl $ovs_batch_cmd
+	info "Created OVS bridges in a single transaction:$ovs_batch_bridges"
+
+	# Log individual port assignments and bring bridges up
+	for i in `seq $num_of_ovs_bridges`
+	do
+		[ "${OVS_BR_READY[$i]}" = "1" ] || continue
+		br_name=OVS_BRIDGE${i}
+		br_name=${!br_name}
+		for port in ${OVS_BR_VPORTS[$i]}; do
+			info "bridge $br_name: added port $port"
+		done
+		if ! [[ $(uname -r) =~ "4.19" ]]; then
+			ip link set $br_name up
+		fi
+	done
+fi
 
 if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload=true
