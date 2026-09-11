@@ -1,3 +1,12 @@
+mlnx-tools (26.07.14) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * mlnx_bf_configure: move vsctl assignment before its first use
+  * mlnx_bf_configure: preserve per-port VLAN config across bridge recreation
+  * mlnx_bf_configure: batch OVS bridge creation
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Fri, 11 Sep 2026 11:48:23 -0500
+
 mlnx-tools (26.07.13) UNRELEASED; urgency=medium
 
   * Sync with mlnx_ofed_26_01_PS branch
