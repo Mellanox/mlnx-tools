@@ -1117,6 +1117,13 @@ cleanup_hugepages()
 	fi
 }
 
+# Configure the default OVS bridge
+vsctl=`which ovs-vsctl 2> /dev/null`
+if [ ! -n "$vsctl" ]; then
+	info "OVS is not installed. Skipping OVS bridges creation."
+	exit 0
+fi
+
 if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
 	. /etc/mellanox/mlnx-ovs.conf
 fi
@@ -1138,13 +1145,6 @@ fi
 
 # Configure hugepages
 config_hugepages
-
-# Configure the default OVS bridge
-vsctl=`which ovs-vsctl 2> /dev/null`
-if [ ! -n "$vsctl" ]; then
-	info "OVS is not installed. Skipping OVS bridges creation."
-	exit 0
-fi
 
 num_of_sd_devs=${#SD_DEVICES_LIST[@]}
 
