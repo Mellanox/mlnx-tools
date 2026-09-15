@@ -1185,9 +1185,15 @@ num_of_ovs_bridges=0
 i=1
 
 if [ $SD_MERGED_ESWITCH -eq 1 ]; then
-	# SD merged eswitch: each PCI link (domain) gets its own bridge.
-	# Devices on the same domain share a merged eswitch, but uplinks from
-	# different PCI links must NOT be placed under the same OVS bridge.
+	# SD merged eswitch: collect ports from all SD domains first, then
+	# decide whether to create one bridge per domain or a single merged
+	# bridge based on the number of physical uplinks (p0, p1, …).
+	# When there is only one uplink, all SD domain ports are combined
+	# into a single OVS bridge — creating per-domain bridges would leave
+	# some bridges with representors only and no external connectivity.
+	declare -A _SD_DOMAIN_PORTS
+	sd_total_uplinks=0
+	sd_all_ports=""
 	for domain in $(echo "${!SD_DOMAIN_GROUPS[*]}" | tr ' ' '\n' | sort); do
 		domain_devs="${SD_DOMAIN_GROUPS[$domain]}"
 		domain_ports=""
@@ -1197,27 +1203,63 @@ if [ $SD_MERGED_ESWITCH -eq 1 ]; then
 				domain_ports="$domain_ports $dev_ports"
 			fi
 		done
-		domain_port_count=$(echo $domain_ports | wc -w)
-		if [ $domain_port_count -le 1 ]; then
-			debug "SD merged eswitch: skipping domain $domain, only $domain_port_count port(s)"
-			continue
-		fi
-
-		bridge_var=OVS_BRIDGE${i}
-		ports_var=OVS_BRIDGE${i}_PORTS
-
-		if [ -z "${!bridge_var}" ]; then
-			eval "${bridge_var}=ovsbr${i}"
-		fi
-		if [ -z "${!ports_var}" ]; then
-			eval "${ports_var}=\"$domain_ports\""
-		fi
-
-		info "SD merged eswitch: configuring bridge ${!bridge_var} for domain $domain: devices=$domain_devs"
-		debug "SD merged bridge ${!bridge_var} (domain $domain): ports=${!ports_var}"
-		i=$((i+1))
-		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+		_SD_DOMAIN_PORTS[$domain]="$domain_ports"
+		sd_all_ports="$sd_all_ports $domain_ports"
+		# Count uplink netdevs (p0, p1, …) in this domain
+		for p in $domain_ports; do
+			if [[ "$p" =~ ^p[0-9]+$ ]]; then
+				sd_total_uplinks=$((sd_total_uplinks+1))
+			fi
+		done
 	done
+
+	if [ $sd_total_uplinks -le 1 ]; then
+		# Single uplink across all SD domains — merge into one bridge
+		all_port_count=$(echo $sd_all_ports | wc -w)
+		if [ $all_port_count -gt 1 ]; then
+			bridge_var=OVS_BRIDGE${i}
+			ports_var=OVS_BRIDGE${i}_PORTS
+
+			if [ -z "${!bridge_var}" ]; then
+				eval "${bridge_var}=ovsbr${i}"
+			fi
+			if [ -z "${!ports_var}" ]; then
+				eval "${ports_var}=\"$sd_all_ports\""
+			fi
+
+			info "SD merged eswitch: single uplink detected, merging all SD domains into ${!bridge_var}"
+			debug "SD merged bridge ${!bridge_var}: ports=${!ports_var}"
+			i=$((i+1))
+			num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+		fi
+	else
+		# Multiple uplinks — one bridge per domain (uplinks from
+		# different PCI links must NOT be placed under the same bridge)
+		for domain in $(echo "${!SD_DOMAIN_GROUPS[*]}" | tr ' ' '\n' | sort); do
+			domain_ports="${_SD_DOMAIN_PORTS[$domain]}"
+			domain_port_count=$(echo $domain_ports | wc -w)
+			if [ $domain_port_count -le 1 ]; then
+				debug "SD merged eswitch: skipping domain $domain, only $domain_port_count port(s)"
+				continue
+			fi
+
+			bridge_var=OVS_BRIDGE${i}
+			ports_var=OVS_BRIDGE${i}_PORTS
+
+			if [ -z "${!bridge_var}" ]; then
+				eval "${bridge_var}=ovsbr${i}"
+			fi
+			if [ -z "${!ports_var}" ]; then
+				eval "${ports_var}=\"$domain_ports\""
+			fi
+
+			info "SD merged eswitch: configuring bridge ${!bridge_var} for domain $domain: devices=${SD_DOMAIN_GROUPS[$domain]}"
+			debug "SD merged bridge ${!bridge_var} (domain $domain): ports=${!ports_var}"
+			i=$((i+1))
+			num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+		done
+	fi
+	unset _SD_DOMAIN_PORTS
 
 	# Now create bridges for non-SD devices (e.g. CX-9)
 	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
