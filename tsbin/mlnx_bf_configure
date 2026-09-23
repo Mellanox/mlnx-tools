@@ -1524,7 +1524,7 @@ if [ $ovsbr_number -gt 0 ]; then
 	fi
 fi
 
-OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
+OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-60}
 
 # Phase 1: Wait for all port netdevs across all bridges in parallel.
 #   OVS_BR_READY[i]   = "1" if bridge i should be created
@@ -1608,7 +1608,7 @@ do
 done
 
 if [ -n "$ovs_batch_cmd" ]; then
-	$vsctl $ovs_batch_cmd
+	$vsctl --timeout=$OVS_BR_PORTS_TIMEOUT $ovs_batch_cmd
 	info "Created OVS bridges in a single transaction:$ovs_batch_bridges"
 
 	# Log individual port assignments and bring bridges up
