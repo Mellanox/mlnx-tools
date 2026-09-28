@@ -283,7 +283,7 @@ ovs_restore_conf()
 		info "Created bridge: $ovs_br"
 		for port in $ovs_br_ports
 		do
-			cmd="$vsctl add-port $ovs_br $port"
+			cmd="$vsctl -t 3 add-port $ovs_br $port"
 			port_options="$(eval echo \$$(echo ${port}_options))"
 			if [ -n "$port_options" ]; then
 				port_options="$(echo ${port_options} | sed 's/^/options:/g' | sed 's/[[:space:]]/ options:/g')"
@@ -712,6 +712,9 @@ fi
 OVS_CONF_SAVED=0
 OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
 
+# Configure hugepages
+config_hugepages
+
 if [ -n "$vsctl" ] && [ "X${OVS_CONF_RESTORE}" == "Xyes" ]; then
 	ovsbr_number=`$vsctl list-br | wc -l`
 	if [ $ovsbr_number -gt 0 ]; then
@@ -723,9 +726,6 @@ if [ -n "$vsctl" ] && [ "X${OVS_CONF_RESTORE}" == "Xyes" ]; then
 		for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
 	fi
 fi
-
-# Configure hugepages
-config_hugepages
 
 max_num_of_ovs_bridges=$num_of_devs_switchdev
 max_num_of_sd_ovs_bridges=0
@@ -1080,24 +1080,26 @@ do
 
 	# Restore per-port VLAN settings saved by ovs_save_conf before teardown
 	if [ -n "$ovs_brs" ]; then
-		for port in $ovs_br_ports; do
-			restore_cmd=""
-			port_tag="$(eval echo \$$(echo ${port}_tag))"
-			if [ -n "$port_tag" ] && [ "$port_tag" != "[]" ]; then
-				restore_cmd="$restore_cmd -- set port $port tag=$port_tag"
-			fi
-			port_vlan_mode="$(eval echo \$$(echo ${port}_vlan_mode))"
-			if [ -n "$port_vlan_mode" ] && [ "$port_vlan_mode" != "[]" ]; then
-				restore_cmd="$restore_cmd -- set port $port vlan_mode=$port_vlan_mode"
-			fi
-			port_trunks="$(eval echo \$$(echo ${port}_trunks))"
-			if [ -n "$port_trunks" ] && [ "$port_trunks" != "[]" ]; then
-				restore_cmd="$restore_cmd -- set port $port trunks=$port_trunks"
-			fi
-			if [ -n "$restore_cmd" ]; then
-				$vsctl $restore_cmd
-				info "bridge $br_name: restored $port VLAN config (tag=$port_tag vlan_mode=$port_vlan_mode trunks=$port_trunks)"
-			fi
+		for ovs_br in $ovs_brs; do
+			for port in $(eval echo \$$(echo ${ovs_br}_ports)); do
+				restore_cmd=""
+				port_tag="$(eval echo \$$(echo ${port}_tag))"
+				if [ -n "$port_tag" ] && [ "$port_tag" != "[]" ]; then
+					restore_cmd="$restore_cmd -- set port $port tag=$port_tag"
+				fi
+				port_vlan_mode="$(eval echo \$$(echo ${port}_vlan_mode))"
+				if [ -n "$port_vlan_mode" ] && [ "$port_vlan_mode" != "[]" ]; then
+					restore_cmd="$restore_cmd -- set port $port vlan_mode=$port_vlan_mode"
+				fi
+				port_trunks="$(eval echo \$$(echo ${port}_trunks))"
+				if [ -n "$port_trunks" ] && [ "$port_trunks" != "[]" ]; then
+					restore_cmd="$restore_cmd -- set port $port trunks=$port_trunks"
+				fi
+				if [ -n "$restore_cmd" ]; then
+					$vsctl -t 3 $restore_cmd
+					info "bridge: restored $port VLAN config (tag=$port_tag vlan_mode=$port_vlan_mode trunks=$port_trunks)"
+				fi
+			done
 		done
 	fi
 
