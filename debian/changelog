@@ -1,3 +1,13 @@
+mlnx-tools (26.07.16) UNRELEASED; urgency=medium
+
+  [ Vladimir Sokolovsky ]
+  * mlnx_bf_configure: add timeout to ovs-vsctl restore commands and
+    reorder hugepages
+  * mlnx_bf_configure: add timeout to batched ovs-vsctl and increase
+    port wait
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Mon, 28 Sep 2026 15:51:51 -0500
+
 mlnx-tools (26.07.14) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
