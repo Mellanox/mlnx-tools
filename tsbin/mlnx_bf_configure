@@ -1119,9 +1119,13 @@ reload_hugepages()
 
 config_hugepages()
 {
-	add_default_hugepages_configurations
-	info "Applying hugepages configuration"
-	reload_hugepages
+	if ! ( $HUGEPAGES_TOOL show | grep -q ovs-doca ); then
+		add_default_hugepages_configurations
+		info "Applying hugepages configuration"
+		reload_hugepages
+	else
+		info "Hugepages configured already"
+	fi
 }
 
 cleanup_hugepages()
