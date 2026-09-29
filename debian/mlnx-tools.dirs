@@ -1,1 +1,2 @@
 /etc/mellanox/hugepages.d
+/usr/lib/systemd/system
