@@ -1106,11 +1106,13 @@ add_default_hugepages_configurations()
 # After=/Wants=) can order against, instead of only ever happening inside
 # this script with no external signal. restart (not start) so a unit that is
 # already active from an earlier call in this boot still re-runs reload and
-# reflects the current config, and --wait keeps this synchronous, matching
-# the previous direct-call behavior. See RM-5266141.
+# reflects the current config. For a Type=oneshot unit, systemctl restart
+# is already synchronous (waits for ExecStart to finish); --wait must NOT
+# be used here as it hangs waiting for the unit to become inactive, which
+# never happens with RemainAfterExit=yes. See RM-5266141.
 reload_hugepages()
 {
-	if ! systemctl restart --wait mlnx-bf-hugepages-ready.service; then
+	if ! systemctl restart mlnx-bf-hugepages-ready.service; then
 		error "mlnx-bf-hugepages-ready.service failed; hugepages may not be applied"
 	fi
 }
