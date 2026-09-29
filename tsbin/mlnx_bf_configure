@@ -1110,7 +1110,9 @@ add_default_hugepages_configurations()
 # the previous direct-call behavior. See RM-5266141.
 reload_hugepages()
 {
-	systemctl restart --wait mlnx-bf-hugepages-ready.service
+	if ! systemctl restart --wait mlnx-bf-hugepages-ready.service; then
+		error "mlnx-bf-hugepages-ready.service failed; hugepages may not be applied"
+	fi
 }
 
 config_hugepages()
