@@ -117,7 +117,7 @@ rm -rf %{buildroot}
 %{_mandir}/man8/*.8*
 %{python_dir}/dcbnetlink.py*
 %{python_dir}/netlink.py*
-%exclude %{python_dir}/__pycache__/*.pyc
+%exclude %{python_dir}/__pycache__
 /etc/mellanox/hugepages.d
 /usr/lib/systemd/system/mlnx-bf-hugepages-ready.service
 /usr/lib/systemd/system/openvswitch.service.d/hugepages.conf

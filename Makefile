@@ -41,8 +41,8 @@ install:
 	$(INSTALL) -m 0755 $(PYTHON_BIN) -t $(DESTDIR)$(BIN_DIR)/
 	$(INSTALL) -m 0644 systemd/*.service -t $(DESTDIR)$(SYSTEMD_DIR)/
 	for dropin in systemd/*.service.d; do \
-		[ -d "$dropin" ] || continue; \
-		$(INSTALL) -d $(DESTDIR)$(SYSTEMD_DIR)/$(basename $dropin); \
-		$(INSTALL) -m 0644 $dropin/*.conf -t $(DESTDIR)$(SYSTEMD_DIR)/$(basename $dropin)/; \
+		[ -d "$$dropin" ] || continue; \
+		$(INSTALL) -d $(DESTDIR)$(SYSTEMD_DIR)/$$(basename $$dropin); \
+		$(INSTALL) -m 0644 $$dropin/*.conf -t $(DESTDIR)$(SYSTEMD_DIR)/$$(basename $$dropin)/; \
 	done
 	mkdir -p $(DESTDIR)/etc/mellanox/hugepages.d/
