@@ -251,6 +251,7 @@ ovs_save_conf()
 		do
 				eval ${port}_options="\"$(ovs-vsctl get Interface $port options | sed 's/[{},]//g')\""
 				eval ${port}_type="\"$(ovs-vsctl get Interface $port type | sed 's/[{},]//g')\""
+				eval ${port}_mtu_request="\"$(ovs-vsctl get Interface $port mtu_request 2>/dev/null)\""
 				eval ${port}_tag="\"$(ovs-vsctl get Port $port tag 2>/dev/null)\""
 				eval ${port}_vlan_mode="\"$(ovs-vsctl get Port $port vlan_mode 2>/dev/null)\""
 				eval ${port}_trunks="\"$(ovs-vsctl get Port $port trunks 2>/dev/null)\""
@@ -297,6 +298,10 @@ ovs_restore_conf()
 			fi
 			if [[ -n "$port_type" || -n "$port_options" ]]; then
 				cmd="$cmd -- set interface $port $port_type $port_options"
+			fi
+			port_mtu_request="$(eval echo \$$(echo ${port}_mtu_request))"
+			if [ -n "$port_mtu_request" ] && [ "$port_mtu_request" != "[]" ]; then
+				cmd="$cmd -- set interface $port mtu_request=$port_mtu_request"
 			fi
 
 			# Restore per-port VLAN settings (tag, vlan_mode, trunks)
@@ -1663,9 +1668,13 @@ if [ -n "$ovs_batch_cmd" ]; then
 				if [ -n "$port_trunks" ] && [ "$port_trunks" != "[]" ]; then
 					restore_cmd="$restore_cmd -- set port $port trunks=$port_trunks"
 				fi
+				port_mtu_request="$(eval echo \$$(echo ${port}_mtu_request))"
+				if [ -n "$port_mtu_request" ] && [ "$port_mtu_request" != "[]" ]; then
+					restore_cmd="$restore_cmd -- set interface $port mtu_request=$port_mtu_request"
+				fi
 				if [ -n "$restore_cmd" ]; then
 					$vsctl -t 3 $restore_cmd
-					info "bridge: restored $port VLAN config (tag=$port_tag vlan_mode=$port_vlan_mode trunks=$port_trunks)"
+					info "bridge: restored $port config (tag=$port_tag vlan_mode=$port_vlan_mode trunks=$port_trunks mtu_request=$port_mtu_request)"
 				fi
 			done
 		done
