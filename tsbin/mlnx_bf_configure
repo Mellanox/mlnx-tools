@@ -408,6 +408,15 @@ is_supported_device()
 	return 1
 }
 
+is_dev_param_supported()
+{
+	dev=$1
+	param=$2
+	shift 2
+
+	devlink dev param show pci/$dev | grep -q "$param"
+}
+
 is_smartnic_mode()
 {
 	dev=$1
@@ -655,16 +664,18 @@ if (is_smartnic_mode "$ctrl_dev"); then
 			continue
 		fi
 
-		if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
-			set_dev_param ${dev} lag_port_select_mode queue_affinity
-		elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
-			eswitch_mode=`get_eswitch_mode ${dev}`
-			if [ "${eswitch_mode}" != "legacy" ]; then
-				set_eswitch_mode ${dev} legacy
-				RC=$((RC+$?))
-			fi
+		if is_dev_param_supported ${dev} lag_port_select_mode; then
+			if [ "X${LAG_HASH_MODE}" == "Xno" ]; then
+				set_dev_param ${dev} lag_port_select_mode queue_affinity
+			elif [ "X${LAG_MULTIPORT_ESW_MODE}" == "Xyes" ]; then
+				eswitch_mode=`get_eswitch_mode ${dev}`
+				if [ "${eswitch_mode}" != "legacy" ]; then
+					set_eswitch_mode ${dev} legacy
+					RC=$((RC+$?))
+				fi
 
-			set_dev_param ${dev} lag_port_select_mode multiport_esw
+				set_dev_param ${dev} lag_port_select_mode multiport_esw
+			fi
 		fi
 
 		if [ "X${ENCAP_NONE_MODE}" == "Xyes" ]; then
