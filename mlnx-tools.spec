@@ -110,6 +110,7 @@ rm -rf %{buildroot}
 /sbin/mlnx_bf_configure_ct
 /sbin/mlnx-sf
 /sbin/doca-hugepages
+/sbin/mlnx-bf-hugepages
 %{_sbindir}/*
 %{_bindir}/*
 %{_sysconfdir}/modprobe.d/*

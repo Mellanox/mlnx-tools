@@ -5,9 +5,4 @@ Documentation=man:doca-hugepages(8)
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=HUGEPAGE_APP="ovs-doca (default)"
-Environment=HUGEPAGE_SIZE=2048
-Environment=HUGEPAGE_NUM=2048
-EnvironmentFile=-/etc/mellanox/hugepages.conf
-ExecStart=/usr/sbin/doca-hugepages config --force --app '${HUGEPAGE_APP}' --size ${HUGEPAGE_SIZE} --num ${HUGEPAGE_NUM}
-ExecStart=/usr/sbin/doca-hugepages reload
+ExecStart=/usr/sbin/mlnx-bf-hugepages
