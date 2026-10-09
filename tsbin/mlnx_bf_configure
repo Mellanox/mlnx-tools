@@ -211,6 +211,7 @@ run_mlxconfig()
 	start_time=$(awk '{print $1}' /proc/uptime)
 	mft_output="$($cmd 2>&1)"
 	while (echo "$mft_output" | grep -q "Failed to open"); do
+		echo "$cmd" >> ${MLXCONFIG_DEBUG_LOG}
 		echo "$mft_output" >> ${MLXCONFIG_DEBUG_LOG}
 		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
 		if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
@@ -622,9 +623,11 @@ ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 |
 num_of_supported_devs=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l)
 
 start_time=$(awk '{print $1}' /proc/uptime)
-mft_output=$($mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL 2>&1)
+mft_cmd="$mftconfig -d $ctrl_dev -e q INTERNAL_CPU_MODEL"
+mft_output=$($mft_cmd 2>&1)
 if ! (echo "$mft_output" | grep -q 'E- The Device doesn.*t support INTERNAL_CPU_MODEL parameter'); then
 	while (echo "$mft_output" | grep -q "Failed to open"); do
+		echo "$mft_cmd" >> ${MLXCONFIG_DEBUG_LOG}
 		echo "$mft_output" >> ${MLXCONFIG_DEBUG_LOG}
 		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
 		if [ $elapsed -gt $MLXCONFIG_TIMEOUT ]; then
@@ -1078,10 +1081,10 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
 	start_time=$(awk '{print $1}' /proc/uptime)
 	while ! (systemctl is-active NetworkManager 2> /dev/null)
 	do
-		echo "NetworkManager is not active. Waiting..." >> ${MLXCONFIG_DEBUG_LOG}
+		info "NetworkManager is not active. Waiting..."
 		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
 		if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
-			echo "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}" >> ${MLXCONFIG_DEBUG_LOG}
+			info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
 			break
 		fi
 		sleep 0.1
