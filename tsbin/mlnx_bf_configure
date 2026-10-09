@@ -29,7 +29,7 @@
 
 PATH=/opt/mellanox/iproute2/sbin:/opt/mellanox/ethtool/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
-RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-3}
+RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-60}
 SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
 RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1025"
@@ -502,6 +502,7 @@ SWITCHDEV_DEVICES_LIST=()
 SD_DEVICES_LIST=()
 DEVICE_LIST_FOR_OVS_BRIDGES=()
 
+{
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
 if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 	if ! (rdma system show netns 2>&1 | grep -q exclusive); then
@@ -525,6 +526,7 @@ if [ "X${RDMA_SET_NETNS_EXCLUSIVE}" == "Xyes" ]; then
 		error "Failed to set rdma exclusive mode: $output"
 	fi
 fi
+} &
 
 ctrl_dev=$(lspci -nD -d 15b3: | grep -E "$BLUEFIELD_DEVICES" | cut -d ' ' -f 1 | head -1)
 num_of_supported_devs=$(lspci -nD -d 15b3: | grep -E "$SUPPORTED_DEVICES" | wc -l)
@@ -1149,5 +1151,6 @@ fi
 } &
 
 sync
+wait
 
 exit $RC
