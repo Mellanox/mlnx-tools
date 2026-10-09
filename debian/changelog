@@ -1,4 +1,4 @@
-mlnx-tools (26.07.16) UNRELEASED; urgency=medium
+mlnx-tools (26.07.17) UNRELEASED; urgency=medium
 
   [ Vladimir Sokolovsky ]
   * mlnx_bf_configure: add timeout to ovs-vsctl restore commands and
