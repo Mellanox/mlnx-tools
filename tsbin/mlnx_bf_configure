@@ -270,7 +270,16 @@ ovs_delete_conf()
 		if [ $rc -eq 0 ]; then
 			info "Removed $ovs_br"
 		else
-			error "Failed to remove $ovs_br"
+			if $vsctl br-exists $ovs_br 2>/dev/null; then
+				error "Bridge $ovs_br still exists after failed deletion"
+				wait_for_ovs_up
+				ovs-vsctl -t 3 del-br $ovs_br
+				if $vsctl br-exists $ovs_br 2>/dev/null; then
+					error "Bridge $ovs_br still exists after retry. Exiting."
+					exit 1
+				fi
+				info "Removed $ovs_br on retry"
+			fi
 		fi
 	done
 
