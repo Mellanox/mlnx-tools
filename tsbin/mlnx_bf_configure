@@ -1444,6 +1444,21 @@ ovs_restart()
 	fi
 }
 
+wait_for_ovs_up()
+{
+	start_time=$(awk '{print $1}' /proc/uptime)
+	while ! ($vsctl show > /dev/null 2>&1)
+	do
+		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+		if [ $elapsed -gt $OVS_TIMEOUT ]; then
+			info "$ovs_service is not up. Exiting..."
+			exit 1
+		fi
+		info "$ovs_service is not ready. Restarting $ovs_service..."
+		$ovs_restart
+	done
+}
+
 reapply_udev_settings()
 {
 	# Re-apply udev settings removed by OVS
@@ -1473,16 +1488,7 @@ reapply_udev_settings()
 }
 
 {
-start_time=$(awk '{print $1}' /proc/uptime)
-while ! ($vsctl show > /dev/null 2>&1)
-do
-	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-	if [ $elapsed -gt $OVS_TIMEOUT ]; then
-		info "$ovs_service is not up. Exiting..."
-		exit 1
-	fi
-	sleep 1
-done
+wait_for_ovs_up
 
 ovs_config_default_datapath()
 {
@@ -1609,7 +1615,7 @@ if [ $ovsbr_number -gt 0 ]; then
 	fi
 fi
 
-OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-30}
+OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-60}
 
 # Phase 1: Wait for all port netdevs across all bridges in parallel.
 #   OVS_BR_READY[i]   = "1" if bridge i should be created
@@ -1692,8 +1698,10 @@ do
 	done
 done
 
+wait_for_ovs_up
+
 if [ -n "$ovs_batch_cmd" ]; then
-	$vsctl $ovs_batch_cmd
+	$vsctl --timeout=$OVS_BR_PORTS_TIMEOUT $ovs_batch_cmd
 	info "Created OVS bridges in a single transaction:$ovs_batch_bridges"
 
 	# Log individual port assignments and bring bridges up
