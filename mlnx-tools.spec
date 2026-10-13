@@ -101,6 +101,7 @@ rm -rf %{buildroot}
 /sbin/mlnx_bf_configure
 /sbin/mlnx-sf
 /sbin/doca-hugepages
+/sbin/mlnx-bf-hugepages
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}/man8/*.8*
@@ -109,6 +110,8 @@ rm -rf %{buildroot}
 %exclude %{python_dir}/__pycache__/*.pyc
 /lib/udev/mlnx_bf_udev
 /etc/mellanox/hugepages.d
+/usr/lib/systemd/system/mlnx-bf-hugepages-ready.service
+/usr/lib/systemd/system/openvswitch.service.d/hugepages.conf
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1

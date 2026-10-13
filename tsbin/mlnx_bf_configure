@@ -1136,11 +1136,32 @@ add_default_hugepages_configurations()
 	$HUGEPAGES_TOOL config --force --app "ovs-doca (default)" --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
 }
 
+# Reload runs via mlnx-bf-hugepages-ready.service (RemainAfterExit=yes) rather
+# than calling $HUGEPAGES_TOOL directly, so "hugepages are applied" is a
+# systemd-observable event other units (e.g. kubelet, via a downstream
+# After=/Wants=) can order against, instead of only ever happening inside
+# this script with no external signal. restart (not start) so a unit that is
+# already active from an earlier call in this boot still re-runs reload and
+# reflects the current config. For a Type=oneshot unit, systemctl restart
+# is already synchronous (waits for ExecStart to finish); --wait must NOT
+# be used here as it hangs waiting for the unit to become inactive, which
+# never happens with RemainAfterExit=yes. See RM-5266141.
+reload_hugepages()
+{
+	if ! systemctl restart mlnx-bf-hugepages-ready.service; then
+		error "mlnx-bf-hugepages-ready.service failed; hugepages may not be applied"
+	fi
+}
+
 config_hugepages()
 {
-	add_default_hugepages_configurations
-	info "Applying hugepages configuration"
-	$HUGEPAGES_TOOL reload
+	if ! $HUGEPAGES_TOOL show | grep -q ovs-doca; then
+		add_default_hugepages_configurations
+		info "Applying hugepages configuration"
+		reload_hugepages
+	else
+		info "Hugepages configured already"
+	fi
 }
 
 cleanup_hugepages()
@@ -1148,7 +1169,7 @@ cleanup_hugepages()
 	if [ "X${OVS_DOCA}" != "Xyes" ] && [ -f $OVS_DOCA_MARKER ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
 		info "Removing ovs-doca default hugepages configuration"
 		$HUGEPAGES_TOOL remove ovs-doca
-		$HUGEPAGES_TOOL reload
+		reload_hugepages
 		rm -f $OVS_DOCA_MARKER
 	fi
 }

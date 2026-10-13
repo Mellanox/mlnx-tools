@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# mlnx-bf-hugepages — configure DOCA hugepages from /etc/mellanox/hugepages.conf
+#
+# Configuration file format (/etc/mellanox/hugepages.conf):
+#
+#   Each application is defined by a line of the form:
+#
+#     HUGEPAGE_APP[<index>]="<app-name> <size_kB> <num_pages>"
+#
+#   Example — single app (backwards-compatible with the old flat variables):
+#
+#     HUGEPAGE_APP="ovs-doca (default) 2048 2048"
+#
+#   Example — multiple apps:
+#
+#     HUGEPAGE_APP[0]="ovs-doca (default) 2048 2048"
+#     HUGEPAGE_APP[1]="dpdk-app 1048576 4"
+#
+#   Legacy format (single app only, kept for backwards compatibility):
+#
+#     HUGEPAGE_APP="ovs-doca (default)"
+#     HUGEPAGE_SIZE=2048
+#     HUGEPAGE_NUM=2048
+#
+
+set -e
+
+CONF=/etc/mellanox/hugepages.conf
+DOCA_HP=/usr/sbin/doca-hugepages
+
+# Defaults — single app, matching the previous service unit.
+DEF_APP="ovs-doca (default)"
+DEF_SIZE=2048
+DEF_NUM=2048
+
+log() { echo "mlnx-bf-hugepages: $*"; }
+err() { echo "mlnx-bf-hugepages: ERROR: $*" >&2; }
+
+# ── parse one HUGEPAGE_APP value into APP_NAME, APP_SIZE, APP_NUM ──
+# Accepts either:
+#   "app-name size num"          (new combined format)
+#   "app-name"                   (legacy — uses $2=size, $3=num as fallbacks)
+parse_app_entry() {
+    local entry="$1"
+    local fallback_size="$2"
+    local fallback_num="$3"
+
+    # Try to extract trailing two numeric tokens: <name> <size> <num>
+    # The app name may contain spaces (e.g. "ovs-doca (default)"), so we
+    # peel the last two words and treat the rest as the name.
+    local last="${entry##* }"
+    local rest="${entry% *}"
+    local second_last="${rest##* }"
+    local name_part="${rest% *}"
+
+    if [[ "$last" =~ ^[0-9]+$ ]] && [[ "$second_last" =~ ^[0-9]+$ ]] && [ -n "$name_part" ]; then
+        APP_NAME="$name_part"
+        APP_SIZE="$second_last"
+        APP_NUM="$last"
+    else
+        # Legacy format — entry is just the app name.
+        APP_NAME="$entry"
+        APP_SIZE="${fallback_size:-$DEF_SIZE}"
+        APP_NUM="${fallback_num:-$DEF_NUM}"
+    fi
+}
+
+# ── collect app list ──
+declare -a APPS
+
+if [ -f "$CONF" ]; then
+    # Source the file to pick up HUGEPAGE_APP (scalar or array),
+    # and the legacy HUGEPAGE_SIZE / HUGEPAGE_NUM.
+    # Use a sub-shell so we don't pollute our namespace with stray vars;
+    # instead, read what we need explicitly.
+    unset HUGEPAGE_APP HUGEPAGE_SIZE HUGEPAGE_NUM
+    . "$CONF"
+fi
+
+# Build the list depending on what the conf file provided.
+if declare -p HUGEPAGE_APP 2>/dev/null | grep -q 'declare -a'; then
+    # Array form: HUGEPAGE_APP[0]="..." HUGEPAGE_APP[1]="..."
+    APPS=("${HUGEPAGE_APP[@]}")
+elif [ -n "${HUGEPAGE_APP+set}" ]; then
+    # Scalar — single entry (new combined or legacy format).
+    APPS=("$HUGEPAGE_APP")
+else
+    # No conf file or empty — use built-in default.
+    APPS=("$DEF_APP $DEF_SIZE $DEF_NUM")
+fi
+
+# ── apply each app ──
+rc=0
+for entry in "${APPS[@]}"; do
+    parse_app_entry "$entry" "${HUGEPAGE_SIZE:-}" "${HUGEPAGE_NUM:-}"
+
+    log "Configuring app '$APP_NAME': size=${APP_SIZE}kB num=${APP_NUM}"
+    if ! "$DOCA_HP" config --force --app "$APP_NAME" --size "$APP_SIZE" --num "$APP_NUM"; then
+        err "doca-hugepages config failed for app '$APP_NAME'"
+        rc=1
+    fi
+done
+
+# Reload once after all apps are configured.
+if ! "$DOCA_HP" reload; then
+    err "doca-hugepages reload failed"
+    rc=1
+fi
+
+exit $rc
