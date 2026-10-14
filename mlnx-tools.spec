@@ -107,7 +107,9 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 /sbin/sysctl_perf_tuning
 /sbin/mlnx_bf_configure
+/sbin/mlnx_bf_configure.env
 /sbin/mlnx_bf_configure_ct
+/sbin/mlnx_bf_configure_ovs
 /sbin/mlnx-sf
 /sbin/doca-hugepages
 /sbin/mlnx-bf-hugepages
@@ -121,7 +123,19 @@ rm -rf %{buildroot}
 %exclude %{python_dir}/__pycache__
 /etc/mellanox/hugepages.d
 /usr/lib/systemd/system/mlnx-bf-hugepages-ready.service
+/usr/lib/systemd/system/mlnx_bf_configure_ovs.service
 /usr/lib/systemd/system/openvswitch.service.d/hugepages.conf
+
+%post
+if [ $1 -ge 1 ]; then
+	systemctl daemon-reload >/dev/null 2>&1 || :
+	systemctl enable mlnx_bf_configure_ovs.service >/dev/null 2>&1 || :
+fi
+
+%preun
+if [ $1 -eq 0 ]; then
+	systemctl disable mlnx_bf_configure_ovs.service >/dev/null 2>&1 || :
+fi
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1

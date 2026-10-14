@@ -1,0 +1,18 @@
+[Unit]
+Description=BlueField OVS bridge configuration
+Documentation=man:mlnx_bf_configure_ovs(8)
+# Start after openibd has finished and OVS is running.
+# Use both OVS unit names — only the one installed on the system is
+# activated; the other is silently ignored thanks to Wants (not Requires).
+After=openibd.service rdma-load-modules@infiniband.service openvswitch-switch.service openvswitch.service
+Requires=openibd.service
+Wants=openvswitch-switch.service openvswitch.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/mlnx_bf_configure_ovs
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

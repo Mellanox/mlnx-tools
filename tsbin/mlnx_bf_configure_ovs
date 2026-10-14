@@ -1,0 +1,467 @@
+#!/bin/bash
+# ex:ts=4:sw=4:sts=4:et
+# -*- tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*-
+#
+# Copyright (c) 2020 Mellanox Technologies. All rights reserved.
+#
+# This Software is licensed under one of the following licenses:
+#
+# 1) under the terms of the "Common Public License 1.0" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/cpl.php.
+#
+# 2) under the terms of the "The BSD License" a copy of which is
+#    available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/bsd-license.php.
+#
+# 3) under the terms of the "GNU General Public License (GPL) Version 2" a
+#    copy of which is available from the Open Source Initiative, see
+#    http://www.opensource.org/licenses/gpl-license.php.
+#
+# Licensee has the right to choose one of the above licenses.
+#
+# Redistributions of source code must retain the above copyright
+# notice and one of the license notices.
+#
+# Redistributions in binary form must reproduce both the above copyright
+# notice, one of the license notices in the documentation
+# and/or other materials provided with the distribution.
+
+if [ ! -f /sbin/mlnx_bf_configure.env ]; then
+	echo "Error: /sbin/mlnx_bf_configure.env file not found"
+	exit 1
+fi
+
+. /sbin/mlnx_bf_configure.env
+
+### MAIN ###
+OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
+OVS_TIMEOUT=${OVS_TIMEOUT:-30}
+SKIP_OVS_CONFIG_VALIDATION=${SKIP_OVS_CONFIG_VALIDATION:-"yes"}
+
+ovs_service=""
+if [ -e /etc/init.d/openvswitch-switch ]; then
+	ovs_service="openvswitch-switch.service"
+elif [ -e /usr/lib/systemd/system/openvswitch.service ]; then
+	ovs_service="openvswitch.service"
+else
+	ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
+fi
+
+if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
+	# OVS service is not enabled
+	info "$ovs_service is not enabled. Exiting..."
+	exit 0
+fi
+
+SYNC_TIMEOUT=${SYNC_TIMEOUT:-120}
+sync_start=$(awk '{print $1}' /proc/uptime)
+while [ ! -f /run/mlnx_bf_configure_sync ]; do
+	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $sync_start}")
+	if [ $elapsed -gt $SYNC_TIMEOUT ]; then
+		error "Timed out waiting for mlnx_bf_configure to finish after ${SYNC_TIMEOUT}s"
+		exit 1
+	fi
+	sleep 1
+done
+
+ovs_restart_cmd="systemctl restart $ovs_service"
+
+need_restart=false
+
+HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
+OVS_DEFAULT_HUGEPAGE_SIZE=2048
+OVS_DEFAULT_HUGEPAGE_NUM=512
+OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
+# Marker file to track if OVS_DOCA was previously set to "yes".
+# Used to distinguish between OVS_DOCA=no as a default vs. a user
+# explicitly switching from yes to no, so we only run cleanup in the latter case.
+OVS_DOCA_MARKER=/etc/mellanox/.ovs_doca_configured
+
+# Configure the default OVS bridge
+vsctl=`which ovs-vsctl 2> /dev/null`
+if [ ! -n "$vsctl" ]; then
+	info "OVS is not installed. Skipping OVS bridges creation."
+	exit 0
+fi
+
+if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
+	. /etc/mellanox/mlnx-ovs.conf
+fi
+
+OVS_CONF_SAVED=0
+OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
+
+num_of_devs_switchdev=0
+# Set eswitch mode to switchdev for all devices
+# Rank each BDF by PCI device ID before sorting (0=NIC, 1=BlueField)
+# so all NIC (e.g. ASTRA CX-9) links are configured before the
+# BlueField devices. Within each group the order is unchanged:
+# domain descending, then bus/device/function ascending.
+for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print tolower($2)}' \
+	| while read -r bdf; do
+		if grep -qiE "$BLUEFIELD_DEVICES" /sys/bus/pci/devices/${bdf}/device 2>/dev/null; then
+			echo "1/$bdf"
+		else
+			echo "0/$bdf"
+		fi
+	done \
+	| sort -t/ -k1,1 -k2.1,2.4r -k2.6,2.7 -k2.9,2.10 -k2.12,2.12 | cut -d/ -f2)
+do
+	eswitch_mode=`get_eswitch_mode ${dev}`
+	if [ "${eswitch_mode}" == "switchdev" ]; then
+		num_of_devs_switchdev=$((num_of_devs_switchdev+1))
+	fi
+	if is_sd_mode ${dev}; then
+		debug "Adding SD device $dev to SD_DEVICES_LIST"
+		SD_DEVICES_LIST+=( "$dev" )
+	fi
+	if is_supported_device ${dev}; then
+		debug "Adding supported device $dev to DEVICE_LIST_FOR_OVS_BRIDGES"
+		DEVICE_LIST_FOR_OVS_BRIDGES+=( "$dev" )
+	fi
+done
+
+# For BF4 SD with merged eswitch, use a single bridge on LAG master only
+if is_bf4 && [ ${#SD_DEVICES_LIST[@]} -gt 0 ]; then
+	if [ "X${ENABLE_SD_MERGED_ESWITCH}" != "Xno" ]; then
+		SD_MERGED_ESWITCH=1
+		info "BF4 SD merged eswitch mode: single OVS bridge on LAG master only."
+
+		# Preserve non-SD devices (e.g. CX-9) for their own bridges,
+		# but remove all SD devices — the merged bridge collects their
+		# ports at bridge-planning time from SD_DEVICES_LIST directly.
+		new_list=()
+		for dev in "${DEVICE_LIST_FOR_OVS_BRIDGES[@]}"; do
+			if ! in_array "$dev" "${SD_DEVICES_LIST[@]}"; then
+				new_list+=( "$dev" )
+			fi
+		done
+		DEVICE_LIST_FOR_OVS_BRIDGES=( "${new_list[@]}" )
+	fi
+fi
+
+debug "num_of_devs_switchdev: $num_of_devs_switchdev"
+debug "SD_DEVICES_LIST: ${SD_DEVICES_LIST[*]}"
+debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
+debug "SD_MERGED_ESWITCH: $SD_MERGED_ESWITCH"
+
+if [ $num_of_devs_switchdev -eq 0 ]; then
+	info "No devices configured to switchdev mod. Skipping SF/Bridges configuration."
+	exit 0
+fi
+
+num_of_sd_devs=${#SD_DEVICES_LIST[@]}
+
+# For Socket Direct, group devices by PCI domain so that all functions
+# on the same domain (e.g. 0006:01:00.0 and 0006:01:00.1) are combined
+# into a single OVS bridge.
+declare -A SD_DOMAIN_GROUPS  # key=domain, value=space-separated PCI IDs
+if [ $num_of_sd_devs -gt 0 ]; then
+	for sd_dev in "${SD_DEVICES_LIST[@]}"; do
+		domain="${sd_dev%%:*}"
+		SD_DOMAIN_GROUPS[$domain]="${SD_DOMAIN_GROUPS[$domain]} $sd_dev"
+	done
+	debug "SD_DOMAIN_GROUPS: ${!SD_DOMAIN_GROUPS[*]} -> ${SD_DOMAIN_GROUPS[*]}"
+fi
+
+num_of_ovs_bridges=0
+i=1
+
+if [ $SD_MERGED_ESWITCH -eq 1 ]; then
+	# SD merged eswitch: each PCI link (domain) gets its own bridge.
+	# Devices on the same domain share a merged eswitch, but uplinks from
+	# different PCI links must NOT be placed under the same OVS bridge.
+	for domain in $(echo "${!SD_DOMAIN_GROUPS[*]}" | tr ' ' '\n' | sort); do
+		domain_devs="${SD_DOMAIN_GROUPS[$domain]}"
+		domain_ports=""
+		for sd_dev in $domain_devs; do
+			dev_ports=$(get_mlnx_netdevs_by_pci_id $sd_dev)
+			if [ -n "$dev_ports" ]; then
+				domain_ports="$domain_ports $dev_ports"
+			fi
+		done
+		domain_port_count=$(echo $domain_ports | wc -w)
+		if [ $domain_port_count -le 1 ]; then
+			debug "SD merged eswitch: skipping domain $domain, only $domain_port_count port(s)"
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$domain_ports\""
+		fi
+
+		info "SD merged eswitch: configuring bridge ${!bridge_var} for domain $domain: devices=$domain_devs"
+		debug "SD merged bridge ${!bridge_var} (domain $domain): ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+
+	# Now create bridges for non-SD devices (e.g. CX-9)
+	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+		dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+		port_count=$(echo $dev_ports | wc -w)
+		if [ $port_count -le 1 ]; then
+			debug "Skipping bridge for device $dev: only $port_count port(s), bridge not needed."
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$dev_ports\""
+		fi
+
+		debug "Non-SD bridge ovsbr${i} for device $dev: ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+elif [ $num_of_sd_devs -gt 0 ]; then
+	# Socket Direct mode: create one bridge per PCI domain,
+	# combining netdevs from all PCI devices in the same domain.
+	for domain in $(echo "${!SD_DOMAIN_GROUPS[@]}" | tr ' ' '\n' | sort); do
+		# Collect ports for this domain
+		all_ports=""
+		for dev in ${SD_DOMAIN_GROUPS[$domain]}; do
+			dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+			if [ -n "$dev_ports" ]; then
+				all_ports="$all_ports $dev_ports"
+			fi
+		done
+
+		# Skip if only one or zero ports — no bridge needed
+		port_count=$(echo $all_ports | wc -w)
+		if [ $port_count -le 1 ]; then
+			info "Skipping SD bridge for domain $domain: only $port_count port(s), bridge not needed."
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		# Set default bridge name if not already set
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		# Set default ports if not already set
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$all_ports\""
+		fi
+
+		debug "SD bridge ovsbr${i} (domain $domain): devices=${SD_DOMAIN_GROUPS[$domain]}, ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+
+	# Now create bridges for non-SD devices (e.g. ConnectX-9) that are in
+	# DEVICE_LIST_FOR_OVS_BRIDGES but were NOT covered by the SD domain grouping.
+	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+		# Skip devices that are in the SD list (already have a bridge)
+		if in_array "$dev" "${SD_DEVICES_LIST[@]}"; then
+			continue
+		fi
+
+		# Collect ports for this device
+		dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+		port_count=$(echo $dev_ports | wc -w)
+		if [ $port_count -le 1 ]; then
+			debug "Skipping non-SD bridge for device $dev: only $port_count port(s), bridge not needed."
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		# Set default bridge name if not already set
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		# Set default ports if not already set
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$dev_ports\""
+		fi
+
+		debug "Non-SD bridge ovsbr${i} for device $dev: ports=${!ports_var}"
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+else
+	# Non-SD mode: one bridge per device
+	for dev in ${DEVICE_LIST_FOR_OVS_BRIDGES[@]}; do
+		# Collect ports for this device
+		dev_ports=$(get_mlnx_netdevs_by_pci_id $dev)
+		port_count=$(echo $dev_ports | wc -w)
+		if [ $port_count -le 1 ]; then
+			debug "Skipping bridge for device $dev: only $port_count port(s), bridge not needed."
+			continue
+		fi
+
+		bridge_var=OVS_BRIDGE${i}
+		ports_var=OVS_BRIDGE${i}_PORTS
+
+		# Set default bridge name if not already set
+		if [ -z "${!bridge_var}" ]; then
+			eval "${bridge_var}=ovsbr${i}"
+		fi
+
+		# Set default ports if not already set
+		if [ -z "${!ports_var}" ]; then
+			eval "${ports_var}=\"$dev_ports\""
+		fi
+		i=$((i+1))
+		num_of_ovs_bridges=$((num_of_ovs_bridges+1))
+	done
+fi
+
+wait_for_ovs_up
+
+#Enable OVS-DOCA
+ovs_config_doca
+
+#Cleanup hugepage if neccessary
+cleanup_hugepages
+
+config_hugepages
+
+CREATE_OVS_BRIDGES=${CREATE_OVS_BRIDGES:-"yes"}
+if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
+    debug "CREATE_OVS_BRIDGES is not set to yes. Skipping OVS bridges creation."
+    if [ "$need_restart" == true ]; then
+		ovs_restart
+    fi
+    exit $RC
+fi
+
+OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-60}
+
+# Phase 1: Wait for all port netdevs across all bridges in parallel.
+#   OVS_BR_READY[i]   = "1" if bridge i should be created
+#   OVS_BR_VPORTS[i]  = validated port list for bridge i
+declare -A OVS_BR_READY
+declare -A OVS_BR_VPORTS
+
+for i in `seq $num_of_ovs_bridges`
+do
+	br_name=OVS_BRIDGE${i}
+	br_name=${!br_name}
+	br_ports=OVS_BRIDGE${i}_PORTS
+	br_ports=${!br_ports}
+
+	if ($vsctl br-exists $br_name); then
+		info "bridge $br_name exist already."
+		if ! [[ $(uname -r) =~ "4.19" ]]; then
+			ip link set $br_name up
+		fi
+		continue
+	fi
+
+	missing_port=0
+	ovs_br_ports=""
+	for port in $br_ports
+	do
+		start_time=$(awk '{print $1}' /proc/uptime)
+		while ! [ -d /sys/class/net/$port ]
+		do
+			elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+			if [ $elapsed -gt $OVS_BR_PORTS_TIMEOUT ]; then
+				break
+			fi
+			sleep 1
+		done
+
+		if [ -d /sys/class/net/$port ]; then
+			ovs_br_ports="$ovs_br_ports $port"
+		else
+			info "port device $port for bridge $br_name is missing."
+			case $port in
+				*pf*sf*)
+					info "RDMA functionality is not expected to work without $port in $br_name"
+				;;
+				*)
+					missing_port=$((missing_port+1))
+				;;
+			esac
+		fi
+	done
+
+	if [ $missing_port -gt 0 ]; then
+		info "Skipping $br_name configuration."
+		continue
+	fi
+
+	OVS_BR_READY[$i]=1
+	OVS_BR_VPORTS[$i]="$ovs_br_ports"
+done
+
+# Phase 2: Build a single batched ovs-vsctl transaction for all bridges.
+ovs_batch_cmd=""
+ovs_batch_bridges=""
+for i in `seq $num_of_ovs_bridges`
+do
+	[ "${OVS_BR_READY[$i]}" = "1" ] || continue
+
+	br_name=OVS_BRIDGE${i}
+	br_name=${!br_name}
+
+	if [ -n "$ovs_batch_cmd" ]; then
+		ovs_batch_cmd="$ovs_batch_cmd --"
+	fi
+	ovs_batch_cmd="$ovs_batch_cmd add-br $br_name"
+	ovs_batch_bridges="$ovs_batch_bridges $br_name"
+
+	for port in ${OVS_BR_VPORTS[$i]}
+	do
+		ovs_batch_cmd="$ovs_batch_cmd -- add-port $br_name $port"
+	done
+done
+
+wait_for_ovs_up
+
+if [ -n "$ovs_batch_cmd" ]; then
+	$vsctl --timeout=$OVS_BR_PORTS_TIMEOUT $ovs_batch_cmd
+	info "Created OVS bridges in a single transaction:$ovs_batch_bridges"
+
+	# Log individual port assignments and bring bridges up
+	for i in `seq $num_of_ovs_bridges`
+	do
+		[ "${OVS_BR_READY[$i]}" = "1" ] || continue
+		br_name=OVS_BRIDGE${i}
+		br_name=${!br_name}
+		for port in ${OVS_BR_VPORTS[$i]}; do
+			info "bridge $br_name: added port $port"
+		done
+	done
+fi
+
+if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
+	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload=true
+	if [ $? -eq 0 ]; then
+		info "OVS HW offload is set"
+		info "Going to restart $ovs_service to activate hw-offload"
+		need_restart=true
+	fi
+fi
+
+ovsbr_number=`$vsctl list-br | wc -l`
+if [ $ovsbr_number -gt 0 ]; then
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
+		ovs_restart
+	fi
+fi
+
+reapply_udev_settings
+
+exit $RC
