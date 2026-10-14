@@ -539,6 +539,228 @@ is_bf3()
 	return 1
 }
 
+is_bf4()
+{
+	if [ -e /etc/mlnx-release ]; then
+		if [ $(lspci -nD -d 15b3: | grep -E "a2df" | wc -l) -gt 0 ]; then
+			return 0
+		fi
+	fi
+	return 1
+}
+
+
+add_default_hugepages_configurations()
+{
+	if [ "X${OVS_DOCA}" != "Xyes" ]; then
+		return
+	fi
+	touch $OVS_DOCA_MARKER
+	[ -z "$OVS_HUGEPAGE_SIZE" ] && OVS_HUGEPAGE_SIZE=$OVS_DEFAULT_HUGEPAGE_SIZE
+	if [ -z "$OVS_HUGEPAGE_NUM" ]; then
+		if is_bf4; then
+			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM_BF4
+			info "BlueField 4 detected, using 4GB hugepages allocation"
+		else
+			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM
+		fi
+	fi
+	info "Adding ovs-doca default hugepages configuration"
+	$HUGEPAGES_TOOL config --force --app "ovs-doca (default)" --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
+}
+
+# Reload runs via mlnx-bf-hugepages-ready.service (RemainAfterExit=yes) rather
+# than calling $HUGEPAGES_TOOL directly, so "hugepages are applied" is a
+# systemd-observable event other units (e.g. kubelet, via a downstream
+# After=/Wants=) can order against, instead of only ever happening inside
+# this script with no external signal. restart (not start) so a unit that is
+# already active from an earlier call in this boot still re-runs reload and
+# reflects the current config. For a Type=oneshot unit, systemctl restart
+# is already synchronous (waits for ExecStart to finish); --wait must NOT
+# be used here as it hangs waiting for the unit to become inactive, which
+# never happens with RemainAfterExit=yes. See RM-5266141.
+reload_hugepages()
+{
+	if ! systemctl restart mlnx-bf-hugepages-ready.service; then
+		error "mlnx-bf-hugepages-ready.service failed; hugepages may not be applied"
+	fi
+}
+
+config_hugepages()
+{
+	if ! ( $HUGEPAGES_TOOL show | grep -q ovs-doca ); then
+		add_default_hugepages_configurations
+		info "Applying hugepages configuration"
+		reload_hugepages
+	else
+		info "Hugepages configured already"
+	fi
+}
+
+cleanup_hugepages()
+{
+	if [ "X${OVS_DOCA}" != "Xyes" ] && [ -f $OVS_DOCA_MARKER ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
+		info "Removing ovs-doca default hugepages configuration"
+		$HUGEPAGES_TOOL remove ovs-doca
+		reload_hugepages
+		rm -f $OVS_DOCA_MARKER
+	fi
+}
+
+
+ovs_restart()
+{
+	if [ "$need_restart" == "false" ]; then
+		info "Restarting of $ovs_service is not required"
+		return 0
+	fi
+
+	if [ -n "$ovs_service" ]; then
+		info "Restarting $ovs_service"
+		$ovs_restart_cmd
+		need_restart=false
+	fi
+}
+
+wait_for_ovs_up()
+{
+	start_time=$(awk '{print $1}' /proc/uptime)
+	while ! ($vsctl show > /dev/null 2>&1)
+	do
+		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+		if [ $elapsed -gt $OVS_TIMEOUT ]; then
+			info "$ovs_service is not up. Exiting..."
+			exit 1
+		fi
+		info "$ovs_service is not ready. Restarting $ovs_service..."
+		$ovs_restart_cmd
+	done
+}
+
+reapply_udev_settings()
+{
+	# Re-apply udev settings removed by OVS
+	if [ -x /lib/udev/mlnx_bf_udev ]; then
+		for p in $(cd /sys/class/net; /bin/ls -d *)
+		do
+			case "$p" in
+				p*|e*|A*|B*)
+					/lib/udev/mlnx_bf_udev $p $(cat /sys/class/net/$p/ifindex 2> /dev/null) > /dev/null 2>&1
+				;;
+				*)
+				;;
+			esac
+		done
+	fi
+
+	# Enable hw-tc-offload for all bridge ports dynamically
+	for i in `seq $num_of_ovs_bridges`
+	do
+		br_ports=OVS_BRIDGE${i}_PORTS
+		br_ports=${!br_ports}
+		for p in $br_ports
+		do
+			ethtool -K $p hw-tc-offload on
+		done
+	done
+}
+
+
+ovs_config_default_datapath()
+{
+	ovs_default_datapath=${1:-"system"}
+
+	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
+		$vsctl --no-wait set Open_vSwitch . Other_config:default-datapath-type=$ovs_default_datapath 2> /dev/null
+		if [ $? -eq 0 ]; then
+			info "OVS default-datapath-type is set"
+		fi
+	fi
+
+	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
+		error "Failed setting OVS default-datapath-type"
+		return 1
+	fi
+}
+
+ovs_cleanup_doca()
+{
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'default-datapath-type'); then
+		info "OVS cleanup default-datapath-type"
+		$vsctl --no-wait remove Open_vSwitch . other_config default-datapath-type
+	fi
+
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
+		info "OVS cleanup doca-init"
+		$vsctl --no-wait remove Open_vSwitch . other_config doca-init
+		$vsctl --no-wait remove Open_vSwitch . other_config hw-offload-ct-size
+		need_restart=true
+	fi
+}
+
+ovs_config_doca()
+{
+	local doca_initialized=`$vsctl get Open_vSwitch . doca_initialized`
+
+	if [ "X${OVS_DOCA}" != "Xyes" ]; then
+		if [ -f $OVS_DOCA_MARKER ]; then
+			ovs_cleanup_doca
+			rm -f $OVS_DOCA_MARKER
+		fi
+		return 0
+	fi
+
+	if [ "$doca_initialized" == "true" ]; then
+		return 0
+	fi
+
+	$vsctl --no-wait set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
+	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload-ct-size=0 2> /dev/null
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init="true"'); then
+		info "OVS doca-init is set to true"
+		need_restart=true
+	else
+		info "OVS failed setting doca-init to true"
+	fi
+
+	ovs_config_default_datapath netdev
+}
+
+is_ovs_config_valid()
+{
+	if [ "X${SKIP_OVS_CONFIG_VALIDATION}" == "Xyes" ]; then
+		debug "SKIP_OVS_CONFIG_VALIDATION is set to yes. Skipping OVS configuration validation."
+		return 0
+	fi
+
+	# Check that all OVS bridges ports exist
+	for br in `$vsctl list-br`; do
+		for port in `$vsctl list-ports $br`; do
+			if echo $port | grep -qE 'vf[0-9]'; then
+				# Ignore VF representors
+				continue
+			elif echo $port | grep -qE 'geneve|vxlan|gre|l2tp|stt'; then
+				# Ignore tunnel ports
+				continue
+			fi
+			if ! [ -d /sys/class/net/$port ]; then
+				info "Port $port for bridge $br does not exist. OVS configuration is invalid."
+				return 1
+			fi
+		done
+	done
+	return 0
+}
+
+ovs_remove_bridges()
+{
+	for br in `$vsctl list-br`; do
+		$vsctl del-br $br
+		debug "Removed bridge $br"
+	done
+}
+
+### MAIN ###
 # Source config file early to pick up FORCE_DPU_CONFIGURE before the host_en check.
 if [ -f /etc/mellanox/mlnx-bf.conf ]; then
 	. /etc/mellanox/mlnx-bf.conf
@@ -601,6 +823,67 @@ LOG_LEVEL=${LOG_LEVEL:-"info"}
 SWITCHDEV_DEVICES_LIST=()
 SD_DEVICES_LIST=()
 DEVICE_LIST_FOR_OVS_BRIDGES=()
+
+OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
+OVS_TIMEOUT=${OVS_TIMEOUT:-30}
+SKIP_OVS_CONFIG_VALIDATION=${SKIP_OVS_CONFIG_VALIDATION:-"yes"}
+
+ovs_service=""
+if [ -e /etc/init.d/openvswitch-switch ]; then
+	ovs_service="openvswitch-switch.service"
+elif [ -e /usr/lib/systemd/system/openvswitch.service ]; then
+	ovs_service="openvswitch.service"
+else
+	ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
+fi
+
+if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
+	# OVS service is not enabled
+	info "$ovs_service is not enabled. Exiting..."
+	exit 0
+fi
+
+ovs_restart_cmd="systemctl restart $ovs_service"
+
+need_restart=false
+
+HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
+OVS_DEFAULT_HUGEPAGE_SIZE=2048
+OVS_DEFAULT_HUGEPAGE_NUM=512
+OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
+# Marker file to track if OVS_DOCA was previously set to "yes".
+# Used to distinguish between OVS_DOCA=no as a default vs. a user
+# explicitly switching from yes to no, so we only run cleanup in the latter case.
+OVS_DOCA_MARKER=/etc/mellanox/.ovs_doca_configured
+
+# Configure the default OVS bridge
+vsctl=`which ovs-vsctl 2> /dev/null`
+if [ ! -n "$vsctl" ]; then
+	info "OVS is not installed. Skipping OVS bridges creation."
+	exit 0
+fi
+
+if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
+	. /etc/mellanox/mlnx-ovs.conf
+fi
+
+OVS_CONF_SAVED=0
+OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
+
+# Configure hugepages
+config_hugepages
+
+if [ -n "$vsctl" ] && [ "X${OVS_CONF_RESTORE}" == "Xyes" ]; then
+	ovsbr_number=`$vsctl list-br | wc -l`
+	if [ $ovsbr_number -gt 0 ]; then
+		ovs_save_conf
+		if [ -n "$ovs_brs" ]; then
+			OVS_CONF_SAVED=1
+		fi
+		ovs_delete_conf
+		for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
+	fi
+fi
 
 {
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
@@ -811,16 +1094,6 @@ if (is_smartnic_mode "$ctrl_dev"); then
 
 	start_ipsec_services
 fi
-
-is_bf4()
-{
-	if [ -e /etc/mlnx-release ]; then
-		if [ $(lspci -nD -d 15b3: | grep -E "a2df" | wc -l) -gt 0 ]; then
-			return 0
-		fi
-	fi
-	return 1
-}
 
 # For BF4 SD with merged eswitch, use a single bridge on LAG master only
 if is_bf4 && [ ${#SD_DEVICES_LIST[@]} -gt 0 ]; then
@@ -1101,101 +1374,6 @@ if [ -f /etc/mellanox/mlnx-sf.conf ]; then
 	. /etc/mellanox/mlnx-sf.conf
 fi
 
-HUGEPAGES_TOOL=/usr/sbin/doca-hugepages
-OVS_DEFAULT_HUGEPAGE_SIZE=2048
-OVS_DEFAULT_HUGEPAGE_NUM=512
-OVS_DEFAULT_HUGEPAGE_NUM_BF4=2048
-# Marker file to track if OVS_DOCA was previously set to "yes".
-# Used to distinguish between OVS_DOCA=no as a default vs. a user
-# explicitly switching from yes to no, so we only run cleanup in the latter case.
-OVS_DOCA_MARKER=/etc/mellanox/.ovs_doca_configured
-
-add_default_hugepages_configurations()
-{
-	if [ "X${OVS_DOCA}" != "Xyes" ]; then
-		return
-	fi
-	touch $OVS_DOCA_MARKER
-	[ -z "$OVS_HUGEPAGE_SIZE" ] && OVS_HUGEPAGE_SIZE=$OVS_DEFAULT_HUGEPAGE_SIZE
-	if [ -z "$OVS_HUGEPAGE_NUM" ]; then
-		if is_bf4; then
-			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM_BF4
-			info "BlueField 4 detected, using 4GB hugepages allocation"
-		else
-			OVS_HUGEPAGE_NUM=$OVS_DEFAULT_HUGEPAGE_NUM
-		fi
-	fi
-	info "Adding ovs-doca default hugepages configuration"
-	$HUGEPAGES_TOOL config --force --app "ovs-doca (default)" --size $OVS_HUGEPAGE_SIZE --num $OVS_HUGEPAGE_NUM
-}
-
-# Reload runs via mlnx-bf-hugepages-ready.service (RemainAfterExit=yes) rather
-# than calling $HUGEPAGES_TOOL directly, so "hugepages are applied" is a
-# systemd-observable event other units (e.g. kubelet, via a downstream
-# After=/Wants=) can order against, instead of only ever happening inside
-# this script with no external signal. restart (not start) so a unit that is
-# already active from an earlier call in this boot still re-runs reload and
-# reflects the current config. For a Type=oneshot unit, systemctl restart
-# is already synchronous (waits for ExecStart to finish); --wait must NOT
-# be used here as it hangs waiting for the unit to become inactive, which
-# never happens with RemainAfterExit=yes. See RM-5266141.
-reload_hugepages()
-{
-	if ! systemctl restart mlnx-bf-hugepages-ready.service; then
-		error "mlnx-bf-hugepages-ready.service failed; hugepages may not be applied"
-	fi
-}
-
-config_hugepages()
-{
-	if ! ( $HUGEPAGES_TOOL show | grep -q ovs-doca ); then
-		add_default_hugepages_configurations
-		info "Applying hugepages configuration"
-		reload_hugepages
-	else
-		info "Hugepages configured already"
-	fi
-}
-
-cleanup_hugepages()
-{
-	if [ "X${OVS_DOCA}" != "Xyes" ] && [ -f $OVS_DOCA_MARKER ] && $HUGEPAGES_TOOL show | grep -q "ovs-doca"; then
-		info "Removing ovs-doca default hugepages configuration"
-		$HUGEPAGES_TOOL remove ovs-doca
-		reload_hugepages
-		rm -f $OVS_DOCA_MARKER
-	fi
-}
-
-# Configure the default OVS bridge
-vsctl=`which ovs-vsctl 2> /dev/null`
-if [ ! -n "$vsctl" ]; then
-	info "OVS is not installed. Skipping OVS bridges creation."
-	exit 0
-fi
-
-if [ -f /etc/mellanox/mlnx-ovs.conf ]; then
-	. /etc/mellanox/mlnx-ovs.conf
-fi
-
-OVS_CONF_SAVED=0
-OVS_CONF_RESTORE=${OVS_CONF_RESTORE:-"yes"}
-
-# Configure hugepages
-config_hugepages
-
-if [ -n "$vsctl" ] && [ "X${OVS_CONF_RESTORE}" == "Xyes" ]; then
-	ovsbr_number=`$vsctl list-br | wc -l`
-	if [ $ovsbr_number -gt 0 ]; then
-		ovs_save_conf
-		if [ -n "$ovs_brs" ]; then
-			OVS_CONF_SAVED=1
-		fi
-		ovs_delete_conf
-		for i in $(/bin/ls -1 /sys/class/net/); do tc filter del dev $i ingress > /dev/null 2>&1; done
-	fi
-fi
-
 num_of_sd_devs=${#SD_DEVICES_LIST[@]}
 
 # For Socket Direct, group devices by PCI domain so that all functions
@@ -1371,182 +1549,7 @@ else
 	done
 fi
 
-OVS_HW_OFFLOAD=${OVS_HW_OFFLOAD:-"yes"}
-OVS_TIMEOUT=${OVS_TIMEOUT:-30}
-SKIP_OVS_CONFIG_VALIDATION=${SKIP_OVS_CONFIG_VALIDATION:-"yes"}
-
-ovs_service=""
-if [ -e /etc/init.d/openvswitch-switch ]; then
-	ovs_service="openvswitch-switch.service"
-elif [ -e /usr/lib/systemd/system/openvswitch.service ]; then
-	ovs_service="openvswitch.service"
-else
-	ovs_service=`systemctl list-unit-files 2> /dev/null | grep -E "openvswitch.service|openvswitch-switch.service" | awk '{print $1}'`
-fi
-
-if ! (systemctl is-enabled $ovs_service 2> /dev/null | grep -wq enabled); then
-	# OVS service is not enabled
-	info "$ovs_service is not enabled. Exiting..."
-	exit 0
-fi
-
-ovs_restart="systemctl restart $ovs_service"
-
-need_restart=false
-
-ovs_restart()
-{
-	if [ "$need_restart" == "false" ]; then
-		info "Restarting of $ovs_service is not required"
-		return 0
-	fi
-
-	if [ -n "$ovs_service" ]; then
-		info "Restarting $ovs_service"
-		$ovs_restart
-		need_restart=false
-	fi
-}
-
-wait_for_ovs_up()
-{
-	start_time=$(awk '{print $1}' /proc/uptime)
-	while ! ($vsctl show > /dev/null 2>&1)
-	do
-		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-		if [ $elapsed -gt $OVS_TIMEOUT ]; then
-			info "$ovs_service is not up. Exiting..."
-			exit 1
-		fi
-		info "$ovs_service is not ready. Restarting $ovs_service..."
-		$ovs_restart
-	done
-}
-
-reapply_udev_settings()
-{
-	# Re-apply udev settings removed by OVS
-	if [ -x /lib/udev/mlnx_bf_udev ]; then
-		for p in $(cd /sys/class/net; /bin/ls -d *)
-		do
-			case "$p" in
-				p*|e*|A*|B*)
-					/lib/udev/mlnx_bf_udev $p $(cat /sys/class/net/$p/ifindex 2> /dev/null) > /dev/null 2>&1
-				;;
-				*)
-				;;
-			esac
-		done
-	fi
-
-	# Enable hw-tc-offload for all bridge ports dynamically
-	for i in `seq $num_of_ovs_bridges`
-	do
-		br_ports=OVS_BRIDGE${i}_PORTS
-		br_ports=${!br_ports}
-		for p in $br_ports
-		do
-			ethtool -K $p hw-tc-offload on
-		done
-	done
-}
-
-{
 wait_for_ovs_up
-
-ovs_config_default_datapath()
-{
-	ovs_default_datapath=${1:-"system"}
-
-	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
-		$vsctl --no-wait set Open_vSwitch . Other_config:default-datapath-type=$ovs_default_datapath 2> /dev/null
-		if [ $? -eq 0 ]; then
-			info "OVS default-datapath-type is set"
-		fi
-	fi
-
-	if !($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q "default-datapath-type=$ovs_default_datapath"); then
-		error "Failed setting OVS default-datapath-type"
-		return 1
-	fi
-}
-
-ovs_cleanup_doca()
-{
-	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'default-datapath-type'); then
-		info "OVS cleanup default-datapath-type"
-		$vsctl --no-wait remove Open_vSwitch . other_config default-datapath-type
-	fi
-
-	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init'); then
-		info "OVS cleanup doca-init"
-		$vsctl --no-wait remove Open_vSwitch . other_config doca-init
-		$vsctl --no-wait remove Open_vSwitch . other_config hw-offload-ct-size
-		need_restart=true
-	fi
-}
-
-ovs_config_doca()
-{
-	local doca_initialized=`$vsctl get Open_vSwitch . doca_initialized`
-
-	if [ "X${OVS_DOCA}" != "Xyes" ]; then
-		if [ -f $OVS_DOCA_MARKER ]; then
-			ovs_cleanup_doca
-			rm -f $OVS_DOCA_MARKER
-		fi
-		return 0
-	fi
-
-	if [ "$doca_initialized" == "true" ]; then
-		return 0
-	fi
-
-	$vsctl --no-wait set Open_vSwitch . Other_config:doca-init="true" 2> /dev/null
-	$vsctl --no-wait set Open_vSwitch . Other_config:hw-offload-ct-size=0 2> /dev/null
-	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'doca-init="true"'); then
-		info "OVS doca-init is set to true"
-		need_restart=true
-	else
-		info "OVS failed setting doca-init to true"
-	fi
-
-	ovs_config_default_datapath netdev
-}
-
-is_ovs_config_valid()
-{
-	if [ "X${SKIP_OVS_CONFIG_VALIDATION}" == "Xyes" ]; then
-		debug "SKIP_OVS_CONFIG_VALIDATION is set to yes. Skipping OVS configuration validation."
-		return 0
-	fi
-
-	# Check that all OVS bridges ports exist
-	for br in `$vsctl list-br`; do
-		for port in `$vsctl list-ports $br`; do
-			if echo $port | grep -qE 'vf[0-9]'; then
-				# Ignore VF representors
-				continue
-			elif echo $port | grep -qE 'geneve|vxlan|gre|l2tp|stt'; then
-				# Ignore tunnel ports
-				continue
-			fi
-			if ! [ -d /sys/class/net/$port ]; then
-				info "Port $port for bridge $br does not exist. OVS configuration is invalid."
-				return 1
-			fi
-		done
-	done
-	return 0
-}
-
-ovs_remove_bridges()
-{
-	for br in `$vsctl list-br`; do
-		$vsctl del-br $br
-		debug "Removed bridge $br"
-	done
-}
 
 #Enable OVS-DOCA
 ovs_config_doca
@@ -1561,23 +1564,6 @@ if [ "X${CREATE_OVS_BRIDGES}" != "Xyes" ]; then
 		ovs_restart
     fi
     exit $RC
-fi
-
-ovsbr_number=`$vsctl list-br | wc -l`
-if [ $ovsbr_number -gt 0 ]; then
-	if is_ovs_config_valid; then
-		debug "OVS bridges already exist. Skipping OVS bridges creation."
-		if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
-			ovs_restart
-		fi
-		reapply_udev_settings
-		exit $RC
-	else
-		info "Removing OVS bridges and creating new ones."
-		ovs_save_conf
-		ovs_remove_bridges
-		ovsbr_number=0
-	fi
 fi
 
 OVS_BR_PORTS_TIMEOUT=${OVS_BR_PORTS_TIMEOUT:-60}
@@ -1722,8 +1708,11 @@ if [ "X${OVS_HW_OFFLOAD}" == "Xyes" ]; then
 	fi
 fi
 
-if [ $need_restart == true ];then
-	ovs_restart
+ovsbr_number=`$vsctl list-br | wc -l`
+if [ $ovsbr_number -gt 0 ]; then
+	if ($vsctl get Open_vSwitch . Other_config 2> /dev/null | grep -q 'hw-offload="true"') || [ "$need_restart" == true ]; then
+		ovs_restart
+	fi
 fi
 
 reapply_udev_settings
@@ -1732,7 +1721,6 @@ reapply_udev_settings
 if systemctl is-active --quiet mlnx_bf_configure_sync.service; then
 	systemctl stop --no-block mlnx_bf_configure_sync
 fi
-} &
 
 sync
 wait
