@@ -1,0 +1,85 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.TH DOCA\-HUGEPAGES 8 "2026-10-15"
+.SH NAME
+doca\-hugepages \- manage hugepage allocations for DOCA applications
+.SH SYNOPSIS
+.B doca\-hugepages config
+.RB [ \-\-force ]
+.BI \-\-app " APP"
+.BI \-\-size " SIZE_KB"
+.BI \-\-num " NUM"
+.PP
+.B doca\-hugepages reload
+.PP
+.B doca\-hugepages remove
+.RB [ \-\-all ]
+.I APP
+.PP
+.B doca\-hugepages show
+.SH DESCRIPTION
+.B doca\-hugepages
+manages per\-application hugepage configurations stored in JSON files
+under
+.IR /etc/mellanox/hugepages.d/ .
+Each application registers its hugepage requirements (page size and count);
+the
+.B reload
+command then allocates the total hugepages needed across all registered
+applications.
+.SH COMMANDS
+.TP
+.B config
+Add or update the hugepage configuration for an application.
+Requires
+.BR \-\-app ", " \-\-size ", and " \-\-num .
+Use
+.B \-\-force
+to skip the confirmation prompt when updating an existing entry.
+This command only updates the stored configuration; use
+.B reload
+to apply changes.
+.TP
+.B reload
+Read all per\-application configurations from
+.I /etc/mellanox/hugepages.d/
+and allocate the required hugepages via
+.IR /sys/kernel/mm/hugepages/ .
+.TP
+.B remove
+Remove the configuration for
+.IR APP .
+Use
+.B \-\-all
+to remove all size entries for the application without prompting.
+.TP
+.B show
+Display the current hugepage configuration for all registered applications.
+.SH OPTIONS
+.TP
+.BI \-\-app " APP"
+Application name (arbitrary label, e.g.\& "ovs\-doca").
+.TP
+.BI \-\-size " SIZE_KB"
+Hugepage size in kilobytes (e.g.\& 2048 for 2\ MB, 1048576 for 1\ GB).
+Must be a size supported by the running kernel.
+.TP
+.BI \-\-num " NUM"
+Number of hugepages to allocate for this application.
+.TP
+.B \-\-force
+Skip the confirmation prompt when overwriting an existing configuration.
+.TP
+.B \-\-all
+With
+.BR remove ,
+delete all size entries without prompting.
+.SH FILES
+.TP
+.I /etc/mellanox/hugepages.d/
+Directory containing per\-application JSON configuration files.
+Each file is named
+.IB APP .json
+and maps hugepage sizes to counts.
+.SH SEE ALSO
+.BR mlnx\-bf\-hugepages (8),
+.BR mlnx_bf_configure_ovs (8)

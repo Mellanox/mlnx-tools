@@ -1,0 +1,88 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.TH MLNX_BF_CONFIGURE_OVS 8 "2026-10-15"
+.SH NAME
+mlnx_bf_configure_ovs \- configure Open vSwitch bridges on NVIDIA BlueField DPUs
+.SH SYNOPSIS
+.B mlnx_bf_configure_ovs
+.SH DESCRIPTION
+.B mlnx_bf_configure_ovs
+configures Open vSwitch (OVS) bridges and related settings on NVIDIA BlueField
+DPUs.
+It is designed to run as a systemd service
+.RB ( mlnx_bf_configure_ovs.service )
+after both
+.B openibd
+and
+.B openvswitch
+have started.
+.PP
+The script sources
+.I /sbin/mlnx_bf_configure.env
+for shared variables and helper functions, then performs the following:
+.IP \(bu 2
+Waits for
+.B mlnx_bf_configure
+to signal that device\-level configuration (switchdev mode, SFs, etc.) is
+complete.
+.IP \(bu 2
+Cleans up DOCA hugepages if necessary.
+.IP \(bu 2
+Determines the required OVS bridge layout based on the eswitch mode
+(switchdev / legacy) and the number of PCI uplinks.
+.IP \(bu 2
+Creates OVS bridges with the appropriate representor ports, including
+support for per\-port VLAN settings (tag, vlan_mode, trunks) and MTU.
+.IP \(bu 2
+Enables OVS hardware offload when configured.
+.IP \(bu 2
+Restarts the OVS service if needed to activate hw\-offload.
+.IP \(bu 2
+Reapplies udev network settings after bridge reconfiguration.
+.SH CONFIGURATION
+Configuration is read from
+.IR /etc/mellanox/mlnx\-ovs.conf .
+Key variables include:
+.TP
+.B CREATE_OVS_BRIDGE
+Set to
+.I yes
+to enable automatic OVS bridge creation (default:
+.IR no ).
+.TP
+.B OVS_HW_OFFLOAD
+Set to
+.I yes
+to enable OVS hardware offload.
+.TP
+.B OVS_BRIDGE1 ", " OVS_BRIDGE2
+Custom bridge names (defaults:
+.IR ovsbr1 ", " ovsbr2 ).
+.TP
+.B OVS_BRIDGE1_PORTS ", " OVS_BRIDGE2_PORTS
+Space\-separated list of ports to add to each bridge.
+.TP
+.B OVS_BR_PORTS_TIMEOUT
+Timeout in seconds waiting for representor netdevs to appear (default: 60).
+.SH ENVIRONMENT
+.TP
+.B SYNC_TIMEOUT
+Maximum seconds to wait for
+.B mlnx_bf_configure
+to finish device configuration before giving up (default: 120).
+.SH FILES
+.TP
+.I /sbin/mlnx_bf_configure.env
+Shared variables and helper functions sourced at startup.
+.TP
+.I /etc/mellanox/mlnx\-ovs.conf
+OVS configuration file.
+.TP
+.I /run/mlnx_bf_configure_sync
+Synchronisation file created by
+.B mlnx_bf_configure
+to signal readiness.
+.SH SEE ALSO
+.BR mlnx_bf_configure (8),
+.BR doca\-hugepages (8),
+.BR mlnx\-bf\-hugepages (8),
+.BR ovs\-vsctl (8)
