@@ -1,0 +1,91 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.TH MLNX\-BF\-HUGEPAGES 8 "2026-10-15"
+.SH NAME
+mlnx\-bf\-hugepages \- configure DOCA hugepages from a system configuration file
+.SH SYNOPSIS
+.B mlnx\-bf\-hugepages
+.SH DESCRIPTION
+.B mlnx\-bf\-hugepages
+is a wrapper that reads hugepage requirements from
+.I /etc/mellanox/hugepages.conf
+and drives
+.BR doca\-hugepages (8)
+to register and allocate them.
+It is intended to be called by the
+.B mlnx\-bf\-hugepages\-ready.service
+systemd unit early in the boot process, before Open vSwitch or other DOCA
+applications start.
+.PP
+The script supports multiple application entries and two configuration
+formats (see
+.BR CONFIGURATION ).
+After processing all entries it calls
+.B doca\-hugepages reload
+once to apply the combined allocation.
+.SH CONFIGURATION
+The configuration file is
+.IR /etc/mellanox/hugepages.conf .
+Two formats are supported:
+.SS Combined format (recommended)
+Each application is defined by an indexed array element:
+.PP
+.RS 4
+.nf
+HUGEPAGE_APP[0]="ovs\-doca (default) 2048 2048"
+HUGEPAGE_APP[1]="dpdk\-app 1048576 4"
+.fi
+.RE
+.PP
+Each value is a string of the form
+.RI \(dq "app\-name size_kB num_pages" \(dq.
+The application name may contain spaces.
+.PP
+A single\-entry shorthand (without the index) is also accepted:
+.PP
+.RS 4
+.nf
+HUGEPAGE_APP="ovs\-doca (default) 2048 2048"
+.fi
+.RE
+.SS Legacy format (single application)
+.PP
+.RS 4
+.nf
+HUGEPAGE_APP="ovs\-doca (default)"
+HUGEPAGE_SIZE=2048
+HUGEPAGE_NUM=2048
+.fi
+.RE
+.PP
+When neither
+.I size
+nor
+.I num
+can be parsed from the
+.B HUGEPAGE_APP
+value, the script falls back to
+.B HUGEPAGE_SIZE
+and
+.BR HUGEPAGE_NUM ,
+or to built\-in defaults of 2048\ kB and 2048 pages.
+.SH FILES
+.TP
+.I /etc/mellanox/hugepages.conf
+System hugepage configuration file sourced by this script.
+.TP
+.I /usr/sbin/doca\-hugepages
+Underlying tool used for per\-application hugepage management.
+.TP
+.I /etc/mellanox/hugepages.d/
+Per\-application JSON configurations managed by
+.BR doca\-hugepages (8).
+.SH EXIT STATUS
+.TP
+.B 0
+All applications configured and reload succeeded.
+.TP
+.B 1
+One or more applications failed to configure or the final reload failed.
+.SH SEE ALSO
+.BR doca\-hugepages (8),
+.BR mlnx_bf_configure_ovs (8)
