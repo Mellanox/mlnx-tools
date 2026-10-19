@@ -84,16 +84,12 @@ if [ -z "${ENABLE_ESWITCH_MULTIPORT}" ]; then
 		ENABLE_ESWITCH_MULTIPORT="no"
 	fi
 fi
-ENABLE_SD_MERGED_ESWITCH=${ENABLE_SD_MERGED_ESWITCH:-"auto"}
 SNAP_DMA_SF=${SNAP_DMA_SF:-"auto"}
 SNAP_DMA_SF_NUM=${SNAP_DMA_SF_NUM:-8000}
 SNAP_DMA_SF_MAC=${SNAP_DMA_SF_MAC:-""}
 SNAP_EMU_MNG_MANAGERS_FILE=${SNAP_EMU_MNG_MANAGERS_FILE:-"/run/mellanox/snap_emulation_managers"}
 MLXCONFIG_DEBUG_LOG=${MLXCONFIG_DEBUG_LOG:-"/tmp/mlxconfig_debug.log"}
-LOG_LEVEL=${LOG_LEVEL:-"info"}
 SWITCHDEV_DEVICES_LIST=()
-SD_DEVICES_LIST=()
-DEVICE_LIST_FOR_OVS_BRIDGES=()
 
 {
 RDMA_SET_NETNS_EXCLUSIVE=${RDMA_SET_NETNS_EXCLUSIVE:-"yes"}
@@ -562,7 +558,7 @@ if [ $RC -ne 0 ]; then
 fi
 
 if [ $num_of_devs_switchdev -eq 0 ]; then
-	info "No devices configured to switchdev mod. Skipping SF/Bridges configuration."
+	info "No devices configured to switchdev mode. Skipping SF/Bridges configuration."
 	exit 0
 fi
 

@@ -147,7 +147,7 @@ debug "DEVICE_LIST_FOR_OVS_BRIDGES: ${DEVICE_LIST_FOR_OVS_BRIDGES[*]}"
 debug "SD_MERGED_ESWITCH: $SD_MERGED_ESWITCH"
 
 if [ $num_of_devs_switchdev -eq 0 ]; then
-	info "No devices configured to switchdev mod. Skipping SF/Bridges configuration."
+	info "No devices configured to switchdev mode. Skipping SF/Bridges configuration."
 	exit 0
 fi
 
@@ -443,6 +443,9 @@ if [ -n "$ovs_batch_cmd" ]; then
 		for port in ${OVS_BR_VPORTS[$i]}; do
 			info "bridge $br_name: added port $port"
 		done
+		if ! [[ $(uname -r) =~ "4.19" ]]; then
+			ip link set $br_name up
+		fi
 	done
 fi
 
