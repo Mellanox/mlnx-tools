@@ -98,7 +98,7 @@ num_of_devs_switchdev=0
 # so all NIC (e.g. ASTRA CX-9) links are configured before the
 # BlueField devices. Within each group the order is unchanged:
 # domain descending, then bus/device/function ascending.
-for dev in $(devlink dev show | awk -F'/' '/^pci\//{gsub(/:$/,"",$2); print tolower($2)}' \
+for dev in $(devlink dev show | awk '/^[[:space:]]/ {next} /^pci\// {b=tolower($1); sub(/^pci\//,"",b); sub(/:$/,"",b); if(!(b in s)){s[b]; print b}}' \
 	| while read -r bdf; do
 		if grep -qiE "$BLUEFIELD_DEVICES" /sys/bus/pci/devices/${bdf}/device 2>/dev/null; then
 			echo "1/$bdf"
