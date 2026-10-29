@@ -1,3 +1,10 @@
+mlnx-tools (26.04.5) UNRELEASED; urgency=medium
+
+  * mlnx_bf_configure: do not wait for backgrounded OVS configuration
+  * mlnx_bf_configure: fix PCI device parsing for nested devlink output
+
+ -- Vladimir Sokolovsky <vlad@nvidia.com>  Wed, 28 Oct 2026 22:41:00 -0500
+
 mlnx-tools (26.04.4) UNRELEASED; urgency=medium
 
   * Sync with master branch
