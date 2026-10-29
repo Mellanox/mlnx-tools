@@ -897,7 +897,7 @@ while ! ($vsctl show > /dev/null 2>&1)
 do
 	elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
 	if [ $elapsed -gt $OVS_TIMEOUT ]; then
-		info "$ovs_service is not up. Exiting..."
+		error "$ovs_service is not up after ${OVS_TIMEOUT}s. OVS bridges will not be created."
 		exit 1
 	fi
 	sleep 1
@@ -1150,7 +1150,12 @@ if systemctl is-active --quiet mlnx_bf_configure_sync.service; then
 fi
 } &
 
+# No "wait" here on purpose: mlnx_bf_configure is invoked synchronously from
+# the ib_umad modprobe install line, so anything we wait for blocks the unit
+# that loaded the module. The block above waits for NetworkManager and for
+# OVS, both of which are ordered after that unit and therefore cannot become
+# active while we block - adding "wait" makes both waits expire on every boot
+# and leaves the default bridges uncreated.
 sync
-wait
 
 exit $RC
