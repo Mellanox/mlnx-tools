@@ -57,6 +57,7 @@ NA						= "N/A"
 
 MLX4_CORE					= "mlx4_core"
 MLX5_CORE					= "mlx5_core"
+DRIVER_MODULES					= (MLX5_CORE, MLX4_CORE)
 
 FORMAT_1_ARG					= '%s%-40s\n'
 FORMAT_2ARGS 					= '%s%-40s %-6s\n'
@@ -138,7 +139,8 @@ LSPCI						= "lspci"
 QDISC						= "tc qdisc"
 KERNEL_PARAMETERS				= "cat /proc/cmdline"
 
-OFED_PATH					= "which ofed_info"
+LOADED_MODULE_VERSION_CMD			= "cat /sys/module/%s/version"
+INSTALLED_MODULE_VERSION_CMD			= "modinfo -F version %s"
 
 GET_NETWORK_PARAMETERS_CMD			= ETHTOOL + " -%s %s"
 SET_MULTIPLE_NETWORK_PARAMETER_CMD		= ETHTOOL + " -%s %s %s"
@@ -1556,23 +1558,21 @@ class Driver:
 		driver_suggestion = ""
 		if not self.installed:
 			driver_status = status_warning_string()
-			driver_suggestion = " >>> MLNX_OFED is not installed."
+			driver_suggestion = " >>> Mellanox driver is not installed."
 		print("%s: %s"%(driver_status, self.version) + driver_suggestion)
 
 	def collect_info(self):
-		""" Collects CPU information from the system and updates the class fields
+		""" Collects driver information from the system and updates the class fields
 		"""
-		( rc, ofed_path) = run_command_warn_when_fail(OFED_PATH, warning_message="MLNX OFED is not installed.")
+		for version_cmd in (LOADED_MODULE_VERSION_CMD, INSTALLED_MODULE_VERSION_CMD):
+			for module in DRIVER_MODULES:
+				( rc, version) = run_command_debug_when_fail(version_cmd%(module))
+				if not rc and version:
+					self.installed = True
+					self.version = version
+					return
 
-		if rc:
-			self.installed = False
-		else:
-			self.installed = True
-			( rc, version) = run_command_warn_when_fail(ofed_path, warning_message="Unable to find OFED version.")
-			if rc:
-				self.version = None
-			else:
-				self.version = version.split('\n')[0].rstrip(":")
+		logging.warning("Mellanox driver is not installed.")
 
 class IrqInfo:
 	def __init__ (self, number):
