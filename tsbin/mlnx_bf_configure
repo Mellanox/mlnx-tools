@@ -78,9 +78,21 @@ supports_parallel_switchdev()
 #   no|0    - always serialize, even on a supported kernel
 #   force   - always parallelize, even if the kernel looks unsupported
 # Unrecognized values are treated as the default.
+#
+# Socket Direct always serializes regardless of this setting: the driver
+# requires the SD primary to reach the new mode before its secondary, and a
+# parallel fan-out gives no ordering guarantee between the two.
 parallel_switchdev_enabled()
 {
 	local mode="${PARALLEL_SWITCHDEV_ENABLE^^}"
+	local d
+
+	for d in "$@"; do
+		if (is_sd_primary "$d"); then
+			info "Socket Direct group detected ($d): switchdev transitions will run sequentially to keep primary before secondary"
+			return 1
+		fi
+	done
 
 	case "${mode}" in
 		FORCE)
@@ -226,6 +238,12 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	# so all NIC (e.g. ASTRA CX-9) links are configured before the
 	# BlueField devices. Within each group the order is unchanged:
 	# domain descending, then bus/device/function ascending.
+	#
+	# sort_sd_primary_first() then hoists any Socket Direct primary ahead of
+	# its own secondary, because the driver rejects a mode change on an SD
+	# secondary whose primary is still in the old mode. Only groups that span
+	# a PCI domain boundary are affected by the domain-descending order, so
+	# non-SD and single-domain-group platforms keep the same order.
 	for dev in $(devlink dev show | awk '/^[[:space:]]/ {next} /^pci\// {b=tolower($1); sub(/^pci\//,"",b); sub(/:$/,"",b); if(!(b in s)){s[b]; print b}}' \
 		| while read -r bdf; do
 			if grep -qiE "$BLUEFIELD_DEVICES" /sys/bus/pci/devices/${bdf}/device 2>/dev/null; then
@@ -234,7 +252,8 @@ if (is_smartnic_mode "$ctrl_dev"); then
 				echo "0/$bdf"
 			fi
 		done \
-		| sort -t/ -k1,1 -k2.1,2.4r -k2.6,2.7 -k2.9,2.10 -k2.12,2.12 | cut -d/ -f2)
+		| sort -t/ -k1,1 -k2.1,2.4r -k2.6,2.7 -k2.9,2.10 -k2.12,2.12 | cut -d/ -f2 \
+		| sort_sd_primary_first)
 	do
 		if ! (is_dev_eth "$dev"); then
 			info "Link type is IB for ${dev}. Skipping mode configuration."
@@ -308,7 +327,7 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	# version); otherwise it stays sequential.
 
 	if [ "${#TO_SWITCHDEV_DEVS[@]}" -gt 0 ]; then
-		if (parallel_switchdev_enabled); then
+		if (parallel_switchdev_enabled "${TO_SWITCHDEV_DEVS[@]}"); then
 			info "Switching ${#TO_SWITCHDEV_DEVS[@]} device(s) to switchdev mode in parallel: ${TO_SWITCHDEV_DEVS[*]}"
 			SWITCHDEV_PIDS=()
 			for dev in "${TO_SWITCHDEV_DEVS[@]}"; do
