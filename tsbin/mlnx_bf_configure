@@ -510,8 +510,37 @@ start_ipsec_services()
 	done
 }
 
+# Flush ingress TC filters of a netdev.
+# Members of a kernel bond that is an OVS port are attached by OVS to a
+# shared ingress block. Filters of a shared block cannot be deleted per
+# device ("This filter block is shared. Please use the block index to
+# manipulate the filters"), so delete them through the block index.
+flush_ingress_tc()
+{
+	local dev=$1
+	local block out
+
+	block=$(tc qdisc show dev $dev ingress 2> /dev/null | \
+		sed -n 's/.*ingress_block \([0-9]\+\).*/\1/p' | head -1)
+	if [ -n "$block" ]; then
+		out=$(tc filter del block $block 2>&1)
+	else
+		out=$(tc filter del dev $dev ingress 2>&1)
+	fi
+	if [ -n "$out" ]; then
+		info "tc filter flush on $dev${block:+ (block $block)}: $out"
+	fi
+}
+
 delete_tc_rules()
 {
+	local master d
+
+	if [ -n "$ovs_service" ] && systemctl is-active --quiet $ovs_service; then
+		# Let OVS remove its own offloaded datapath flows first
+		ovs-appctl dpctl/del-flows > /dev/null 2>&1
+	fi
+
 	for pdev in $(devlink dev show | awk '/^[[:space:]]/ {next} /^pci\// {b=$1; sub(/^pci\//,"",b); sub(/:$/,"",b); if(!(b in s)){s[b]; print b}}')
 	do
 		for i in $(get_mlnx_netdevs_by_pci_id $pdev)
@@ -528,11 +557,27 @@ delete_tc_rules()
 			retries=0
 			while [ $tc_lines -gt 0 ] && [ $retries -lt $TC_DELETE_RETRIES ]; do
 				info "Deleting ingress tc rules for $i"
-				tc filter del dev $i ingress > /dev/null 2>&1
+				flush_ingress_tc $i
 				sleep 1
 				tc_lines="$(tc -s filter show dev $i ingress | wc -l)"
 				retries=$((retries+1))
 			done
+			if [ $tc_lines -gt 0 ]; then
+				# Last resort: remove the ingress qdisc of the netdev and of its bond master
+				master=""
+				if [ -e /sys/class/net/$i/master ]; then
+					master=$(basename "$(readlink /sys/class/net/$i/master)")
+				fi
+				for d in $i $master
+				do
+					info "Removing ingress qdisc from $d"
+					tc qdisc del dev $d ingress > /dev/null 2>&1
+				done
+				tc_lines="$(tc -s filter show dev $i ingress | wc -l)"
+				if [ $tc_lines -gt 0 ]; then
+					error "Failed to delete ingress tc rules for $i (tc_lines=$tc_lines)"
+				fi
+			fi
 		done
 	done
 }
