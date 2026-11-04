@@ -224,6 +224,10 @@ fi
 info "MFT output: $mft_output"
 
 esw_multiport_device=""
+esw_multiport_sd_primary=""
+# 0 = multi-port eswitch LAG enabled (or not needed), non-zero = enable failed.
+# Starts at 0 so platforms that never attempt it keep the previous behaviour.
+esw_multiport_enabled=0
 num_of_devs_switchdev=0
 declare -A CX9_DEV_LAST_ECPF  # key=PCI domain:bus (physical CX-9), value=last ECPF PCI BDF on that device
 # Set eswitch mode to switchdev for all devices
@@ -376,8 +380,17 @@ if (is_smartnic_mode "$ctrl_dev"); then
 				CX9_DEV_LAST_ECPF[$cx9_dev]="$dev"
 			fi
 			if echo "$dev_id" | grep -qE "0xa2df"; then
-				# BF4 device — track for esw_multiport (SD or ASTRA N-S)
+				# BF4 device — track for esw_multiport (SD or ASTRA N-S).
+				# Last one wins, as before.
 				esw_multiport_device="$dev"
+				# On a Socket Direct group the eswitch manager is the group
+				# PRIMARY. esw_multiport targets the eswitch manager, so
+				# remember the primary separately and prefer it below,
+				# instead of depending on which BF4 device the loop
+				# happens to walk last.
+				if (is_sd_primary "$dev"); then
+					esw_multiport_sd_primary="$dev"
+				fi
 			fi
 		fi
 		if is_sd_mode ${dev}; then
@@ -400,7 +413,19 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	#    only when LAG_RESOURCE_ALLOCATION is PRE_ALLOCATION(1)
 	# Both coexist on Grace in ASTRA configurations.
 
-	# BF4 (N-S) esw_multiport
+	# BF4 (N-S) esw_multiport.
+	#
+	# On a Socket Direct group the eswitch manager is the group primary, so
+	# target it rather than whichever BF4 device the loop happened to see
+	# last. A single SD group can span two PCI domains (Lotus), in which
+	# case the primary is not the last device in the loop. Without an SD
+	# primary (Hamilton, ASTRA) the previous last-one-wins device is used
+	# unchanged.
+	if [ -n "$esw_multiport_sd_primary" ] && \
+	   [ "$esw_multiport_sd_primary" != "$esw_multiport_device" ]; then
+		info "ESW Multiport: using SD primary $esw_multiport_sd_primary instead of $esw_multiport_device"
+		esw_multiport_device="$esw_multiport_sd_primary"
+	fi
 	if [ -n "$esw_multiport_device" ]; then
 		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 			info "Enabling ESW Multiport on BF4 device $esw_multiport_device"
