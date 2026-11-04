@@ -32,6 +32,7 @@ CT_MAX_OFFLOADED_CONNS=${CT_MAX_OFFLOADED_CONNS:-1000000}
 MLXCONFIG_TIMEOUT=${MLXCONFIG_TIMEOUT:-60}
 RDMA_SET_NETNS_TIMEOUT=${RDMA_SET_NETNS_TIMEOUT:-30}
 SET_MODE_RETRY_NUM=${SET_MODE_RETRY_NUM:-60}
+LINK_TYPE_RETRY_NUM=${LINK_TYPE_RETRY_NUM:-10}
 RUN_CMD_RETRY_NUM=${RUN_CMD_RETRY_NUM:-10}
 SUPPORTED_DEVICES="a2d[26cf]|1025"
 BLUEFIELD_DEVICES="a2d[26cf]"
@@ -310,10 +311,38 @@ pci_function_digit_value()
 	esac
 }
 
+# Detect the link type of a PCI function.
+# Returns: 0 - Ethernet, 1 - InfiniBand, 2 - unknown (not ready yet)
+#
+# Do not rely on the RDMA link_layer only: in RoCE LAG mode a single
+# mlx5_bond_N IB device is registered under the primary PF, so the
+# secondary PF has no infiniband/ directory at all. The IB device is
+# also re-registered on every LAG/eswitch mode change.
 is_dev_eth()
 {
 	dev=$1
 	shift
+
+	# Netdev type: ARPHRD_ETHER (1) or ARPHRD_INFINIBAND (32)
+	for netdev in $(get_mlnx_netdevs_by_pci_id "$dev" 2> /dev/null)
+	do
+		case "$(cat /sys/class/net/${netdev}/type 2> /dev/null)" in
+		1)
+			return 0
+			;;
+		32)
+			return 1
+			;;
+		esac
+	done
+
+	# mlx5 Ethernet auxiliary device exists only for Ethernet ports
+	for aux in /sys/bus/pci/devices/${dev}/mlx5_core.eth.*
+	do
+		if [ -e "$aux" ]; then
+			return 0
+		fi
+	done
 
 	for link_layer in /sys/bus/pci/devices/${dev}/infiniband/*/ports/1/link_layer
 	do
@@ -323,8 +352,33 @@ is_dev_eth()
 		if grep -Fxq "Ethernet" "$link_layer" 2> /dev/null; then
 			return 0
 		fi
+		if grep -Fxq "InfiniBand" "$link_layer" 2> /dev/null; then
+			return 1
+		fi
 	done
-	return 1
+
+	return 2
+}
+
+get_dev_link_type()
+{
+	dev=$1
+	shift
+
+	rc=2
+	i=0
+	while [ $i -lt $LINK_TYPE_RETRY_NUM ]
+	do
+		is_dev_eth "$dev"
+		rc=$?
+		if [ $rc -ne 2 ]; then
+			break
+		fi
+		let i++
+		sleep 1
+	done
+
+	return $rc
 }
 
 # Check if the device is in Socket Direct mode
@@ -584,8 +638,14 @@ if (is_smartnic_mode "$ctrl_dev"); then
 	delete_tc_rules
 	for dev in $(devlink dev show | awk '/^[[:space:]]/ {next} /^pci\// {b=$1; sub(/^pci\//,"",b); sub(/:$/,"",b); if(!(b in s)){s[b]; print b}}')
 	do
-		if ! (is_dev_eth "$dev"); then
+		get_dev_link_type "$dev"
+		link_type_rc=$?
+		if [ $link_type_rc -eq 1 ]; then
 			info "Link type is IB for ${dev}. Skipping mode configuration."
+			continue
+		elif [ $link_type_rc -ne 0 ]; then
+			error "Failed to detect link type for ${dev}. Skipping mode configuration."
+			RC=$((RC+1))
 			continue
 		fi
 
