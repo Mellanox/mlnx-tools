@@ -430,11 +430,23 @@ if (is_smartnic_mode "$ctrl_dev"); then
 		if [ "X${ENABLE_ESWITCH_MULTIPORT}" == "Xyes" ]; then
 			info "Enabling ESW Multiport on BF4 device $esw_multiport_device"
 			set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
+			esw_multiport_enabled=$?
 		else
 			if is_sd_mode ${esw_multiport_device}; then
 				info "Enabling ESW Multiport for SD device $esw_multiport_device"
 				set_dev_param ${esw_multiport_device} esw_multiport 1 "ESW Multiport:"
+				esw_multiport_enabled=$?
 			fi
+		fi
+		# Record whether the multi-port eswitch LAG actually came up. The
+		# merged-eswitch bridge topology depends on it, so it must not be
+		# inferred from the mere presence of SD devices.
+		#
+		# This failure is deliberately NOT added to RC: a non-zero RC exits
+		# before any OVS bridge is created, which is worse than falling back
+		# to the per-device bridge layout that non-SD platforms use.
+		if [ $esw_multiport_enabled -ne 0 ]; then
+			error "ESW Multiport: multi-port eswitch LAG was not enabled on ${esw_multiport_device}"
 		fi
 	fi
 
@@ -458,7 +470,15 @@ fi
 
 # For BF4 SD with merged eswitch, use a single bridge on LAG master only
 if is_bf4 && [ ${#SD_DEVICES_LIST[@]} -gt 0 ]; then
-	if [ "X${ENABLE_SD_MERGED_ESWITCH}" != "Xno" ]; then
+	if [ "X${ENABLE_SD_MERGED_ESWITCH}" == "Xno" ]; then
+		: # explicitly disabled
+	elif ! is_esw_multiport_active "${SD_DEVICES_LIST[@]}"; then
+		# The merged topology puts the ports of every SD domain on a single
+		# bridge, which is only valid once the multi-port eswitch LAG exists.
+		# Enabling it after esw_multiport failed produces a bridge whose
+		# ports cannot be attached. Fall back to the per-device layout.
+		error "SD merged eswitch disabled: multi-port eswitch is not active. Falling back to per-device OVS bridges."
+	else
 		SD_MERGED_ESWITCH=1
 		info "BF4 SD merged eswitch mode: single OVS bridge on LAG master only."
 
