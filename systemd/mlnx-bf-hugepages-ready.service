@@ -1,0 +1,8 @@
+[Unit]
+Description=DOCA hugepage configuration applied (RM-5266141)
+Documentation=man:doca-hugepages(8)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/doca-hugepages reload
