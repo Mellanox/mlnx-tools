@@ -1447,7 +1447,7 @@ class IpForwarding:
 		"""
 		logging.debug("Enabling IPv4 forwarding for all interfaces")
 		cmd = "echo 1 > %s"%(IPV4_FORWARDING_CFG)
-		(rc, output) = run_command_warn_when_fail(cmd, warning_message="Unable to set ipv4 forwarding.")
+		(rc, output) = run_command_warn_when_fail(cmd, shell=True, warning_message="Unable to set ipv4 forwarding.")
 		if  not interface_name:
 			interface_name = "all"
 		logging.debug("Enabling IPv6 forwarding for %s"%interface_name)
