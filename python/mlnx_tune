@@ -617,7 +617,7 @@ class Cpu:
 		# Don't crash if actual cpu frequency cannot be found
 		try:
 			freq_ok = (int(self.actual_freq) >= int(self.max_freq.split(" ")[0]) - 100)
-			freq_status = (status_ok_string(), status_warning_string())[freq_ok]
+			freq_status = (status_warning_string(), status_ok_string())[freq_ok]
 		except:
 			status_error = True
 			freq_status = status_warning_string()
