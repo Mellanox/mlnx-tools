@@ -95,8 +95,10 @@ parser.add_option("-t", "--tcbw", dest="tc_bw",
 		  metavar="LIST")
 parser.add_option("-r", "--ratelimit", dest="ratelimit",
 		  help="Rate limit for TCs (in Gbps). LIST is a comma separated " +
-			"Gbps limit for each TC. Example: 1,8,8 will limit TC0 to " +
-			"1Gbps, and TC1,TC2 to 8 Gbps each.",
+			"Gbps limit for each TC. 0 means unlimited. Example: " +
+			"1,8,8,0,0,0,0,0 will limit TC0 to 1 Gbps and TC1,TC2 to 8 Gbps. " +
+			"The maximum is 255 Gbps, or " +
+			"65535 Gbps on devices with extended rate limit support.",
 		  metavar="LIST")
 parser.add_option("-d", "--dcbx", dest="dcbx",
 		  help="set dcbx mode to firmware controlled(fw) or " +
@@ -160,19 +162,20 @@ class Maxrate:
 		pass
 
 	def prepare(self, ratelimit):
-		old_ratelimit = self.get()
-		ratelimit += old_ratelimit[len(ratelimit):8]
+		if len(ratelimit) < 8:
+			old_ratelimit = self.get()
+			ratelimit += old_ratelimit[len(ratelimit):8]
 		return ratelimit
 
 class MaxrateNL(Maxrate):
 	def __init__(self, ctrl):
 		self.ctrl = ctrl
 	def get(self):
-		return ctrl.get_ieee_maxrate()
+		return self.ctrl.get_ieee_maxrate()
 
 	def set(self, ratelimit):
 		ratelimit = self.prepare(ratelimit)
-		ctrl.set_ieee_maxrate(ratelimit)
+		self.ctrl.set_ieee_maxrate(ratelimit)
 
 class MaxrateSysfs(Maxrate):
 	def __init__(self, path):
@@ -182,7 +185,7 @@ class MaxrateSysfs(Maxrate):
 		ratelimit = []
 		f = open(self.path, "r")
 		for item in f.read().split():
-			ratelimit.append(float(item))
+			ratelimit.append(int(item))
 		f.close()
 
 		return ratelimit
@@ -192,6 +195,23 @@ class MaxrateSysfs(Maxrate):
 		f = open(self.path, "w")
 		f.write(" ".join(str(r) for r in ratelimit))
 		f.close()
+
+def normalize_ratelimit(ratelimit):
+	return [int(rate) for rate in ratelimit]
+
+def restore_ratelimit(maxrate, previous_ratelimit):
+	previous_ratelimit = normalize_ratelimit(previous_ratelimit)
+	try:
+		maxrate.set(previous_ratelimit)
+		restored_ratelimit = normalize_ratelimit(maxrate.get())
+		if restored_ratelimit != previous_ratelimit:
+			print("Failed to restore previous rate limit: restored values " +
+			      "do not match the previous values.")
+			return False
+	except Exception as e:
+		print("Failed to restore previous rate limit: %s" % e)
+		return False
+	return True
 
 class Trust:
 	def __init__(self):
@@ -638,6 +658,11 @@ except Exception as e:
 		sys.exit(1)
 
 # ********* ratelimit command ******************************
+# The device takes a 16-bit max_bw_value in Gbps units (8-bit, i.e.
+# 255 Gbps, without extended rate limit support). Some older sysfs
+# implementations silently truncate larger values, so verify readback below.
+MAX_RATELIMIT_GBPS = 65535
+
 try:
 	ratelimit = []
 	maxrate = None
@@ -653,8 +678,8 @@ try:
 				print ("Too many items for ratelimit")
 				sys.exit(1)
 
-			r = parse_int(r, 0, 1000000, "ratelimit")
-	
+			r = parse_int(r, 0, MAX_RATELIMIT_GBPS, "ratelimit")
+
 			ratelimit += [r * 1000 * 1000]
 			i += 1
 
@@ -663,15 +688,46 @@ try:
 			sys.exit(1)
 
 		try:
+			previous_ratelimit = maxrate.get()
+		except Exception as e:
+			print("Failed to read current rate limit: %s" % e)
+			sys.exit(1)
+
+		try:
 			maxrate.set(ratelimit)
-		except:
-			print("Rate limit is not supported on your system!")
+		except (IOError, OSError) as e:
+			check_privilege(e)
+			# sysfs write fails with EINVAL, netlink (dcbnl) only reports
+			# a bad value without an errno.
+			if e.errno in (None, errno.EINVAL):
+				print("Failed to set rate limit: invalid value for this " +
+				      "device. The maximum is 255 Gbps, or 65535 Gbps " +
+				      "with extended rate limit support. Error: %s" % e)
+			else:
+				print("Failed to set rate limit: %s" % e)
+			restore_ratelimit(maxrate, previous_ratelimit)
+			sys.exit(1)
+		except Exception as e:
+			print("Failed to set rate limit: %s" % e)
+			restore_ratelimit(maxrate, previous_ratelimit)
+			sys.exit(1)
 
 	try:
-		ratelimit = maxrate.get()
-	except:
+		configured_ratelimit = maxrate.get()
+		if options.ratelimit and normalize_ratelimit(configured_ratelimit) != ratelimit:
+			print("Failed to set rate limit: invalid value for this device; " +
+			      "requested values were not applied.")
+			restore_ratelimit(maxrate, previous_ratelimit)
+			sys.exit(1)
+		ratelimit = configured_ratelimit
+	except Exception as e:
+		if options.ratelimit:
+			print("Failed to read back rate limit: %s" % e)
+			restore_ratelimit(maxrate, previous_ratelimit)
+			sys.exit(1)
 		print("Rate limit is not supported on your system!")
-except:
+		ratelimit = []
+except Exception:
 	if options.ratelimit:
 		sys.exit(1)
 	else:
