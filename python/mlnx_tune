@@ -964,7 +964,7 @@ class Memory:
 			(rc, output) = run_command_warn_when_fail(SET_VM_SWAPPINESS_CMD%0, shell=True, warning_message="Unable to disable VM swappiness.")
 
 		if self.vm_zone_reclaim_mode not in (Memory.ZONE_RECLAIM_OFF, Memory.ZONE_RECLAIM_INVALID):
-			(rc, output) = run_command_warn_when_fail(SET_VM_ZONE_RECLAIM_MODE_CMD%int(Memory().ZONE_RECLAIM_OFF), shell=True, warning_message="Unable to disable VM zone reclaim.")
+			(rc, output) = run_command_warn_when_fail(SET_VM_ZONE_RECLAIM_MODE_CMD%0, shell=True, warning_message="Unable to disable VM zone reclaim.")
 
 
 class Hugepages:
