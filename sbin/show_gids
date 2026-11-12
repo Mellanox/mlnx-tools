@@ -74,15 +74,46 @@ function print_gids()
 
 echo -e "DEV\tPORT\tINDEX\tGID\t\t\t\t\tIPv4  \t\tVER\tDEV"
 echo -e "---\t----\t-----\t---\t\t\t\t\t------------  \t---\t---"
-DEVS=$1
+#Break after predefined number of 0 GIDS found
+#Assuming that the rest will be zero as well
+#Needed on hosst with large number of NICs, to avoid script slow run
+MAX_NUM_OF_ZERO_GIDS=2
+IS_SLIM=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dev=*)
+      DEVS="${1#*=}"
+      ;;
+    --slim)
+      IS_SLIM=1
+      ;;
+    *)
+      echo "show_gids will print gids table for all RDMA devices"
+      echo "-d|--dev=<rdma device> Can choose specifci mlx devices"
+      echo "-s|--slim will break gid table scan after predefine max num-2 of zero GIDs"
+      exit 1
+  esac
+  shift
+done
+
 if [ -z "$DEVS" ] ; then
 	DEVS=$(ls /sys/class/infiniband/)
 fi
+
 for d in $DEVS ; do
 	for p in $(ls /sys/class/infiniband/$d/ports/) ; do
-		for g in $(ls /sys/class/infiniband/$d/ports/$p/gids/) ; do
+		declare -i ZERO_GIDS_CNT
+                ZERO_GIDS_CNT=0
+		for g in $(ls -v /sys/class/infiniband/$d/ports/$p/gids/) ; do
 			gid=$(cat /sys/class/infiniband/$d/ports/$p/gids/$g);
 			if [ $gid = 0000:0000:0000:0000:0000:0000:0000:0000 ] ; then
+				if [ $IS_SLIM = 1 ] ; then
+					ZERO_GIDS_CNT+=1
+					if [ $ZERO_GIDS_CNT = $MAX_NUM_OF_ZERO_GIDS ] ; then
+						break
+					fi
+				fi
 				continue
 			fi
 			if [ $gid = fe80:0000:0000:0000:0000:0000:0000:0000 ] ; then
