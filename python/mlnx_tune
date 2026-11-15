@@ -141,6 +141,7 @@ KERNEL_PARAMETERS				= "cat /proc/cmdline"
 
 LOADED_MODULE_PATH				= "/sys/module/%s"
 LOADED_MODULE_VERSION_PATH			= LOADED_MODULE_PATH + "/version"
+LOADED_MODULE_TAINT_PATH			= LOADED_MODULE_PATH + "/taint"
 MODULE_VERSION_CMD				= "modinfo -F version %s"
 MODULE_INTREE_CMD				= "modinfo -F intree %s"
 MODULE_FILENAME_CMD				= "modinfo -F filename %s"
@@ -1572,20 +1573,34 @@ class Driver:
 			driver_suggestion = " >>> Mellanox driver is installed but not loaded."
 		print("%s: %s"%(driver_status, driver_description) + driver_suggestion)
 
-	def get_module_version(self, module):
+	def get_module_version(self, module, loaded):
 		""" Returns the module version or a kernel/unknown description.
 		"""
 		version = ""
-		try:
-			with open(LOADED_MODULE_VERSION_PATH%(module)) as version_file:
-				version = version_file.read().strip()
-		except (IOError, OSError):
-			pass
+		if loaded:
+			try:
+				with open(LOADED_MODULE_VERSION_PATH%(module)) as version_file:
+					version = version_file.read().strip()
+			except (IOError, OSError):
+				pass
 
-		if not version:
-			( rc, version) = run_command_debug_when_fail(MODULE_VERSION_CMD%(module))
-			if rc:
-				version = ""
+			if version:
+				return version
+
+			try:
+				with open(LOADED_MODULE_TAINT_PATH%(module)) as taint_file:
+					taint = taint_file.read().strip()
+			except (IOError, OSError):
+				return "unknown"
+
+			if "O" not in taint:
+				return "kernel %s"%(platform.release())
+
+			return "unknown"
+
+		( rc, version) = run_command_debug_when_fail(MODULE_VERSION_CMD%(module))
+		if rc:
+			version = ""
 
 		if not version:
 			( rc, intree) = run_command_debug_when_fail(MODULE_INTREE_CMD%(module))
@@ -1602,7 +1617,7 @@ class Driver:
 				self.installed = True
 				self.loaded = True
 				self.module = module
-				self.version = self.get_module_version(module)
+				self.version = self.get_module_version(module, True)
 				return
 
 		for module in DRIVER_MODULES:
@@ -1610,7 +1625,7 @@ class Driver:
 			if not rc and filename:
 				self.installed = True
 				self.module = module
-				self.version = self.get_module_version(module)
+				self.version = self.get_module_version(module, False)
 				return
 
 		logging.warning("Mellanox driver is not installed.")
