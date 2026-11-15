@@ -769,11 +769,12 @@ class Cpu:
 		"""
 		raw_cpuinfo = raw_cpuinfo.split('\n')
 		total_cores = 0
-		processor_pattern = re.compile(r"processor( *): \d+")
+		processor_pattern = re.compile(r"processor\s*: \d+")
 		for line in raw_cpuinfo:
 			match = processor_pattern.search(line)
 			if match:
 				total_cores+=1
+		self.total_cores = total_cores
 
 		(rc, lscpu_output) = run_command_warn_when_fail(LSCPU_CMD, warning_message="Unable to collect cpu info.")
 		for line in lscpu_output.split('\n'):
