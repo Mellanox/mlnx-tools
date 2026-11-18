@@ -127,6 +127,7 @@ rm -rf %{buildroot}
 %{python_dir}/netlink.py*
 /lib/udev/mlnx_bf_udev
 /etc/mellanox/hugepages.d
+/usr/lib/systemd/system/mlnx-bf-hugepages-ready.service
 
 %changelog
 * Wed May 12 2021 Tzafrir Cohen <nvidia@cohens.org.il> - 5.2.0-1
