@@ -330,6 +330,24 @@ fi
 # The SF is created on the ECPF of the 2nd PCI link that has no RDMA device.
 SNAP_DMA_SF_TARGET_ECPF=""
 
+# True when the given systemd unit is installed on this system, regardless of
+# whether it is currently enabled, running, or stopped. Used to avoid waiting
+# on a service that the image does not ship at all.
+is_service_present()
+{
+	local unit=$1
+	shift
+
+	command -v systemctl > /dev/null 2>&1 || return 1
+
+	# list-unit-files covers installed-but-inactive units; list-units
+	# additionally covers units that only exist at runtime.
+	systemctl list-unit-files "$unit" 2> /dev/null | grep -q "^${unit}" && return 0
+	systemctl list-units --all "$unit" 2> /dev/null | grep -q "${unit}" && return 0
+
+	return 1
+}
+
 create_snap_dma_sf()
 {
 	# Must be BF4
@@ -563,19 +581,27 @@ if [ $num_of_devs_switchdev -eq 0 ]; then
 fi
 
 if [ -f /etc/mellanox/mlnx-sf.conf ]; then
-	# Wait until NetworkManager is active to avoid race condition
-	NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
-	start_time=$(awk '{print $1}' /proc/uptime)
-	while ! (systemctl is-active NetworkManager 2> /dev/null)
-	do
-		info "NetworkManager is not active. Waiting..."
-		elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
-		if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
-			info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
-			break
-		fi
-		sleep 0.1
-	done
+	# Wait until NetworkManager is active to avoid race condition.
+	# Only wait when the service is actually installed: on images that do
+	# not ship NetworkManager, or that manage the network by other means,
+	# "systemctl is-active" never succeeds and the loop would burn the
+	# full NETWORK_MANAGER_TIMEOUT before continuing anyway.
+	if is_service_present NetworkManager.service; then
+		NETWORK_MANAGER_TIMEOUT=${NETWORK_MANAGER_TIMEOUT:-120}
+		start_time=$(awk '{print $1}' /proc/uptime)
+		while ! (systemctl is-active NetworkManager 2> /dev/null)
+		do
+			info "NetworkManager is not active. Waiting..."
+			elapsed=$(awk "BEGIN {printf \"%.0f\", $(awk '{print $1}' /proc/uptime) - $start_time}")
+			if [ $elapsed -gt ${NETWORK_MANAGER_TIMEOUT} ]; then
+				info "NetworkManager timeout: ${NETWORK_MANAGER_TIMEOUT}"
+				break
+			fi
+			sleep 0.1
+		done
+	else
+		info "NetworkManager service is not present. Skipping wait."
+	fi
 	. /etc/mellanox/mlnx-sf.conf
 fi
 
